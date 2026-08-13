@@ -24,15 +24,38 @@ Subtitle, where one is needed: **Indian Legal Intelligence**.
 
 ## Mark
 
-A monogram **P** drawn as a single continuous stroke in `--primary`, with a
-balance-scale glyph in `--primary-deep` nested inside the counter. The scale
-is the legal signal; the unbroken stroke is the "chain of evidence" reading.
+A monogram **P** drawn as a single continuous stroke, with a balance-scale
+glyph nested inside the counter and a distinctive fold at the lower left. The
+scale is the legal signal; the unbroken stroke is the "chain of evidence"
+reading; the fold reads as a turned page.
 
-Set beside the wordmark in Playfair Display 700, `--primary-deep`. The mark is
-inline SVG built from tokens, so it recolours with the system rather than
-being a fixed image asset.
+Two inks, both from the brand blues:
 
-Reference rendering: [`brand/pramana-logo.png`](./brand/pramana-logo.png).
+| Element | Colour |
+|---|---|
+| P stroke | `#2B56C4` — close to `--primary` |
+| Scale, wordmark | `#1E2051` — close to `--primary-deep` |
+
+The wordmark is a Didone-ish serif, which is why Playfair Display was chosen
+as the system's display face: the UI's serif headings and the logotype belong
+to the same family of shapes.
+
+### Assets
+
+| File | Use |
+|---|---|
+| [`brand/pramana-logo.png`](./brand/pramana-logo.png) | Original 1024×1024 master |
+| [`brand/pramana-lockup.png`](./brand/pramana-lockup.png) | Mark + wordmark, 475×132, transparent — the default lockup |
+| [`brand/pramana-mark.png`](./brand/pramana-mark.png) | Mark alone, 113×132, transparent — for the collapsed sidebar and favicons |
+
+The prototype embeds the lockup and the mark as base64 PNGs rather than a
+redrawn SVG. An earlier attempt to trace the mark by hand produced something
+recognisably *not* the logo, so the artwork itself is the source of truth.
+Both are cropped from the master, made transparent, and palette-quantised —
+about 11KB combined, and they render correctly on any background.
+
+Displayed at 34px tall (lockup) and 32px (mark) against artwork ~4× that
+height, so it stays crisp on high-density displays.
 
 ## Personality
 
