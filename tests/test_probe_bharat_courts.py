@@ -24,9 +24,6 @@ def test_run_reports_fail_plainly_when_install_and_import_both_fail(monkeypatch,
 
 
 def test_run_reports_reachable_only_when_a_real_call_actually_returns_data(monkeypatch, tmp_path):
-    """Installed + importable is not enough to call this source reachable —
-    only a live call that actually returns data proves it works."""
-
     def fake_attempt_install(package, timeout=60):
         return True, f"Successfully installed {package}"
 
@@ -58,11 +55,6 @@ def test_run_reports_reachable_only_when_a_real_call_actually_returns_data(monke
 
 
 def test_run_reports_installed_but_not_reachable_when_the_live_call_fails(monkeypatch, tmp_path):
-    """Installing and importing cleanly, but the actual data call failing
-    (dead endpoint, changed markup, network issue) must not be reported as
-    success — that's exactly the kind of false positive this fix exists to
-    prevent."""
-
     def fake_attempt_install(package, timeout=60):
         return True, f"Successfully installed {package}"
 

@@ -14,16 +14,15 @@ from scripts.recon.common import ProbeReport, now_iso, polite_get
 
 SOURCE = "india_code"
 BROWSE_URL = "https://www.indiacode.nic.in/handle/123456789/1362"
-# The landing page (BROWSE_URL) is a navigation menu — it has no listing and
-# no count. The actual paginated Act list, with a real "Showing items X to Y
-# of NNN" count, lives at this DSpace browse-by-title endpoint instead.
+# BROWSE_URL is a nav menu with no item count. The count lives on this
+# DSpace browse-by-title listing page instead.
 LISTING_URL = "https://www.indiacode.nic.in/handle/123456789/1362/browse?type=shorttitle"
 SAMPLE_SEARCH_URL = (
     "https://www.indiacode.nic.in/handle/123456789/1362/"
     "simple-search?query=specific+relief+act"
 )
 
-# Matches DSpace's real listing text, e.g. "Showing items 1 to 20 of 845".
+# DSpace listing format: "Showing items 1 to 20 of 845".
 _COUNT_PATTERN = re.compile(r"showing items\s+[\d,]+\s+to\s+[\d,]+\s+of\s+([\d,]+)", re.IGNORECASE)
 _TAG_PATTERN = re.compile(r"<[^>]+>")
 
@@ -56,10 +55,8 @@ def run() -> ProbeReport:
         notes.append(f"browse page returned HTTP {browse_response.status_code}")
 
     search_response = polite_get(SAMPLE_SEARCH_URL)
-    # Real search-result rows wrap each matched word in its own highlight
-    # tag (e.g. "<font color=...>Specific</font> <font ...>Relief</font>"),
-    # which splits the phrase "specific relief" apart in the raw HTML even
-    # though the result is present. Strip tags before matching.
+    # Result rows wrap each matched word in its own highlight tag, splitting
+    # "specific relief" apart in the raw HTML — strip tags before matching.
     search_text = _TAG_PATTERN.sub(" ", search_response.text).lower()
     search_text = " ".join(search_text.split())
     if search_response.status_code != 200 or "specific relief" not in search_text:

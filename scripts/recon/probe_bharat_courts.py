@@ -1,10 +1,8 @@
 """Probe: the Bharat Courts SDK (github.com/iamshouvikmitra/bharat-courts).
 
-Per docs/LEGAL_DATA_SOURCES.md §8, this is a programmatic access layer,
-not a new legal authority, and its own README notes live court access
-often needs CAPTCHA/session handling. A clean "does not install / does not
-import" report is a valid, useful outcome here — see
+See docs/LEGAL_DATA_SOURCES.md §8 and
 docs/superpowers/specs/2026-08-14-phase1-data-recon-design.md §4.3.
+A failed install/import is a valid report, not an error.
 """
 
 from __future__ import annotations
@@ -44,15 +42,11 @@ def attempt_import(module_name: str = "bharat_courts") -> tuple[bool, str]:
 
 
 def attempt_live_call(limit: int = 3) -> tuple[bool, list[str], str]:
-    """Attempt one real, low-cost call: SCIClient.list_recent_judgments().
+    """Call SCIClient.list_recent_judgments() — no CAPTCHA required.
 
-    Confirmed by hand-inspection of the SDK's docstring that this specific
-    method needs no CAPTCHA — it scrapes the SC homepage's public "Latest
-    Judgements" feed. This is different from search_by_party/search_by_year,
-    which the SDK itself marks not-implemented, and from the official
-    portal's CAPTCHA-gated diary-number search form (see
-    probe_official_scr_search.py) that this SDK does not attempt to solve
-    for that particular endpoint.
+    Unlike search_by_party/search_by_year (unimplemented in the SDK) or
+    the CAPTCHA-gated portal in probe_official_scr_search.py, this method
+    scrapes the SC homepage's public "Latest Judgements" feed directly.
     """
     import asyncio
 

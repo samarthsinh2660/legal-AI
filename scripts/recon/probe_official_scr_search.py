@@ -17,6 +17,7 @@ SEARCH_URL = "https://scr.sci.gov.in/scrsearch/"
 _SPA_SHELL_PATTERN = re.compile(r'id=["\'](app|root)["\']')
 _POPULATED_ROW_PATTERN = re.compile(r"<tr[^>]*>.*?</tr>", re.IGNORECASE | re.DOTALL)
 
+# Securimage (CAPTCHA lib) + csrf-magic.js — presence blocks scripted search.
 _CAPTCHA_PATTERN = re.compile(r"securimage|csrf-magic", re.IGNORECASE)
 
 
