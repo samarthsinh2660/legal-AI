@@ -1,10 +1,10 @@
 # Phase 1 — Data Layer Recon & Scaffold
 
 **Status:** Implemented — see `docs/DATA_RECON_FINDINGS.md` for results and
-`docs/PHASE_1_AI_RESEARCH_PLAN.md` §11 Milestone 0 for how this fits the
+`docs/PHASE_1_DATA_FOUNDATION.md` §2 Milestone 0 for how this fits the
 overall Phase 1 sequence.
 **Depends on:** `docs/AI_PROJECT_PROPOSAL.md`, `docs/DATA_LAYER_ARCHITECTURE.md`,
-`docs/LEGAL_DATA_SOURCES.md`, `docs/PHASE_1_AI_RESEARCH_PLAN.md`,
+`docs/LEGAL_DATA_SOURCES.md`, `docs/PHASE_1_DATA_FOUNDATION.md`,
 `docs/PROJECT_STRUCTURE.md`
 
 ## 1. Objective

@@ -153,7 +153,7 @@ For each ingested batch:
 This is what makes "static knowledge is trusted" (§13, Static vs Dynamic vs
 Active) an enforced property instead of an assumption. It is distinct from
 the **Verification Agent** (`AI_PROJECT_PROPOSAL.md` §7,
-`PHASE_1_AI_RESEARCH_PLAN.md` §9), which checks a *generated answer's*
+`PHASE_6_VERIFICATION_ACTIVE_LEARNING.md` §1), which checks a *generated answer's*
 claims against already-ingested evidence at query time. This gate runs
 earlier, once per ingestion batch, and checks the *evidence itself* against
 the primary source before it is trusted at all.

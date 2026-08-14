@@ -503,70 +503,42 @@ legal advice and clearly identify assumptions or missing facts.
 
 ## 11. Development Roadmap
 
-### Phase 1 --- Legal Research & Case Analysis
+Seven phases, each with one job and one deliverable. Earlier drafts of this
+roadmap bundled everything -- data, retrieval, agents, drafting,
+verification -- into one oversized "Phase 1." That made the phase
+undefined and un-shippable on its own. Each phase below now has its own
+plan document, and produces working, testable output before the next one
+starts.
 
-Build the first working AI research system.
+``` text
+PHASE 1   Data Foundation
+    |
+PHASE 2   Query & Retrieval
+    |
+PHASE 3   Research Agent System
+    |
+PHASE 4   Document + Case Intelligence
+    |
+PHASE 5   Legal Analysis + Drafting
+    |
+PHASE 6   Verification + Active Learning
+    |
+PHASE 7   Advanced GraphRAG & Intelligence
+```
 
--   Static legal knowledge
--   Dynamic court/statute research
--   Active evidence layer foundation
--   India Code knowledge base
--   Supreme Court corpus
--   High Court search
--   Court research tools
--   Hybrid retrieval
--   Research Agent
--   Analyst / Case Agent
--   Citation verification
+| Phase | Plan doc | Main question | Deliverable |
+|---|---|---|---|
+| 1. Data Foundation | `PHASE_1_DATA_FOUNDATION.md` | Do we have reliable legal knowledge? | A clean, searchable, versioned Indian legal data foundation |
+| 2. Query & Retrieval | `PHASE_2_QUERY_RETRIEVAL.md` | Can we find the right knowledge? | Given a question, we reliably retrieve the correct documents/sections/cases |
+| 3. Research Agents | `PHASE_3_RESEARCH_AGENTS.md` | Can AI research intelligently? | AI performs legal research, not just search |
+| 4. Case Intelligence | `PHASE_4_CASE_DOCUMENT_INTELLIGENCE.md` | Can AI understand *this user's case*? | AI understands both Indian law and the user's particular case |
+| 5. Analysis/Drafting | `PHASE_5_ANALYSIS_DRAFTING.md` | Can AI reason over the evidence? | Evidence + case facts become structured legal analysis |
+| 6. Verification/Active | `PHASE_6_VERIFICATION_ACTIVE_LEARNING.md` | Can we make it trustworthy, and let it improve? | Every claim checked before shipping; usage never becomes law on its own |
+| 7. GraphRAG/Advanced | `PHASE_7_ADVANCED_GRAPHRAG.md` | Can we make the whole system significantly smarter? | A measurably smarter, benchmarked system, on a foundation already proven trustworthy |
 
-### Phase 2 --- Legal Knowledge Graph + GraphRAG
-
--   Expand the legal graph
--   Extract legal entities
--   Extract citation relationships
--   Precedent graph
--   Statute graph
--   Graph-aware retrieval
--   GraphRAG
-
-### Phase 3 --- Multi-Agent Legal Research
-
--   Supervisor
--   Specialized research agents
--   Document Agent
--   Case Agent
--   Research Agent
--   Parallel research
--   Iterative research loops
-
-### Phase 4 --- Legal Drafting
-
--   Legal notices
--   Petitions
--   Replies
--   Research memos
--   Arguments
--   Other controlled drafting workflows
-
-### Phase 5 --- Active Learning & Knowledge Evolution
-
--   Feedback collection
--   Candidate knowledge generation
--   Confidence scoring
--   Validation pipeline
--   Knowledge promotion
--   Research-path optimization
-
-### Phase 6 --- Advanced Legal Reasoning & Evaluation
-
--   Conflicting precedent analysis
--   Temporal validity
--   Bench-strength reasoning
--   Citation/claim verification
--   Indian legal benchmarks
--   Hallucination evaluation
--   Retrieval evaluation
--   End-to-end legal reasoning evaluation
+Team assignment falls out of this cleanly: Phase 1 is data engineering, not
+agent work. Phase 2 is retrieval. Phase 3 onward is agents. No phase
+requires the next one to exist to be considered done.
 
 ------------------------------------------------------------------------
 
