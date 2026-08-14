@@ -483,6 +483,40 @@ Disclaimer
 
 ## 11. Phase 1 Deliverables
 
+### Milestone 0 --- Data Recon (complete)
+
+Before building anything, answer with evidence: is the data actually
+reachable, in a usable structure, with reliable provenance?
+
+Five one-time probe scripts (`scripts/recon/`) each sampled one or two
+objects from a source, inspected the real schema, and reported back --- they
+do not download a corpus and are not the tools an agent will call later.
+See:
+
+- Spec: `docs/superpowers/specs/2026-08-14-phase1-data-recon-design.md`
+- Plan: `docs/superpowers/plans/2026-08-14-phase1-data-recon-plan.md`
+- Findings: `docs/DATA_RECON_FINDINGS.md`
+
+Key results:
+
+``` text
+Supreme Court bulk (Vanga S3)   -> ready to build an ingestion adapter against
+Gujarat HC bulk (Vanga S3)      -> ready, but coverage is 2000-2026, not
+                                    1950-present as the bulk README implies
+                                    globally -- confirmed per-court/bench
+India Code                      -> confirmed scrape-only, no JSON API
+Official SC search portal       -> reachable, but not cleanly scriptable
+                                    yet -- needs manual investigation
+Bharat Courts SDK                -> installs and imports; not yet validated
+                                    against a real call
+```
+
+**This is not the `tools/` layer.** `search_supreme_court()`,
+`get_judgment()`, and the rest of the tool contracts in §27 of
+`LEGAL_DATA_SOURCES.md` do not exist yet -- they get built in Milestone 3,
+against the real structure this recon step confirmed, instead of the
+assumed structure in this document's earlier drafts.
+
 ### Milestone 1
 
 Static India Code knowledge base.
@@ -494,6 +528,14 @@ Supreme Court historical corpus.
 ### Milestone 3
 
 Court search tools.
+
+The actual agent-facing tools. For the two bulk sources (Supreme Court,
+Gujarat HC), these query **our own ingested store** (built in Milestones
+1--2, indexed in Milestone 4) -- not the live S3 bucket the Milestone-0
+probes hit. For India Code and Bharat Courts, a tool may call the live
+source per query, since that data is current/query-specific by nature. See
+`DATA_LAYER_ARCHITECTURE.md` §6--8 for the static/dynamic distinction this
+maps onto.
 
 ### Milestone 4
 

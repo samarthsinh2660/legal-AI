@@ -347,6 +347,6 @@ knowledge is never presented as authoritative.
 - **Drafting** (notices, petitions, replies) — deferred to a later phase in
   `../docs/PHASE_1_AI_RESEARCH_PLAN.md` §8
 - **Per-user knowledge graphs** — deferred in
-  `../docs/DATA_LAYER_ARCHITECTURE.md` §13; Knowledge shows one global graph
+  `../docs/DATA_LAYER_ARCHITECTURE.md` §14; Knowledge shows one global graph
 - **Auth, billing, settings internals** — the sidebar entries are
   placeholders; only the design-system reference is built behind Settings

@@ -1,0 +1,29 @@
+[project]
+name = "legal-ai"
+version = "0.0.1"
+description = "Pramana AI — Indian Legal Intelligence data layer and recon tooling"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7",
+    "requests>=2.32",
+    "pyarrow>=17.0",
+    "pypdf>=4.3",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "responses>=0.25",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -108,15 +108,59 @@ foundation.
           |                         |
           +------------+------------+
                        |
+                       v
+              SOURCE VERIFICATION GATE (§4)
+                       |
               +--------+--------+
               |                 |
+           passed            failed
+              |                 |
               v                 v
-          Vector Index      Knowledge Graph
+     +--------+--------+   Held for review
+     |                 |   (not indexed)
+     v                 v
+  Vector Index      Knowledge Graph
 ```
 
 ------------------------------------------------------------------------
 
-# 4. Static Knowledge Graph
+# 4. Source Verification Gate
+
+Ingestion sources like the bulk S3 corpora (`indian-supreme-court-judgments`,
+`indian-high-court-judgments`) are **mirrors**, not the authority --- see the
+Tier 1/Tier 2 split in `LEGAL_DATA_SOURCES.md` §2. A mirror can drift: a
+scraping bug, a stale sync, a malformed record. Nothing should reach the
+trusted static store without a check that it actually matches the primary
+source.
+
+The gate is a sampling check, not a full re-verification of every document
+(that would defeat the point of using a bulk mirror at all):
+
+``` text
+For each ingested batch:
+  1. Draw a small random sample (e.g. 20 documents)
+  2. For each sampled document, compare against the official source:
+       case title, date, citation, disposal
+  3. Confirm every document's PDF has real extractable text
+     (not a blank scan -- same check the Milestone 0 recon probes ran
+     once per source; here it runs on every batch)
+  4. If the sample passes -> the whole batch is promoted to the
+     static store
+     If the sample fails  -> the batch is held, flagged, and reviewed
+     by hand before any retry
+```
+
+This is what makes "static knowledge is trusted" (§13, Static vs Dynamic vs
+Active) an enforced property instead of an assumption. It is distinct from
+the **Verification Agent** (`AI_PROJECT_PROPOSAL.md` §7,
+`PHASE_1_AI_RESEARCH_PLAN.md` §9), which checks a *generated answer's*
+claims against already-ingested evidence at query time. This gate runs
+earlier, once per ingestion batch, and checks the *evidence itself* against
+the primary source before it is trusted at all.
+
+------------------------------------------------------------------------
+
+# 5. Static Knowledge Graph
 
 The graph should represent legal entities and relationships.
 
@@ -167,7 +211,7 @@ Judgment
 
 ------------------------------------------------------------------------
 
-# 5. Dynamic Data
+# 6. Dynamic Data
 
 ## Definition
 
@@ -193,7 +237,7 @@ immediately.
 
 ------------------------------------------------------------------------
 
-# 6. Dynamic Research Pipeline
+# 7. Dynamic Research Pipeline
 
 ``` text
                   USER QUERY
@@ -223,7 +267,7 @@ immediately.
 
 ------------------------------------------------------------------------
 
-# 7. Dynamic Tools
+# 8. Dynamic Tools
 
 The AI should access data through tools rather than directly knowing the
 source implementation.
@@ -269,7 +313,7 @@ The source adapter should preserve:
 
 ------------------------------------------------------------------------
 
-# 8. Active Data
+# 9. Active Data
 
 ## Definition
 
@@ -292,7 +336,7 @@ Frequently successful searches
 
 ------------------------------------------------------------------------
 
-# 9. Active Knowledge Pipeline
+# 10. Active Knowledge Pipeline
 
 ``` text
                   USER / AGENT
@@ -338,7 +382,7 @@ Promotion requires evidence and validation.
 
 ------------------------------------------------------------------------
 
-# 10. Provenance
+# 11. Provenance
 
 Every piece of knowledge should preserve its origin.
 
@@ -375,7 +419,7 @@ its source.
 
 ------------------------------------------------------------------------
 
-# 11. Confidence Model
+# 12. Confidence Model
 
 We should distinguish different kinds of confidence.
 
@@ -408,7 +452,7 @@ Feedback should never be treated as legal authority.
 
 ------------------------------------------------------------------------
 
-# 12. Static vs Dynamic vs Active
+# 13. Static vs Dynamic vs Active
 
   ------------------------------------------------------------------------------
   Layer             Purpose                  Lifetime          Authority
@@ -425,7 +469,7 @@ Feedback should never be treated as legal authority.
 
 ------------------------------------------------------------------------
 
-# 13. One Global Knowledge Graph
+# 14. One Global Knowledge Graph
 
 For Phase 1:
 
@@ -454,7 +498,7 @@ But they are outside the first architecture.
 
 ------------------------------------------------------------------------
 
-# 14. Data + Agent Architecture
+# 15. Data + Agent Architecture
 
 ``` text
                          USER QUERY
@@ -487,7 +531,7 @@ But they are outside the first architecture.
 
 ------------------------------------------------------------------------
 
-# 15. Feedback Loop
+# 16. Feedback Loop
 
 The complete system should eventually form a continuous improvement
 loop:
@@ -530,7 +574,7 @@ time without allowing uncontrolled feedback to rewrite trusted law.
 
 ------------------------------------------------------------------------
 
-# 16. Phase 1 Data Sources
+# 17. Phase 1 Data Sources
 
 ### Primary
 
@@ -552,7 +596,7 @@ automatically treated as the production source of truth.
 
 ------------------------------------------------------------------------
 
-# 17. Target Data Architecture
+# 18. Target Data Architecture
 
 ``` text
                          LEGAL SOURCES
@@ -583,7 +627,7 @@ automatically treated as the production source of truth.
 
 ------------------------------------------------------------------------
 
-# 18. Core Principle
+# 19. Core Principle
 
 The data architecture should enforce:
 
