@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: legal-ai-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-legal_ai}
+      POSTGRES_USER: ${POSTGRES_USER:-legal_ai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-legal_ai_dev}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - legal_ai_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-legal_ai} -d ${POSTGRES_DB:-legal_ai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  neo4j:
+    image: neo4j:5
+    container_name: legal-ai-neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-legal_ai_dev}
+    ports:
+      - "${NEO4J_HTTP_PORT:-7475}:7474"
+      - "${NEO4J_BOLT_PORT:-7688}:7687"
+    volumes:
+      - legal_ai_neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  legal_ai_postgres_data:
+  legal_ai_neo4j_data:
