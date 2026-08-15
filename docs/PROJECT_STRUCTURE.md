@@ -64,6 +64,7 @@ legal-ai/
 ├── evals/                       # LangSmith datasets & evaluators
 ├── notebooks/                   # exploration only, never imported
 ├── scripts/                     # one-off operational scripts
+│   └── recon/                   # Milestone 0 data-source probes — see §18
 └── tests/
 ```
 
@@ -228,6 +229,12 @@ tools/
 Matches the tool contracts in `LEGAL_DATA_SOURCES.md` §27. Every tool returns
 `Evidence`, never a raw string.
 
+**Not to be confused with `scripts/recon/`** (§18) — the one-time probe
+scripts used to validate source access before any of `tools/` was written.
+A probe answers "what does this source look like?" once, by hand; a tool
+answers "get me this data" on every agent call. Different code, different
+lifetime, different location, on purpose.
+
 ---
 
 ## 7. `sources/` — adapters
@@ -356,8 +363,8 @@ verification/
 ```
 
 Maps one-to-one onto what the Verification Agent must detect in
-`PHASE_1_AI_RESEARCH_PLAN.md` §9, and produces exactly the verification state
-the UI renders.
+`PHASE_6_VERIFICATION_ACTIVE_LEARNING.md` §1, and produces exactly the
+verification state the UI renders.
 
 ---
 
@@ -445,23 +452,56 @@ swapping a data provider becomes a prompt-rewriting exercise.
 
 ---
 
-## 17. Build order
+## 18. `scripts/recon/` — data-source probes (Milestone 0, complete)
 
-Follows the Phase 1 milestones:
+Not part of the runtime package. Five standalone, one-time scripts that
+sampled each Phase 1 source before any ingestion or tool code was written —
+see `PHASE_1_DATA_FOUNDATION.md` §2 Milestone 0 and
+`docs/DATA_RECON_FINDINGS.md` for what they found.
 
 ``` text
-schemas/          →  contracts first, everything depends on them
-ingestion/  +  knowledge/static/       →  Milestones 1–2
-sources/    +  tools/                  →  Milestone 3
-retrieval/                             →  Milestone 4
-context/                               →  Milestone 5  (before any agent)
-agents/researchers/  +  graph/         →  Milestones 6–7
-agents/analyst, case                   →  Milestone 8
-agents/draft                           →  Milestone 9
-verification/                          →  Milestone 10
-evals/                                 →  Milestone 11
+scripts/
+└── recon/
+    ├── common.py                      # ProbeReport schema, polite_get(),
+    │                                  # save_sample() — shared by every probe
+    ├── probe_supreme_court_bulk.py
+    ├── probe_gujarat_hc_bulk.py
+    ├── probe_india_code.py
+    ├── probe_official_scr_search.py
+    ├── probe_bharat_courts.py
+    └── aggregate.py                   # renders docs/DATA_RECON_FINDINGS.md
+```
+
+Each probe imports `get_licence()` from `legal_ai.sources.licensing` (§7)
+and returns a `ProbeReport`, not `Evidence` — `Evidence` is what a *tool*
+returns to an agent at query time; a `ProbeReport` is what a *probe* returns
+to a human, once, during recon. Do not extend a probe into a tool in place;
+Phase 2's tools (Milestone 4) are new code written against the confirmed
+schema, in `tools/` and `sources/`, following the boundaries in §16.
+
+---
+
+## 19. Build order
+
+Follows the 7-phase roadmap in `AI_PROJECT_PROPOSAL.md` §11. Each phase has
+its own plan doc; milestone numbers run continuously across all seven.
+
+``` text
+scripts/recon/                         →  Phase 1, Milestone 0  (complete)
+schemas/                               →  contracts first, everything depends on them
+ingestion/  +  knowledge/static/       →  Phase 1, Milestones 1–3
+sources/    +  tools/                  →  Phase 2, Milestone 4
+retrieval/                             →  Phase 2, Milestone 5
+context/                               →  Phase 3, Milestone 6  (before any agent)
+agents/researchers/  +  graph/         →  Phase 3, Milestones 7–8
+agents/document, case                  →  Phase 4, Milestones 9–10
+agents/analyst, draft                  →  Phase 5, Milestones 11–12
+verification/  +  knowledge/active/    →  Phase 6, Milestones 13–14
+evals/                                 →  Phase 7, Milestone 15
 api/                                   →  once the graph is stable
 ```
 
 `context/` lands before the agents because, by §6, no agent can be
-constructed without a thread context to initialize from.
+constructed without a thread context to initialize from. `schemas/evidence.py`
+and `sources/licensing.py` were already created in Milestone 0, ahead of
+schedule, because the probes needed them too — see §18.

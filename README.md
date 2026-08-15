@@ -129,8 +129,19 @@ legal-AI/
 | [`AI_PROJECT_PROPOSAL.md`](./docs/AI_PROJECT_PROPOSAL.md) | Core architecture: the three layers, shared thread context (§6), every agent, retrieval, knowledge graph, roadmap, guiding principles |
 | [`DATA_LAYER_ARCHITECTURE.md`](./docs/DATA_LAYER_ARCHITECTURE.md) | Static / dynamic / active in depth — pipelines, provenance, confidence model, promotion rules |
 | [`LEGAL_DATA_SOURCES.md`](./docs/LEGAL_DATA_SOURCES.md) | Every candidate Indian legal data source, its licensing, and the tool contracts that abstract them |
-| [`PHASE_1_AI_RESEARCH_PLAN.md`](./docs/PHASE_1_AI_RESEARCH_PLAN.md) | Phase 1 scope, agent responsibilities, 11 milestones, success criteria |
 | [`PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md) | The code layout: LangGraph / LangChain / LangSmith, module boundaries, build order |
+
+**Phase plans** — each phase has one job, one deliverable, its own doc (see `AI_PROJECT_PROPOSAL.md` §11 for the full roadmap table):
+
+| Phase | Doc | Deliverable |
+|---|---|---|
+| 1. Data Foundation | [`PHASE_1_DATA_FOUNDATION.md`](./docs/phases/PHASE_1_DATA_FOUNDATION.md) | A clean, searchable, versioned Indian legal data foundation |
+| 2. Query & Retrieval | [`PHASE_2_QUERY_RETRIEVAL.md`](./docs/phases/PHASE_2_QUERY_RETRIEVAL.md) | Reliable retrieval of the correct documents/sections/cases |
+| 3. Research Agents | [`PHASE_3_RESEARCH_AGENTS.md`](./docs/phases/PHASE_3_RESEARCH_AGENTS.md) | AI performs legal research, not just search |
+| 4. Case Intelligence | [`PHASE_4_CASE_DOCUMENT_INTELLIGENCE.md`](./docs/phases/PHASE_4_CASE_DOCUMENT_INTELLIGENCE.md) | AI understands the user's own case, not just the law |
+| 5. Analysis/Drafting | [`PHASE_5_ANALYSIS_DRAFTING.md`](./docs/phases/PHASE_5_ANALYSIS_DRAFTING.md) | Evidence + case facts become structured legal analysis |
+| 6. Verification/Active | [`PHASE_6_VERIFICATION_ACTIVE_LEARNING.md`](./docs/phases/PHASE_6_VERIFICATION_ACTIVE_LEARNING.md) | Every claim checked; usage never becomes law on its own |
+| 7. GraphRAG/Advanced | [`PHASE_7_ADVANCED_GRAPHRAG.md`](./docs/phases/PHASE_7_ADVANCED_GRAPHRAG.md) | A measurably smarter system, on a proven-trustworthy base |
 
 ### `design/` — product
 
@@ -185,19 +196,16 @@ or a non-commercial restriction travels with the data.
 
 ## Roadmap
 
-| Phase | Focus |
-|---|---|
-| **1** | Legal research and case analysis — the trustworthy pipeline |
-| 2 | Knowledge graph expansion and GraphRAG |
-| 3 | Multi-agent research with parallel and iterative loops |
-| 4 | Legal drafting — notices, petitions, research memos |
-| 5 | Active learning and validated knowledge promotion |
-| 6 | Advanced reasoning: conflicting precedent, temporal validity, benchmarks |
+Seven phases, each with one job and one deliverable — see the table in
+`AI_PROJECT_PROPOSAL.md` §11, or the phase-doc table above. We're currently
+in **Phase 1 — Data Foundation**: Milestone 0 (data recon) is complete;
+ingestion and indexing (Milestones 1–3) are next.
 
-Phase 1 succeeds when the system can take a real Indian legal question and
-identify the domain, find the relevant legislation and judgments, explain why
-each authority matters, preserve provenance, cite accurately, **detect
-insufficient evidence**, and avoid unsupported claims — repeatably.
+Phase 1 succeeds when India Code, Supreme Court, and Gujarat HC data has
+been ingested, passed the Source Verification Gate
+(`DATA_LAYER_ARCHITECTURE.md` §4), carries full provenance, and is stored in
+a versioned, indexed foundation — with **no agent, tool, or query interface**
+required yet. That's Phase 2 onward.
 
 The goal is not the most autonomous agent. It is a trustworthy legal research
 pipeline that later phases can safely make more agentic.

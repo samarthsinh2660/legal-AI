@@ -126,7 +126,7 @@ printed page — this is a real document, so it stays paper-white regardless of
 surrounding chrome), the AI analysis on the right.
 
 The analysis panel mirrors the Document Agent's responsibilities from
-`../docs/PHASE_1_AI_RESEARCH_PLAN.md` §6:
+`../docs/PHASE_4_CASE_DOCUMENT_INTELLIGENCE.md` §2:
 
 - **Key facts** — document type, execution date, consideration
 - **Legal issues detected** — each with a severity border and a
@@ -344,9 +344,9 @@ knowledge is never presented as authoritative.
 
 ## Not designed yet
 
-- **Drafting** (notices, petitions, replies) — deferred to a later phase in
-  `../docs/PHASE_1_AI_RESEARCH_PLAN.md` §8
+- **Drafting** (notices, petitions, replies) — deferred beyond Phase 7, per
+  `../docs/PHASE_5_ANALYSIS_DRAFTING.md` §3
 - **Per-user knowledge graphs** — deferred in
-  `../docs/DATA_LAYER_ARCHITECTURE.md` §13; Knowledge shows one global graph
+  `../docs/DATA_LAYER_ARCHITECTURE.md` §14; Knowledge shows one global graph
 - **Auth, billing, settings internals** — the sidebar entries are
   placeholders; only the design-system reference is built behind Settings
