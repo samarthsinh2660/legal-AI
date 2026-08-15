@@ -1,6 +1,8 @@
 # Phase 1 — Data Foundation: Ingestion Pipeline
 
-**Status:** Draft — pending review
+**Status:** Approved. Infrastructure (Postgres+pgvector, Neo4j via
+`docker-compose.yml`) is live and verified — see repo root
+`docker-compose.yml` and `.env.example`.
 **Depends on:** `docs/DATA_LAYER_ARCHITECTURE.md`, `docs/LEGAL_DATA_SOURCES.md`,
 `docs/PROJECT_STRUCTURE.md`, `docs/DATA_RECON_FINDINGS.md`,
 `docs/phases/PHASE_1_DATA_FOUNDATION.md`
