@@ -57,18 +57,41 @@ def run() -> None:
     start = time.monotonic()
 
     for i, (act_id, source_url) in enumerate(act_rows, start=1):
-        try:
-            act_html = polite_get(source_url).text
-            ajax_ids = extract_section_ajax_ids(act_html)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[{i}/{total_acts}] {act_id}: FAILED to fetch/parse Act page: {exc!r}", flush=True)
-            _log_error(act_id, act_id, f"act page fetch/parse failed: {exc!r}")
-            continue
-
         rows = conn.execute(
             "SELECT document_id FROM documents WHERE document_type='section' AND act_id=%s AND full_text=''",
             (act_id,),
         ).fetchall()
+
+        # India Code sometimes serves a real 200 response that just lacks the
+        # section markup we expect (a soft block/rate-limit, not a network
+        # error polite_get's retries would catch) — seen for real during the
+        # server-side run: act pages fetched cleanly earlier that briefly
+        # returned 0 extractable sections, then worked fine again minutes
+        # later. Retry a few times with a real pause before giving up, since
+        # marking every section in the Act failed loses far more than one
+        # request's worth of work.
+        ajax_ids: dict[str, tuple[str, str]] = {}
+        fetch_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                act_html = polite_get(source_url).text
+                ajax_ids = extract_section_ajax_ids(act_html)
+                fetch_error = None
+            except Exception as exc:  # noqa: BLE001
+                fetch_error = exc
+                ajax_ids = {}
+            if ajax_ids or not rows:
+                break
+            time.sleep(30 * (attempt + 1))
+
+        if fetch_error is not None:
+            print(f"[{i}/{total_acts}] {act_id}: FAILED to fetch/parse Act page: {fetch_error!r}", flush=True)
+            _log_error(act_id, act_id, f"act page fetch/parse failed: {fetch_error!r}")
+            continue
+        if not ajax_ids and rows:
+            print(f"[{i}/{total_acts}] {act_id}: FAILED — 0 sections extracted after 3 attempts", flush=True)
+            _log_error(act_id, act_id, "0 sections extracted from Act page after 3 attempts (possible soft block)")
+            continue
 
         filled = 0
         for (document_id,) in rows:
@@ -79,11 +102,19 @@ def run() -> None:
                 _log_error(document_id, act_id, "no actid/sectionId found on Act page")
                 continue
             actid, section_id = ids
-            try:
-                text = fetch_section_text(actid, section_id)
-            except Exception as exc:  # noqa: BLE001
+            text = None
+            section_error: Exception | None = None
+            for attempt in range(2):
+                try:
+                    text = fetch_section_text(actid, section_id)
+                    section_error = None
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    section_error = exc
+                    time.sleep(15)
+            if section_error is not None or text is None:
                 total_failed += 1
-                _log_error(document_id, act_id, f"SectionPageContent fetch failed: {exc!r}")
+                _log_error(document_id, act_id, f"SectionPageContent fetch failed: {section_error!r}")
                 continue
 
             doc = get_document(conn, document_id)
