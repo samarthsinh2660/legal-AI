@@ -10,7 +10,7 @@ fetch error) is logged to section_fill_errors.csv next to this script,
 with the document_id, act_id, and the exact reason, so failures can be
 inspected and re-driven later instead of just seeing a count.
 
-Run: .venv/bin/python -m scripts.fill_section_bodies
+Run: .venv/bin/python -m scripts.section_collection.fill_section_bodies
 """
 
 from __future__ import annotations
