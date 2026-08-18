@@ -139,15 +139,29 @@ any ingested batch is promoted to the trusted store.
 
 ## 4. Milestones
 
-### Milestone 1
+### Milestone 1 --- Static India Code knowledge base (complete)
 
-Static India Code knowledge base.
+845 regular Acts + 14 Spent Acts (860 total, matching the official current
+count), 35,601 Sections, real body text for 99.997% of them (the one
+disclosed exception is documented in
+`docs/superpowers/specs/2026-08-15-section-body-fetch-design.md`).
+Real-estate-sector pilot tested against this data --- see
+`docs/superpowers/specs/2026-08-17-real-estate-pilot-testing.md`.
 
-### Milestone 2
+### Milestone 2 --- Supreme Court + any state High Court (revised approach)
 
-Supreme Court + Gujarat HC historical corpus (bulk ingestion from the two
-Vanga S3 buckets confirmed in Milestone 0, run through the Source
-Verification Gate).
+**Superseded the original plan of bulk-ingesting the full corpus, and
+broadened from "Gujarat HC" specifically to any state HC.** Per team
+decision 2026-08-17 (see
+`docs/superpowers/specs/2026-08-17-dynamic-judgment-search-design.md`):
+the static knowledge graph covers Acts/Sections/Penal Codes only. Supreme
+Court judgments (via the Vanga bulk archive) and state High Court
+judgments (via Bharat Courts, not yet probed) are fetched **lazily and
+cached** --- a judgment is only fetched, verified through the Source
+Verification Gate, and permanently stored the first time a real query
+actually needs it, not
+speculatively ahead of time. The first real case added this way:
+`judgment:sc-2026-ca-6936-2023`.
 
 ### Milestone 3
 
