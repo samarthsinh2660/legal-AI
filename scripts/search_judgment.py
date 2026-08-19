@@ -34,9 +34,17 @@ def main() -> None:
         action="store_true",
         help="Only find and verify — don't write to Postgres/Neo4j.",
     )
+    parser.add_argument(
+        "--skip-db",
+        dest="skip_db",
+        action="store_true",
+        help="Force a fresh live search even if a cached DB match exists — use when a "
+        "previous cached match turned out to be the wrong document (same parties, "
+        "different proceeding).",
+    )
     args = parser.parse_args()
 
-    result = search_judgment(args.query, year=args.year)
+    result = search_judgment(args.query, year=args.year, skip_db=args.skip_db)
 
     if not result.found or result.document is None:
         print(json.dumps({"found": False, "notes": result.notes}, indent=2))
