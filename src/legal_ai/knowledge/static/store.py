@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import re
 
 import psycopg
 
 from legal_ai.ingestion.schema import CanonicalDocument
 from legal_ai.schemas.evidence import Provenance
+
+_WORD_RE = re.compile(r"[A-Za-z]{4,}")
+_STOPWORDS = {"the", "act", "and", "for", "act,"}
 
 
 def upsert_document(
@@ -113,6 +117,35 @@ def get_document(conn: psycopg.Connection, document_id: str) -> CanonicalDocumen
         )
         row = cur.fetchone()
     return _row_to_document(row) if row else None
+
+
+def find_act_by_name(conn: psycopg.Connection, act_name: str) -> str | None:
+    """Resolve a statute name (as written in a judgment) to a stored Act's document_id.
+
+    Requires every significant (4+ letter) word from `act_name` to appear
+    in a candidate Act's title, case-insensitively — deliberately strict:
+    a wrong Act match would create a false CITES_SECTION edge, which is
+    worse than leaving the reference unresolved. Returns the shortest
+    matching title on the theory that it's the most specific match.
+    """
+    words = [w.lower() for w in _WORD_RE.findall(act_name) if w.lower() not in _STOPWORDS]
+    if not words:
+        return None
+
+    conditions = " AND ".join(f"title ILIKE %s" for _ in words)
+    params = [f"%{w}%" for w in words]
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT document_id FROM documents
+            WHERE document_type = 'act' AND {conditions}
+            ORDER BY length(title) ASC
+            LIMIT 1
+            """,
+            params,
+        )
+        row = cur.fetchone()
+    return row[0] if row else None
 
 
 def find_similar(

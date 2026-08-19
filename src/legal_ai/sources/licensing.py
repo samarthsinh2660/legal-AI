@@ -71,6 +71,32 @@ KNOWN_LICENCES: dict[str, LicenceInfo] = {
             "authoritative."
         ),
     ),
+    "bharat_courts_archive": LicenceInfo(
+        source="bharat_courts_archive",
+        licence="CC-BY-4.0 (Vanga public AWS Open Data archives)",
+        attribution_required=True,
+        redistribution_allowed=True,
+        notes=(
+            "bharat-courts' ArchiveClient over the same Vanga "
+            "indian-supreme-court-judgments / indian-high-court-judgments "
+            "public archives as supreme_court_bulk / gujarat_hc_bulk, but "
+            "queried per-lookup instead of bulk-downloaded — covers any "
+            "state High Court, not just Gujarat."
+        ),
+    ),
+    "indian_kanoon": LicenceInfo(
+        source="indian_kanoon",
+        licence="Public case-law aggregator — not an official government source",
+        attribution_required=True,
+        redistribution_allowed=True,
+        notes=(
+            "Fallback only, used when a judgment isn't in the Bharat "
+            "Courts archive (e.g. the 2026 coverage gap). Must be labeled "
+            "as a secondary aggregator in provenance, not treated as "
+            "primary — matches how judgment:sc-2026-ca-6936-2023 was "
+            "already labeled."
+        ),
+    ),
 }
 
 
