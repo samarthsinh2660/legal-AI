@@ -1,6 +1,10 @@
 # Dynamic, Lazy-Cached Judgment Search — Design
 
-**Status:** Approved (design only — no code written yet)
+**Status:** Implemented and verified against real data (2026-08-19) — see
+`src/legal_ai/ingestion/judgments/dynamic_search.py`,
+`src/legal_ai/ingestion/judgments/store.py`, `scripts/search_judgment.py`.
+District Courts investigated separately and deferred — see new section
+below.
 
 ## Decision
 
@@ -53,12 +57,14 @@ a reusable tool.
       (`metadata/parquet/year=YYYY/`) — real primary source, but has a
       coverage gap (2026 data currently starts 01-04-2026; earlier
       judgments in the current year may be missing).
-   b. For any state High Court case: Bharat Courts
-      (`iamshouvikmitra/bharat-courts`) — **not yet probed**; needs the
-      same one-time recon treatment every other source in this project
-      got (`scripts/recon/probe_*.py` pattern) before first real use, to
-      confirm its real schema, reachability, and licence, the same way
-      the Vanga buckets were confirmed in Milestone 0.
+   b. For any state High Court case: Bharat Courts' `ArchiveClient`
+      (`iamshouvikmitra/bharat-courts`) — the public Vanga AWS Open Data
+      archive, no CAPTCHA, covers SC + all 29 High Courts in one client.
+      Confirmed live 2026-08-19 for both `court='sci'` and `court='delhi'`
+      (a real Delhi HC judgment, `judgment:dlhc010257112023`, was found,
+      verified, and stored end-to-end). A `year` hint is strongly
+      recommended: an unfiltered search scans every court partition and
+      didn't finish in 90s in testing, vs. ~23s with a year given.
    c. Indian Kanoon, as a universal fallback for anything not yet in
       either bulk archive — a real, public case-law aggregator, not an
       official government source, so it must be labeled as such in
@@ -66,9 +72,17 @@ a reusable tool.
 3. Whatever is found goes through the same `verify_batch` Source
    Verification Gate already used for India Code — not a lighter bar.
 4. On pass: store via `upsert_document` + `embed`, write graph edges via
-   `write_judgment` (citations extracted via the existing
-   `extract_citations`), exactly like every other document in this
-   project.
+   `write_judgment` — `CITES` (citations extracted via the existing
+   `extract_citations`), `DECIDED_BY`, and (added 2026-08-19)
+   `CITES_SECTION`: `statute_citations.py` regex-extracts "Section N of
+   [the] X Act" references from the judgment text, resolves the Act name
+   against stored Acts via `find_act_by_name` (strict — every significant
+   word must match, to avoid a false edge), and writes the edge only when
+   the resolved Section document genuinely exists; unresolved references
+   are recorded as `dangling_section_citations`, same honesty discipline
+   as judgment-to-judgment citations. Query via
+   `scripts/section_case_lookup.py` (`judgments-for <section_id>` /
+   `sections-in <judgment_id>`).
 5. On failure to find anything from any source: report that plainly to
    the caller — no fabrication, same discipline as the India Code work.
 
@@ -88,11 +102,56 @@ the `legal-data-retrieval` skill can use it the same way.
   CAPTCHA-solving tooling, regardless of source priority ordering. The
   bulk archive and Indian Kanoon are sufficient real, accessible sources.
 
+## District Courts — investigated, deferred (2026-08-19)
+
+Bharat Courts also wraps District Courts (`services.ecourts.gov.in`,
+700+ court complexes nationally), which was investigated as a possible
+fourth source. Initially ruled out on the assumption that it's
+CAPTCHA-gated the same way the official SC portal is — that assumption
+was wrong and got corrected: the `bharat-courts` library ships its own
+automated CAPTCHA solver (`ddddocr`-based OCR, purpose-built for
+eCourts' Securimage CAPTCHA), which is a legitimate library feature, not
+something this project would be building itself. The CAPTCHA itself was
+confirmed solvable against the live portal.
+
+Investigation instead surfaced two confirmed, precise bugs in
+`bharat-courts` (0.3.3, the latest published version) that make District
+Court search unreliable right now, independent of the CAPTCHA:
+
+1. **[Issue #25](https://github.com/iamshouvikmitra/bharat-courts/issues/25)**
+   — `list_states()` returns a hardcoded table (`DISTRICT_STATES`), not a
+   live call. Diffed against the real `sess_state_code` dropdown scraped
+   directly from the live portal: **13 of 36 state codes are wrong**
+   (e.g. the SDK's Delhi=`7` is actually Jharkhand on the live portal;
+   real Delhi is `26`). Silent failure mode — `list_districts()` with a
+   wrong code still succeeds and returns real, well-formed data, just for
+   the wrong state.
+2. **[Issue #26](https://github.com/iamshouvikmitra/bharat-courts/issues/26)**
+   — `parse_ajax_response()` has two failure paths that behave
+   differently: JSON with `status: 0` correctly raises `CaptchaError` and
+   retries; non-JSON/empty responses (which the portal returns often on
+   the actual search submit) silently return `{"status": 0, "raw": text}`
+   **without raising**, so the retry logic never fires and
+   `case_status_by_party()` reports a fabricated-looking `0 results`.
+   Confirmed by tracing the raw HTTP response (a literal empty string)
+   and by running a near-certain-to-match query ("Bank" in a Delhi
+   commercial-court complex, full year) 5 times — ~20+ total CAPTCHA-
+   solved attempts, zero real hits, ever.
+
+Building District Court search on top of either bug risks reporting
+"case not found" when the true state is "the request to the portal
+silently failed" — the same non-fabrication discipline that governs
+every other source in this project. **Decision: leave District Courts
+out of the search flow until upstream fixes land**, or until a real
+query specifically needs one known court complex and the two bugs are
+worked around locally (our own verified state-code table + a
+retry-on-empty-response wrapper — both scoped, not attempted here since
+there's no confirmed use case yet). SC + any state HC via the Archive is
+unaffected by either bug and remains the default path.
+
 ## Out of scope for this doc
 
-- Probing Bharat Courts (needs its own recon pass before the tool can
-  rely on it — same discipline as every other source this project uses).
-- Building the actual tool (a follow-up implementation task, likely via
-  `writing-plans` given it touches the graph writer and verification
-  gate — real production code, not a disposable script).
 - Deciding which sector comes after real estate.
+- Reconsidering District Courts (see section above — tracked via the two
+  filed upstream issues, revisit if/when they're fixed or a real query
+  needs one).

@@ -148,22 +148,38 @@ disclosed exception is documented in
 Real-estate-sector pilot tested against this data --- see
 `docs/superpowers/specs/2026-08-17-real-estate-pilot-testing.md`.
 
-### Milestone 2 --- Supreme Court + any state High Court (revised approach)
+### Milestone 2 --- Supreme Court + any state High Court (complete)
 
 **Superseded the original plan of bulk-ingesting the full corpus, and
 broadened from "Gujarat HC" specifically to any state HC.** Per team
 decision 2026-08-17 (see
 `docs/superpowers/specs/2026-08-17-dynamic-judgment-search-design.md`):
 the static knowledge graph covers Acts/Sections/Penal Codes only. Supreme
-Court judgments (via the Vanga bulk archive) and state High Court
-judgments (via Bharat Courts, not yet probed) are fetched **lazily and
-cached** --- a judgment is only fetched, verified through the Source
-Verification Gate, and permanently stored the first time a real query
-actually needs it, not
-speculatively ahead of time. The first real case added this way:
-`judgment:sc-2026-ca-6936-2023`.
+Court judgments and state High Court judgments (via Bharat Courts'
+`ArchiveClient`) are fetched **lazily and cached** --- a judgment is only
+fetched, verified through the Source Verification Gate, and permanently
+stored the first time a real query actually needs it, not speculatively
+ahead of time.
 
-### Milestone 3
+Built and verified against real data 2026-08-19:
+`src/legal_ai/ingestion/judgments/dynamic_search.py` (fetch + verify),
+`src/legal_ai/ingestion/judgments/store.py` (store), `scripts/search_judgment.py`
+(CLI). Also extended beyond the original design: judgment text is now
+regex-scanned for Act/Section references (`statute_citations.py`) and
+resolved into `CITES_SECTION` graph edges, queryable via
+`scripts/section_case_lookup.py` --- e.g. "which stored judgments cite
+Section 18 of RERA."
+
+District Courts (also available via Bharat Courts, 700+ complexes) were
+investigated and deliberately deferred --- two confirmed upstream bugs
+make that path unreliable right now (wrong state codes; search failures
+silently reported as "0 results"), filed as
+[bharat-courts#25](https://github.com/iamshouvikmitra/bharat-courts/issues/25)
+and
+[#26](https://github.com/iamshouvikmitra/bharat-courts/issues/26). See
+the design doc's "District Courts" section for the full writeup.
+
+### Milestone 3 (complete)
 
 Canonical document store, vector index, and initial knowledge graph --
 the two outputs at the bottom of the §1 diagram. This is a basic index
@@ -171,13 +187,26 @@ sufficient to prove the corpus is stored and queryable; the full hybrid
 retrieval system (keyword + vector + metadata + graph, reranking) is
 Phase 2, not this milestone.
 
+Satisfied as a byproduct of Milestones 1 and 2, not separate work: the
+Postgres `documents` table (canonical store) and pgvector embeddings
+(vector index) hold every ingested Act/Section/Judgment, and Neo4j holds
+the initial graph -- `CONTAINS` (Act->Section), `CITES`
+(judgment->judgment), `CITES_SECTION` (judgment->Section, added
+2026-08-19), `DECIDED_BY` (judgment->Court) -- all populated with real
+data, none of it speculative.
+
 ------------------------------------------------------------------------
 
 ## 5. Deliverable
 
 > A clean, searchable, versioned Indian legal data foundation.
 
-Phase 1 is successful when, for India Code, Supreme Court, and Gujarat HC:
+**Revised 2026-08-17** to match Milestone 2's revised approach (see
+`docs/superpowers/specs/2026-08-17-dynamic-judgment-search-design.md`) --
+the original bar required a fully bulk-ingested Supreme Court + Gujarat HC
+corpus, which is no longer the plan. Phase 1 is now successful when:
+
+**For India Code (static, fully ingested):**
 
 1. Data has been ingested from a confirmed-reachable source.
 2. Every document has passed the Source Verification Gate (sampled and
@@ -188,6 +217,37 @@ Phase 1 is successful when, for India Code, Supreme Court, and Gujarat HC:
    store, and represented in an initial knowledge graph.
 5. The store is versioned, so a later re-sync doesn't silently overwrite
    what an earlier answer was grounded in.
+
+**Status:** complete -- see Milestone 1 above.
+
+**For Supreme Court + any state High Court (dynamic, lazy-cached):**
+
+1. A working fetch-verify-store mechanism exists that, given a real
+   judgment lookup, checks the DB first, then searches the Bharat Courts
+   archive (SC + any state HC) / Indian Kanoon in order, runs whatever it
+   finds through the same Source Verification Gate as India Code, and
+   stores it with full provenance + graph edges on success.
+2. Bharat Courts has been probed and used live, the same way the Vanga
+   buckets were probed in Milestone 0.
+3. At least one real judgment has been fetched, verified, and stored this
+   way end-to-end via the actual tool, proving the mechanism works on
+   real data.
+
+**Status:** complete -- see Milestone 2 above. Verified live 2026-08-19
+against a real Delhi High Court judgment (`judgment:dlhc010257112023`,
+found via the archive, verified, stored) and confirmed idempotent
+(re-running the same lookup short-circuits on the DB check, no network
+call). District Courts are a known, deliberately deferred gap -- not
+required for this Status, see Milestone 2's note above.
+
+**Why this fetch-verify-store mechanism is still Phase 1, not Phase 2:**
+it is a data-layer utility parallel to `ingest_india_code` -- it fetches,
+verifies, and stores one document, the same job the India Code pipeline
+does, just triggered lazily instead of in a bulk batch. It is not an
+agent, does not do multi-step reasoning, and does not answer a user's
+question -- so the "no agent, no query interface" boundary below still
+holds; only *how* Phase 1's own ingestion gets triggered has changed for
+this data source, not *what* Phase 1 is responsible for.
 
 No agent, no search tool, and no query interface is required to call this
 phase done -- those are what Phase 2 and Phase 3 build on top of this
