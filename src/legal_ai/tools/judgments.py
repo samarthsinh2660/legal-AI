@@ -30,9 +30,15 @@ def _to_evidence(doc: CanonicalDocument) -> Evidence:
 
 
 def search_judgments(
-    query: str, year: int | tuple[int, int] | None = None, store: bool = True
+    query: str,
+    year: int | tuple[int, int] | None = None,
+    store: bool = True,
+    skip_db: bool = False,
 ) -> list[Evidence]:
-    result = search_judgment(query, year=year)
+    """`skip_db=True` forces a fresh live search even if a cached DB
+    match exists — use when a previous cached match turned out to be the
+    wrong document (see dynamic_search.search_judgment's docstring)."""
+    result = search_judgment(query, year=year, skip_db=skip_db)
     if not result.found or result.document is None:
         return []
 

@@ -96,7 +96,7 @@ def cmd_act_sections(args: argparse.Namespace) -> None:
 
 
 def cmd_search_judgment(args: argparse.Namespace) -> None:
-    results = search_judgments(args.query, year=args.year)
+    results = search_judgments(args.query, year=args.year, skip_db=args.skip_db)
     if not results:
         print(json.dumps({"found": False}))
         sys.exit(1)
@@ -145,6 +145,14 @@ def main() -> None:
     )
     p_search_judgment.add_argument("query")
     p_search_judgment.add_argument("--year", type=int, default=None)
+    p_search_judgment.add_argument(
+        "--skip-db",
+        dest="skip_db",
+        action="store_true",
+        help="Force a fresh live search even if a cached DB match exists — use when a "
+        "previous cached match turned out to be the wrong document (same parties, "
+        "different proceeding).",
+    )
     p_search_judgment.set_defaults(func=cmd_search_judgment)
 
     p_citations = sub.add_parser("citations", help="List Judgments a Judgment cites via the graph.")
