@@ -9,20 +9,10 @@ with real full text -- the graph never stores full text itself.
 from __future__ import annotations
 
 from legal_ai.graphdb.client import get_driver
-from legal_ai.ingestion.schema import CanonicalDocument
 from legal_ai.knowledge.static.db import get_connection
 from legal_ai.knowledge.static.store import get_document
+from legal_ai.retrieval.evidence_builder import to_evidence
 from legal_ai.schemas.evidence import Evidence
-
-
-def _to_evidence(doc: CanonicalDocument) -> Evidence:
-    return Evidence(
-        content=doc.full_text,
-        document_id=doc.document_id,
-        title=doc.title,
-        document_type=doc.document_type,
-        provenance=doc.provenance,
-    )
 
 
 def _resolve_all(document_ids: list[str]) -> list[Evidence]:
@@ -33,7 +23,7 @@ def _resolve_all(document_ids: list[str]) -> list[Evidence]:
         docs = [get_document(conn, doc_id) for doc_id in document_ids]
     finally:
         conn.close()
-    return [_to_evidence(doc) for doc in docs if doc is not None]
+    return [to_evidence(doc) for doc in docs if doc is not None]
 
 
 def find_citations(judgment_id: str) -> list[Evidence]:
