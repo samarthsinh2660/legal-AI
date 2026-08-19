@@ -250,7 +250,7 @@ def _search_indian_kanoon(query: str) -> Optional[CanonicalDocument]:
 
 
 def search_judgment(
-    query: str, year: int | tuple[int, int] | None = None
+    query: str, year: int | tuple[int, int] | None = None, skip_db: bool = False
 ) -> JudgmentSearchResult:
     """Find a real judgment for `query` (case name or citation).
 
@@ -260,13 +260,23 @@ def search_judgment(
     filter enables partition pruning — confirmed live 2026-08-18, ~23s
     with a year filter vs. >90s (didn't finish) without one.
 
+    `skip_db`: the DB check matches on title word-overlap, which cannot
+    tell two real, distinct proceedings between the same parties apart
+    (e.g. a case's main judgment vs. a later review-petition order on the
+    same appeal — confirmed live 2026-08-19: once one got cached, four
+    separate queries for the other kept returning the wrong cached
+    document instead of ever searching live sources again). Pass
+    `skip_db=True` to force a fresh live search when you have reason to
+    believe a cached word-overlap match is the wrong document.
+
     Does not store anything — see module docstring. Caller decides what
     to do with a found-and-verified CanonicalDocument (e.g. hand it to
     upsert_document + write_judgment once that step is built).
     """
-    db_hit = _check_db(query)
-    if db_hit is not None:
-        return db_hit
+    if not skip_db:
+        db_hit = _check_db(query)
+        if db_hit is not None:
+            return db_hit
 
     document = _search_bharat_courts_archive(query, year)
     source: SourceName = "bharat_courts_archive"
