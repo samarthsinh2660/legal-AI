@@ -32,5 +32,8 @@ class Provenance(BaseModel):
 
 class Evidence(BaseModel):
     content: str
+    document_id: Optional[str] = None
+    title: Optional[str] = None
+    document_type: Optional[str] = None
     provenance: Provenance
     location: Optional[Location] = None

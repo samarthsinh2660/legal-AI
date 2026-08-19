@@ -87,17 +87,36 @@ graph_lookup(entity_or_relationship)
 
 ## 3. Milestones
 
-### Milestone 4
+### Milestone 4 (complete)
 
 Court search tools -- the tool contracts above, implemented in
 `src/legal_ai/tools/` and `src/legal_ai/sources/` per
 `PROJECT_STRUCTURE.md` §6--7.
 
-### Milestone 5
+Built 2026-08-19, per
+`docs/superpowers/specs/2026-08-19-phase2-milestone4-tool-contracts-design.md`
+and `docs/superpowers/plans/2026-08-19-phase2-milestone4-tool-contracts.md`:
+a consolidated, backed-only subset of the tool surface above --
+`search_statutes`, `get_statute`, `get_section`
+(`src/legal_ai/tools/statutes.py`); `search_judgments`, `get_judgment`
+(`src/legal_ai/tools/judgments.py`); `find_citations`,
+`find_section_citations`, `find_judgment_sections`
+(`src/legal_ai/tools/graph.py`). Every tool returns `Evidence`
+(`src/legal_ai/schemas/evidence.py`, extended with optional
+`document_id`/`title`/`document_type` fields to make results
+self-describing). `get_order`, `search_high_court` (as distinct from
+`search_supreme_court`), `search_static_knowledge`, and `graph_lookup`
+were deliberately left out -- no real backing logic exists for them yet
+(`get_order` needs District Courts, deferred -- see Milestone 2's note in
+`PHASE_1_DATA_FOUNDATION.md`). 11 tests, all passing, real Postgres/Neo4j
+(no mocks).
+
+### Milestone 5 (not started)
 
 Hybrid legal retrieval -- keyword + vector + metadata + graph fan-in,
 reranking, and evidence-building (`src/legal_ai/retrieval/` per
-`PROJECT_STRUCTURE.md` §8).
+`PROJECT_STRUCTURE.md` §8). Sits on top of Milestone 4's tools rather than
+replacing them.
 
 ------------------------------------------------------------------------
 
