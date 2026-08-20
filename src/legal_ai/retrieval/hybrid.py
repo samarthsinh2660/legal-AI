@@ -53,7 +53,7 @@ def hybrid_search(
     limit: int = 10,
     filters: MetadataFilters | None = None,
     expand_graph: bool = False,
-    rerank: bool = False,
+    rerank: bool = True,
 ) -> list[Evidence]:
     """Retrieve the most relevant stored documents for `query`.
 
@@ -61,8 +61,10 @@ def hybrid_search(
     sources is legal_ai.tools.judgments.search_judgments.
 
     `rerank` runs a cross-encoder over the top RERANK_CANDIDATES results.
-    It measurably improves ordering but costs seconds per query on CPU, so
-    it is opt-in until measured on the target hardware.
+    On by default because it is load-bearing, not polish: without it this
+    pipeline measures MRR 0.299 on the benchmark, with it 0.530. It costs
+    roughly a second or two per query on CPU; pass rerank=False, or set
+    RERANK_MODEL to the lighter L-6, where latency matters more.
 
     `expand_graph` defaults to False: with few judgments stored, most
     CITES/CITES_SECTION edges do not exist and expansion contributes more
