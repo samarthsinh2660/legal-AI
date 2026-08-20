@@ -111,7 +111,7 @@ were deliberately left out -- no real backing logic exists for them yet
 `PHASE_1_DATA_FOUNDATION.md`). 11 tests, all passing, real Postgres/Neo4j
 (no mocks).
 
-### Milestone 5 (in progress -- 1 of 4 sub-projects complete)
+### Milestone 5 (complete)
 
 Hybrid legal retrieval -- keyword + vector + metadata + graph fan-in,
 reranking, and evidence-building (`src/legal_ai/retrieval/` per
@@ -249,8 +249,54 @@ Decomposed into four sub-projects (see
 
    Test-set caveat: n=5 queries. Directionally consistent and both fixes
    land where predicted, but widen the set before treating 0.900 as precise.
-3. Chunking pipeline (`chunking/statute.py`, `chunking/judgment.py`) -- not started.
-4. Cross-encoder reranking (`rerank.py`) -- not started.
+3. **Chunking pipeline -- complete.** `retrieval/chunking/statute.py` splits
+   on sub-section markers and provisos, never mid-clause;
+   `retrieval/chunking/judgment.py` splits on numbered paragraphs and keeps
+   the number, because a citation to "paragraph 42" cannot be verified if
+   chunking discarded it. Chunks live in `document_chunks`, kept out of the
+   canonical `documents` table so they can be rebuilt without touching
+   canonical data. 18,031 chunks from 6,654 documents.
+
+   A document is represented in vector search exactly once: short documents
+   by their own embedding, long ones by their chunks (parent embedding
+   cleared, since a truncated vector misrepresents the document). Acts are
+   excluded -- an Act's text is its sections concatenated and those are
+   embedded individually.
+
+   **Measured effect.** On the 15-query benchmark chunking is roughly
+   neutral (MRR 0.425 -> 0.404, recall@5 67% -> 73%): that benchmark's
+   ground truth is mostly short sections that were never truncated, so it
+   measures the dilution from 18k extra candidates rather than the benefit.
+   Measured on text drawn from *beyond* the old truncation point -- content
+   that previously had no representation at all -- mean distance fell
+   0.341 -> 0.140, all 12 sampled documents improved, and one (BNS §2, at
+   0.883) moved from beyond the relevance floor (unreachable at any rank)
+   to 0.280. Kept on that basis: unreachable text is a correctness problem,
+   a small ranking dilution is not.
+
+4. **Cross-encoder reranking -- complete.** `retrieval/rerank.py`, opt-in via
+   `hybrid_search(..., rerank=True)`.
+
+   | | MRR | recall@1 | recall@5 | recall@10 | ms/query |
+   |---|---|---|---|---|---|
+   | no reranking | 0.433 | 27% | 73% | 73% | -- |
+   | ms-marco-MiniLM-L-6 | 0.471 | 27% | 80% | 87% | 1272 |
+   | **ms-marco-MiniLM-L-12** (default) | **0.577** | **40%** | **87%** | 87% | 2474 |
+
+   Largest gains are mid-shortlist reordering: Contract §25 32 -> 3, TPA §54
+   23 -> 3, BNS §103 18 -> 4. `RERANK_CANDIDATES = 50` is deliberately
+   generous -- a shorter shortlist would never show the reranker the deep
+   documents that produce those gains.
+
+   Confirmed limit: reranking reorders, it never recovers recall. Contract
+   §27 sits at rank 546, outside any practical shortlist, and is unchanged.
+
+   One consistent regression in both models: BNS §356 (defamation) 4 -> 21,
+   most likely MS MARCO's web-search training not matching legal phrasing.
+
+   Model is swappable via `RERANK_MODEL` (L-6 registered for when latency
+   matters more than ranking quality). Latency above is a development
+   laptop; re-measure on the CPU-only server before enabling by default.
 
 **Measured retrieval quality after sub-project 1 (honest baseline, not a
 success claim).** For the query *"builder failed to give possession on

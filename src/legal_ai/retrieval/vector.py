@@ -88,3 +88,45 @@ def search_vector(
             best[document_id] = distance
 
     return sorted(best.items(), key=lambda item: item[1])[:limit]
+
+
+def best_passages(
+    conn: psycopg.Connection,
+    query: str,
+    document_ids: list[str],
+    max_chars: int = 2000,
+) -> list[tuple[str, str]]:
+    """The passage of each document that best matches `query`.
+
+    A reranker scores query against passage, so it needs the piece that
+    actually matched -- for a chunked document that is the nearest chunk,
+    not the head of a long document that may be about something else.
+
+    Returns (document_id, passage) in the order given.
+    """
+    if not document_ids:
+        return []
+
+    query_embedding = embed(query)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT document_id, text FROM (
+              SELECT document_id, left(full_text, %s) AS text,
+                     row_number() OVER (PARTITION BY document_id
+                                        ORDER BY embedding <=> %s::vector) AS rn
+              FROM documents
+              WHERE embedding IS NOT NULL AND document_id = ANY(%s)
+              UNION ALL
+              SELECT document_id, left(text, %s),
+                     row_number() OVER (PARTITION BY document_id
+                                        ORDER BY embedding <=> %s::vector)
+              FROM document_chunks
+              WHERE embedding IS NOT NULL AND document_id = ANY(%s)
+            ) t WHERE rn = 1
+            """,
+            (max_chars, query_embedding, document_ids, max_chars, query_embedding, document_ids),
+        )
+        found = dict(cur.fetchall())
+
+    return [(doc_id, found[doc_id]) for doc_id in document_ids if doc_id in found]

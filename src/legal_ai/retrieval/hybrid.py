@@ -14,7 +14,8 @@ from legal_ai.retrieval.evidence_builder import build_evidence
 from legal_ai.retrieval.graph_search import expand_via_graph
 from legal_ai.retrieval.keyword import search_keyword
 from legal_ai.retrieval.metadata import MetadataFilters, search_metadata
-from legal_ai.retrieval.vector import search_vector
+from legal_ai.retrieval.rerank import rerank as rerank_candidates
+from legal_ai.retrieval.vector import best_passages, search_vector
 from legal_ai.schemas.evidence import Evidence
 
 # Standard RRF constant (Cormack et al., 2009). Large enough that the gap
@@ -24,6 +25,11 @@ RRF_K = 60
 # Signals over-fetch so fusion can promote documents several signals agree
 # on, even when none ranked them first.
 _SIGNAL_OVERFETCH = 3
+
+# Shortlist size handed to the reranker. Deliberately generous: the largest
+# measured gains came from documents sitting at ranks 20-35, which a
+# shorter shortlist would simply never show the reranker.
+RERANK_CANDIDATES = 50
 
 
 def reciprocal_rank_fusion(
@@ -47,18 +53,29 @@ def hybrid_search(
     limit: int = 10,
     filters: MetadataFilters | None = None,
     expand_graph: bool = False,
+    rerank: bool = False,
 ) -> list[Evidence]:
     """Retrieve the most relevant stored documents for `query`.
 
     Searches only what is already stored; fetching new judgments from live
     sources is legal_ai.tools.judgments.search_judgments.
 
+    `rerank` runs a cross-encoder over the top RERANK_CANDIDATES results.
+    It measurably improves ordering but costs seconds per query on CPU, so
+    it is opt-in until measured on the target hardware.
+
     `expand_graph` defaults to False: with few judgments stored, most
     CITES/CITES_SECTION edges do not exist and expansion contributes more
     noise than signal. Enable it, and re-measure, once the judgment corpus
     is substantially larger.
     """
+    # With reranking on, the signals must return at least the shortlist the
+    # reranker expects -- otherwise the deep candidates it exists to rescue
+    # are never retrieved in the first place.
     fetch = limit * _SIGNAL_OVERFETCH
+    if rerank:
+        fetch = max(fetch, RERANK_CANDIDATES)
+
     conn = get_connection()
     try:
         signal_results = [
@@ -77,6 +94,13 @@ def hybrid_search(
                 driver.close()
             if expanded:
                 fused = reciprocal_rank_fusion([fused, expanded])
+
+        if rerank and fused:
+            shortlist = [document_id for document_id, _score in fused[:RERANK_CANDIDATES]]
+            passages = best_passages(conn, query, shortlist)
+            reranked = rerank_candidates(query, passages, limit=limit)
+            if reranked:
+                return build_evidence(conn, [document_id for document_id, _score in reranked])
 
         top_ids = [document_id for document_id, _score in fused[:limit]]
         return build_evidence(conn, top_ids)

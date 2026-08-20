@@ -121,3 +121,38 @@ def test_hybrid_search_respects_metadata_filters(conn):
 def test_hybrid_search_returns_empty_when_nothing_matches(conn):
     results = hybrid_search("quhwjxbz vurpleknack nonexistentterm", limit=5, expand_graph=False)
     assert results == []
+
+
+def test_hybrid_search_with_reranking_returns_evidence(conn):
+    upsert_document(
+        conn, _doc("test:h-rr", "act", "Ordinary Title", DISTINCTIVE), embedding=embed(DISTINCTIVE)
+    )
+
+    results = hybrid_search(DISTINCTIVE, limit=5, expand_graph=False, rerank=True)
+
+    assert results
+    assert all(e.document_id and e.content for e in results)
+    assert len(results) <= 5
+
+
+def test_reranking_widens_the_candidate_pool_it_is_given(conn):
+    # The reranker's value comes from rescuing documents at deep ranks, so
+    # the signals must fetch at least the shortlist size, not limit*3.
+    from legal_ai.retrieval.hybrid import RERANK_CANDIDATES
+
+    captured = {}
+    import legal_ai.retrieval.hybrid as hybrid_module
+
+    original = hybrid_module.search_vector
+
+    def spy(conn_, query_, limit=10, filters=None, **kwargs):
+        captured["limit"] = limit
+        return original(conn_, query_, limit=limit, filters=filters, **kwargs)
+
+    hybrid_module.search_vector = spy
+    try:
+        hybrid_search(DISTINCTIVE, limit=5, expand_graph=False, rerank=True)
+    finally:
+        hybrid_module.search_vector = original
+
+    assert captured["limit"] >= RERANK_CANDIDATES
