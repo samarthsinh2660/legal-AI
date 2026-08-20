@@ -1,13 +1,9 @@
 """Canonical documents -> Evidence, with provenance intact.
 
-See docs/superpowers/specs/2026-08-19-phase2-milestone5-hybrid-retrieval-design.md.
+The single home for this conversion; tools/ imports to_evidence from here.
 
-The single home for this conversion. tools/statutes.py, tools/judgments.py
-and tools/graph.py each had their own identical private copy; they now
-import to_evidence from here.
-
-No score field is set: the returned list is already ordered by the fusion
-that produced it, and adding an unused field would be speculative.
+No score field is set -- the returned list is already ordered by whatever
+produced it.
 """
 
 from __future__ import annotations
@@ -32,12 +28,11 @@ def to_evidence(doc: CanonicalDocument) -> Evidence:
 def build_evidence(conn: psycopg.Connection, document_ids: list[str]) -> list[Evidence]:
     """Fetch documents for `document_ids`, preserving that order.
 
-    An id with no stored document is skipped rather than raising: the graph
-    can legitimately hold a node whose Postgres row was never stored, and
-    dropping it is honest -- inventing a placeholder would not be.
+    Ids with no stored document are skipped rather than raising: the graph
+    can hold a node whose Postgres row was never stored.
 
-    One round-trip per id is fine here: this runs on the fused top-K
-    (single digits), not on a whole result set.
+    One round-trip per id is acceptable because this runs on the fused
+    top-K, not a whole result set.
     """
     evidence: list[Evidence] = []
     for document_id in document_ids:

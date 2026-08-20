@@ -1,25 +1,22 @@
 """Lazy-cached dynamic judgment search — the fetch + verify step only.
 
 See docs/superpowers/specs/2026-08-17-dynamic-judgment-search-design.md.
-Storing the result (upsert_document + write_judgment + citation
-extraction) is a deliberate follow-up task, not built here — this module
-only finds a real judgment and runs it through the Source Verification
-Gate. Nothing here writes to Postgres or Neo4j.
+Finds a judgment and runs it through the Source Verification Gate.
+Storing it is a separate step (see judgments/store.py); nothing here
+writes to Postgres or Neo4j.
 
-Flow per lookup, matching the design doc:
-1. Check the DB (title word-overlap over document_type='judgment' — not
-   embedding similarity, since documents are embedded on full_text and a
-   short case-name query sits far from even the correct match: measured
-   distance ~0.6 to a known real match, confirmed live 2026-08-18).
-2. Bharat Courts' ArchiveClient — the public Vanga AWS Open Data archive
-   for the Supreme Court and any state High Court, no CAPTCHA. Confirmed
-   live 2026-08-18 for both court='sci' and court='delhi'.
-3. Indian Kanoon — public aggregator, last resort, labeled as such.
-4. verify_batch (same gate as India Code — no lighter bar).
+Flow per lookup:
+1. Check the DB (title word-overlap over document_type='judgment', not
+   embedding similarity -- documents are embedded on full_text, so a short
+   case-name query sits far from even the correct match).
+2. Bharat Courts' ArchiveClient -- the public Vanga AWS Open Data archive
+   covering the Supreme Court and any state High Court, no CAPTCHA.
+3. Indian Kanoon -- public aggregator, last resort, labelled as such.
+4. verify_batch -- the same gate as India Code, no lighter bar.
 
-Note: ArchiveClient.fetch_pdf downloads a whole year's PDF bundle
-(hundreds of MB) into a local cache on first use for that year/court —
-this is the SDK's own caching, not something this module controls.
+Note: ArchiveClient.fetch_pdf caches a whole year's PDF bundle (hundreds
+of MB) locally on first use for a year/court. That is the SDK's own
+caching, not controlled here.
 """
 
 from __future__ import annotations
@@ -111,10 +108,9 @@ def _check_db(query: str) -> Optional[JudgmentSearchResult]:
 
 
 def _archive_pdf_url(judgment) -> tuple[str, bool]:
-    """Real public HTTPS URL for a judgment's PDF, plus whether it's a
-    single-document link (True) or a bundled multi-document archive that
-    happens to contain it (False, currently only SCI — see fetch_sci_pdf
-    in the SDK: SCI PDFs ship as one tar per year, no per-document URL).
+    """Public HTTPS URL for a judgment's PDF, plus whether it is a
+    single-document link (True) or a bundled archive containing it
+    (False -- SCI ships one tar per year, with no per-document URL).
     """
     from bharat_courts.archive.endpoints import HC_PDF_HTTPS, SCI_TAR_HTTPS
     from bharat_courts.models import CourtType
@@ -254,20 +250,16 @@ def search_judgment(
 ) -> JudgmentSearchResult:
     """Find a real judgment for `query` (case name or citation).
 
-    `year` (single year or inclusive (start, end) range) is strongly
-    recommended: the Bharat Courts archive scans the Supreme Court plus
-    all ~25 High Court partitions when no court is specified, and a year
-    filter enables partition pruning — confirmed live 2026-08-18, ~23s
-    with a year filter vs. >90s (didn't finish) without one.
+    `year` (single year or inclusive range) is strongly recommended: with
+    no court specified the Bharat Courts archive scans the Supreme Court
+    plus all ~25 High Court partitions, and a year enables partition
+    pruning.
 
     `skip_db`: the DB check matches on title word-overlap, which cannot
-    tell two real, distinct proceedings between the same parties apart
-    (e.g. a case's main judgment vs. a later review-petition order on the
-    same appeal — confirmed live 2026-08-19: once one got cached, four
-    separate queries for the other kept returning the wrong cached
-    document instead of ever searching live sources again). Pass
-    `skip_db=True` to force a fresh live search when you have reason to
-    believe a cached word-overlap match is the wrong document.
+    distinguish two real proceedings between the same parties (a main
+    judgment vs. a later review-petition order on the same appeal). Pass
+    `skip_db=True` to force a fresh live search when a cached match is
+    the wrong document.
 
     Does not store anything — see module docstring. Caller decides what
     to do with a found-and-verified CanonicalDocument (e.g. hand it to

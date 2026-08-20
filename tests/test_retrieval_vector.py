@@ -7,12 +7,12 @@ from legal_ai.knowledge.static.db import ensure_schema, get_connection
 from legal_ai.knowledge.static.embeddings import embed
 from legal_ai.knowledge.static.store import upsert_document
 from legal_ai.retrieval.metadata import MetadataFilters
-from legal_ai.retrieval.vector import search_vector
+from legal_ai.retrieval.vector import DEFAULT_MAX_DISTANCE, search_vector
 from legal_ai.schemas.evidence import Provenance, SourceRef
 
-# Real embeddings of this exact text put the fixtures at distance ~0, which
-# is the only reliable way to rank against the full real corpus also in
-# this database (a synthetic sparse vector will not -- Milestone 4 lesson).
+# Seeded with a real embedding of this exact text so the fixtures sit at
+# distance ~0 and rank above the full real corpus in this database. A
+# synthetic sparse vector would not rank.
 DISTINCTIVE = "zzqvxk flibbertigibbet possession dispute remedy provision"
 
 
@@ -80,8 +80,8 @@ def test_search_vector_respects_limit(conn):
 
 
 def test_search_vector_excludes_results_beyond_the_relevance_floor(conn):
-    # Nearest-neighbour search always returns *something*; the floor is what
-    # stops a meaningless query from grounding an answer in irrelevant law.
+    # Nearest-neighbour search always returns something; the floor is what
+    # stops a meaningless query returning irrelevant law.
     results = search_vector(conn, "quhwjxbz vurpleknack nonexistentterm", limit=5)
 
     assert results == []
@@ -93,7 +93,7 @@ def test_search_vector_without_a_floor_returns_raw_nearest_neighbours(conn):
     )
 
     assert len(results) == 5
-    assert all(distance > 0.65 for _doc_id, distance in results)
+    assert all(distance > DEFAULT_MAX_DISTANCE for _doc_id, distance in results)
 
 
 def test_search_vector_still_finds_a_genuinely_relevant_real_query(conn):
@@ -101,3 +101,39 @@ def test_search_vector_still_finds_a_genuinely_relevant_real_query(conn):
     results = search_vector(conn, "punishment for criminal breach of trust", limit=5)
 
     assert results != []
+
+
+def test_search_vector_finds_a_document_through_its_chunks(conn):
+    # A long document whose own embedding is NULL (because it was chunked)
+    # must still be findable via the chunk that actually matches.
+    from legal_ai.knowledge.static.chunk_store import upsert_chunks
+    from legal_ai.knowledge.static.db import ensure_chunk_schema
+    from legal_ai.retrieval.chunking import Chunk
+
+    ensure_chunk_schema(conn)
+    body = "irrelevant preamble text " * 40 + DISTINCTIVE
+    doc = _doc("test:vec-chunked", "section", body)
+    upsert_document(conn, doc, embedding=None)
+    chunk = Chunk(text=DISTINCTIVE, ordinal=0, label="(1)")
+    upsert_chunks(conn, "test:vec-chunked", [chunk], [embed(DISTINCTIVE)])
+
+    results = search_vector(conn, DISTINCTIVE, limit=5)
+
+    assert "test:vec-chunked" in [doc_id for doc_id, _d in results]
+
+
+def test_search_vector_reports_each_document_once_not_once_per_chunk(conn):
+    from legal_ai.knowledge.static.chunk_store import upsert_chunks
+    from legal_ai.knowledge.static.db import ensure_chunk_schema
+    from legal_ai.retrieval.chunking import Chunk
+
+    ensure_chunk_schema(conn)
+    doc = _doc("test:vec-multi", "section", DISTINCTIVE * 5)
+    upsert_document(conn, doc, embedding=None)
+    chunks = [Chunk(text=DISTINCTIVE, ordinal=i) for i in range(3)]
+    upsert_chunks(conn, "test:vec-multi", chunks, [embed(c.text) for c in chunks])
+
+    results = search_vector(conn, DISTINCTIVE, limit=10)
+    ids = [doc_id for doc_id, _d in results]
+
+    assert ids.count("test:vec-multi") == 1

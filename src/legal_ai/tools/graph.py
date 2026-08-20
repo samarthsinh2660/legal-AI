@@ -1,9 +1,9 @@
-"""Query tools over the judgment/statute citation graph — Phase 2 Milestone 4.
+"""Query tools over the judgment/statute citation graph.
 
 See docs/superpowers/specs/2026-08-19-phase2-milestone4-tool-contracts-design.md.
-Every match here comes from Neo4j (document_id/title only), so each one
-needs a Postgres round-trip via get_document to build Evidence.content
-with real full text -- the graph never stores full text itself.
+
+Matches come from Neo4j, which holds only document_id/title, so each needs
+a Postgres round-trip via get_document to fill Evidence.content.
 """
 
 from __future__ import annotations

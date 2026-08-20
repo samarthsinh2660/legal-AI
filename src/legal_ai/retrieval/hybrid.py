@@ -1,11 +1,9 @@
-"""Hybrid retrieval -- fan the query out across signals, fuse, expand, build.
+"""Hybrid retrieval -- fan a query across signals, fuse, expand, build Evidence.
 
-See docs/superpowers/specs/2026-08-19-phase2-milestone5-hybrid-retrieval-design.md.
-
-The three signals produce mutually incomparable scores: cosine distance
-(lower is better), ts_rank_cd (higher is better, unbounded), and exact
-match (boolean). Normalising those against each other would be arbitrary
-and fragile, so fusion is by RANK, via Reciprocal Rank Fusion.
+The signals produce mutually incomparable scores: cosine distance (lower
+is better), ts_rank_cd (higher is better, unbounded) and exact match
+(boolean). Fusion is therefore by rank, via Reciprocal Rank Fusion, which
+avoids having to normalise those scales against each other.
 """
 
 from __future__ import annotations
@@ -19,14 +17,12 @@ from legal_ai.retrieval.metadata import MetadataFilters, search_metadata
 from legal_ai.retrieval.vector import search_vector
 from legal_ai.schemas.evidence import Evidence
 
-# The constant from the original RRF paper (Cormack et al., 2009). Large
-# enough that the gap between rank 1 and rank 2 does not dominate agreement
-# between signals -- which is the whole point of fusing.
+# Standard RRF constant (Cormack et al., 2009). Large enough that the gap
+# between rank 1 and rank 2 does not outweigh agreement between signals.
 RRF_K = 60
 
-# Each signal returns more candidates than the caller asked for, so fusion
-# has room to promote documents that several signals agree on but none
-# ranked first.
+# Signals over-fetch so fusion can promote documents several signals agree
+# on, even when none ranked them first.
 _SIGNAL_OVERFETCH = 3
 
 
@@ -34,10 +30,10 @@ def reciprocal_rank_fusion(
     ranked_lists: list[list[tuple[str, float]]],
     k: int = RRF_K,
 ) -> list[tuple[str, float]]:
-    """Fuse ranked lists by rank: score(d) = sum over lists of 1 / (k + rank).
+    """Fuse ranked lists: score(d) = sum over lists of 1 / (k + rank).
 
-    Input scores are ignored on purpose -- only position matters, which is
-    what makes incomparable scales safe to combine.
+    Input scores are ignored; only position matters, which is what makes
+    incomparable scales safe to combine.
     """
     fused: dict[str, float] = {}
     for ranked in ranked_lists:
@@ -54,19 +50,13 @@ def hybrid_search(
 ) -> list[Evidence]:
     """Retrieve the most relevant stored documents for `query`.
 
-    Searches only what is already in the store. Fetching new judgments from
-    live external sources is a different job, done by
-    legal_ai.tools.judgments.search_judgments.
+    Searches only what is already stored; fetching new judgments from live
+    sources is legal_ai.tools.judgments.search_judgments.
 
-    `expand_graph` defaults to False on measured evidence, not preference.
-    Measured 2026-08-19 on the real corpus for "builder failed to give
-    possession on time refund": expansion added six documents, of which one
-    was relevant (RERA s.31) and five were noise (the New Delhi Municipal
-    Council Act among them). The graph is simply too sparse to help yet --
-    six judgments, so most CITES/CITES_SECTION edges do not exist. Turn it
-    back on (and re-measure) once the judgment corpus is substantially
-    larger; the machinery is built and tested, it is just not earning its
-    place at this corpus size.
+    `expand_graph` defaults to False: with few judgments stored, most
+    CITES/CITES_SECTION edges do not exist and expansion contributes more
+    noise than signal. Enable it, and re-measure, once the judgment corpus
+    is substantially larger.
     """
     fetch = limit * _SIGNAL_OVERFETCH
     conn = get_connection()

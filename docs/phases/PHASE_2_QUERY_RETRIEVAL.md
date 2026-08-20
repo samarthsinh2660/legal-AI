@@ -160,15 +160,37 @@ Decomposed into four sub-projects (see
    section among a 10,005-document pool of real sections), using natural
    user phrasings that deliberately avoid the sections' own vocabulary:
 
-   | model | ranks of correct doc | MRR | recall@10 | CPU time /10k docs |
-   |---|---|---|---|---|
-   | all-MiniLM-L6-v2 (current) | [9, 1, 1, 1, 55] | 0.626 | 80% | 253s |
-   | **all-mpnet-base-v2** | [1, 2, 1, 1, 1] | **0.900** | **100%** | 1820s |
+   First run used only 5 queries and reported MiniLM MRR 0.626 vs mpnet
+   0.900 (recall@10 80% -> 100%). **Re-run with 15 queries across contract,
+   criminal, property, labour, consumer and arbitration law -- the honest
+   numbers are materially smaller:**
 
-   mpnet fixes both known failures: RERA §18 ("builder" vs statutory
-   "promoter") rank 9 -> 1, and IT Act §66D ("impersonated" vs "cheating by
-   personation") rank 55 -> 1. Notably a *general-purpose* model closed the
-   legal vocabulary gap that the legal-domain model could not.
+   | model | MRR | recall@1 | recall@5 | recall@10 | CPU time /10k docs |
+   |---|---|---|---|---|---|
+   | all-MiniLM-L6-v2 (current) | 0.600 | 53% | 67% | 73% | 198s |
+   | **all-mpnet-base-v2** | **0.694** | 60% | **87%** | **87%** | 2352s |
+
+   mpnet better on 6/15 queries, worse on 4/15. The n=5 result overstated
+   the gain roughly threefold -- a caution worth remembering about small
+   eval sets.
+
+   Where mpnet wins are exactly the vocabulary-gap cases: IT Act §66D
+   ("impersonated" vs statutory "cheating by personation") 55 -> 1, RERA
+   §18 ("builder" vs "promoter") 9 -> 1, TPA §54 27 -> 4, BNS §356 4 -> 1.
+   Notably a *general-purpose* model closed the legal vocabulary gap that
+   the legal-domain model (InLegalBERT) could not.
+
+   Where it regresses: Contract Act §27 (restraint of trade) 52 -> 143,
+   plus minor slippage on already-good queries (§138 1->3, §103 1->4,
+   RERA §3 1->2). Caveat on §27: the corpus holds a near-duplicate --
+   `act:2394:sec-54` (Partnership Act, "Agreements in restraint of trade")
+   -- so that ground-truth label is arguably wrong rather than mpnet being
+   wrong.
+
+   **Decision basis:** recall@5 (67% -> 87%) matters more than MRR here,
+   because retrieval feeds a top-k window to an agent; "the right section
+   is in the window" is the property that determines whether a grounded
+   answer is possible at all.
 
    **Longer-context candidates (nomic-embed, gte-multilingual, bge-m3) were
    dropped on hardware grounds, not quality.** They were never measured:
@@ -186,10 +208,38 @@ Decomposed into four sub-projects (see
    0.833 against a 405-document pool, 0.626 against 10k, 0.508 against the
    full corpus. Never compare MRR across different pool sizes.
 
-   **Not yet acted on.** Adopting mpnet means re-embedding all 36,467
-   documents (~2h on the server), a 384->768 dimension migration, an HNSW
-   index rebuild, and re-deriving `DEFAULT_MAX_DISTANCE` in
-   `retrieval/vector.py` (the 0.65 floor is specific to MiniLM).
+   **Adopted 2026-08-20.** `all-mpnet-base-v2` is now the default; all
+   36,465 documents were re-embedded at 768 dimensions and the HNSW index
+   rebuilt (~60 min locally at ~10 docs/s with batched encoding).
+
+   Full-corpus ranks before vs. after, for the five queries where a
+   pre-migration baseline exists:
+
+   | query | MiniLM | mpnet |
+   |---|---|---|
+   | RERA §18 ("builder" vs "promoter") | 29 | **1** |
+   | IT Act §66D ("impersonated") | 196 | **5** |
+   | BNS §316 | 1 | 1 |
+   | RERA §3 | 1 | 2 |
+   | Arbitration §11 | 2 | 3 |
+
+   MRR 0.508 -> 0.607, recall@10 60% -> 100% on that set. The two headline
+   failures that motivated the whole investigation are fixed; the small
+   regressions are all within the top 3 and cost nothing at a top-5 window.
+
+   Honest limitation: migrating overwrote the MiniLM vectors, so the other
+   ten queries can no longer be A/B'd at full-corpus scale -- only the
+   10k-pool comparison above exists for them.
+
+   `DEFAULT_MAX_DISTANCE` re-measured for mpnet and changed 0.65 -> 0.60
+   (mpnet: nonsense 0.664-0.802, real 0.225-0.514; carrying 0.65 over would
+   have left only 0.014 of margin). See `retrieval/vector.py`.
+
+   Ground-truth caveat found while verifying: for "someone impersonated me
+   online using my identity to cheat people", the system returns BNS §319
+   ("Cheating by personation") first, which is arguably a *better* answer
+   than the labelled IT Act §66D. Some of the measured "misses" above are
+   therefore label noise rather than retrieval failure.
 
    Reframed scope for this sub-project: rather than the originally-planned
    InLegalBERT benchmark, `embeddings.py` should make the model a

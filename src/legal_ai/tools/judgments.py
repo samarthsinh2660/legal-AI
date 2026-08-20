@@ -1,12 +1,10 @@
-"""Query tools for Supreme Court / High Court judgments — Phase 2 Milestone 4.
+"""Query tools for Supreme Court / High Court judgments.
 
 See docs/superpowers/specs/2026-08-19-phase2-milestone4-tool-contracts-design.md.
-search_judgments wraps the same fetch-verify-store flow already proven in
-scripts/search_judgment.py's CLI — it returns 0 or 1 Evidence, never a
-ranked multi-result list, since the underlying flow only ever surfaces
-one best candidate per source (DB word-overlap match, or first archive/
-Indian Kanoon match). Do not treat this like search_statutes' ranked
-semantic search.
+
+search_judgments returns 0 or 1 Evidence, never a ranked list: the
+underlying fetch-verify-store flow surfaces one best candidate per source.
+It is a lookup, not ranked search like search_statutes.
 """
 
 from __future__ import annotations

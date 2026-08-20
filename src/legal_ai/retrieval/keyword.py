@@ -1,16 +1,15 @@
-"""Keyword search over the canonical store -- exact legal terminology.
+"""Keyword search over the canonical store -- exact legal terminology signal.
 
-See docs/superpowers/specs/2026-08-19-phase2-milestone5-hybrid-retrieval-design.md.
+Postgres native full-text search, ranked with ts_rank_cd. This is
+TF-IDF-family, not BM25; naming it keyword search rather than BM25 is
+deliberate. Real BM25 would require an external engine or the ParadeDB
+pg_search extension.
 
-This is Postgres native full-text search ranked with ts_rank_cd, which is
-TF-IDF-family -- deliberately NOT called BM25 anywhere, because it is not
-BM25. Real BM25 would need an external engine or the ParadeDB pg_search
-extension; that trade was made explicitly in the design, and having exact
-keyword matching at all matters far more here than the ranking formula.
+Uses websearch_to_tsquery rather than plainto_tsquery so quoted phrases
+and '-' negation work, and malformed input degrades instead of raising.
 
-websearch_to_tsquery (rather than plainto_tsquery) parses user input the
-way a search box does: quoted phrases and negation with '-' work, and
-malformed input degrades gracefully instead of raising.
+Requires the search_vector column and its GIN index (see
+knowledge.static.db.ensure_retrieval_schema).
 """
 
 from __future__ import annotations

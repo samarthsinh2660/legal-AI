@@ -1,15 +1,12 @@
-"""Vector search over the canonical store -- semantic similarity.
+"""Vector search over the canonical store -- semantic similarity signal.
 
-See docs/superpowers/specs/2026-08-19-phase2-milestone5-hybrid-retrieval-design.md.
+Returns (document_id, distance) rather than whole documents so the fan-in
+can fuse cheaply and fetch full text only for the survivors.
 
-The existing knowledge.static.store.find_similar is deliberately left
-untouched: several callers depend on its current unfiltered behaviour.
-This adds MetadataFilters support and returns ids rather than whole
-documents, so the fan-in can fuse cheaply and fetch full text only once,
-at the end, for the documents that actually survive.
+Scores are cosine DISTANCE: lower is better.
 
-Scores are cosine DISTANCE -- lower is better -- matching find_similar and
-the pgvector <=> operator.
+Separate from knowledge.static.store.find_similar, which stays unfiltered
+because other callers depend on that behaviour.
 """
 
 from __future__ import annotations
@@ -19,23 +16,14 @@ import psycopg
 from legal_ai.knowledge.static.embeddings import embed
 from legal_ai.retrieval.metadata import MetadataFilters
 
-# Relevance floor. Nearest-neighbour search always returns *something* --
-# it has no notion of "nothing here is relevant" -- so without a floor a
-# meaningless query still returns the least-distant documents in the
-# corpus, and an agent could ground a legal answer in them. That failure
-# mode is worse than returning nothing.
+# Relevance floor: nearest-neighbour search has no notion of "nothing here
+# is relevant", so without this a meaningless query still returns the
+# least-distant documents in the corpus.
 #
-# Derived by measurement against the real ~36k-document corpus on
-# 2026-08-19, not picked by feel:
-#   nonsense queries      best distance 0.716 - 0.724
-#   real legal questions  best distance 0.264 - 0.468
-# 0.65 sits in the empty gap between those two ranges.
-#
-# This constant is specific to the current embedding model
-# (all-MiniLM-L6-v2). Re-measure it when the model changes -- the
-# embeddings provider abstraction (Milestone 5 sub-project 2) will change
-# it, and a stale threshold would silently distort recall.
-DEFAULT_MAX_DISTANCE = 0.65
+# Model-specific -- re-measure whenever EMBEDDING_MODEL changes. Current
+# value separates real legal queries (<= ~0.51) from nonsense (>= ~0.66)
+# for all-mpnet-base-v2.
+DEFAULT_MAX_DISTANCE = 0.60
 
 
 def search_vector(
@@ -53,23 +41,50 @@ def search_vector(
     filter_sql, filter_params = (filters or MetadataFilters()).to_sql()
     query_embedding = embed(query)
 
-    distance_sql = ""
-    distance_params: list = []
-    if max_distance is not None:
-        distance_sql = " AND (embedding <=> %s::vector) <= %s"
-        distance_params = [query_embedding, max_distance]
+    def distance_clause(column: str) -> tuple[str, list]:
+        if max_distance is None:
+            return "", []
+        return f" AND ({column} <=> %s::vector) <= %s", [query_embedding, max_distance]
+
+    doc_distance_sql, doc_distance_params = distance_clause("embedding")
+    chunk_distance_sql, chunk_distance_params = distance_clause("c.embedding")
 
     with conn.cursor() as cur:
+        # Whole-document vectors: short documents that were embedded intact.
         cur.execute(
             f"""
             SELECT document_id, embedding <=> %s::vector AS distance
             FROM documents
-            WHERE embedding IS NOT NULL{filter_sql}{distance_sql}
+            WHERE embedding IS NOT NULL{filter_sql}{doc_distance_sql}
             ORDER BY distance ASC
             LIMIT %s
             """,
-            [query_embedding, *filter_params, *distance_params, limit],
+            [query_embedding, *filter_params, *doc_distance_params, limit],
         )
-        rows = cur.fetchall()
+        rows = list(cur.fetchall())
 
-    return [(document_id, float(distance)) for document_id, distance in rows]
+        # Chunk vectors: long documents, whose own embedding is NULL because
+        # a truncated whole-document vector would misrepresent them.
+        chunk_filter_sql, _ = (filters or MetadataFilters()).to_sql(alias="d")
+        cur.execute(
+            f"""
+            SELECT c.document_id, c.embedding <=> %s::vector AS distance
+            FROM document_chunks c
+            JOIN documents d ON d.document_id = c.document_id
+            WHERE c.embedding IS NOT NULL{chunk_filter_sql}{chunk_distance_sql}
+            ORDER BY distance ASC
+            LIMIT %s
+            """,
+            [query_embedding, *filter_params, *chunk_distance_params, limit],
+        )
+        rows.extend(cur.fetchall())
+
+    # A document may match through several chunks; report it once, at its
+    # best distance, so one long document cannot crowd out the results.
+    best: dict[str, float] = {}
+    for document_id, distance in rows:
+        distance = float(distance)
+        if document_id not in best or distance < best[document_id]:
+            best[document_id] = distance
+
+    return sorted(best.items(), key=lambda item: item[1])[:limit]

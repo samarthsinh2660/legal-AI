@@ -85,12 +85,9 @@ def test_write_judgment_creates_decided_by_edge(driver):
 
 
 def test_write_judgment_creates_cites_edge_to_already_ingested_judgment(driver):
-    # cited's own `citation` must be set explicitly, from real source
-    # metadata -- not inferred from a citation string appearing in its
-    # own body text. That fallback used to exist and was a real bug: two
-    # unrelated judgments that both merely *mention* the same citation
-    # would each get mislabeled as *being* that citation (confirmed live
-    # 2026-08-19, see graphdb/ingest.py's own_citation comment).
+    # cited's own `citation` is set explicitly from source metadata, never
+    # inferred from a citation appearing in its body text -- that would
+    # mislabel any judgment that merely mentions a citation as being it.
     cited = _judgment("test:j-cited", "Nair Service Society v. K.C. Alexander", "Supreme Court of India", "full judgment text")
     cited = cited.model_copy(update={"citation": "AIR 1968 SC 1165"})
     write_judgment(driver, cited)

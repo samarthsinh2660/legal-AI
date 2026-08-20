@@ -9,8 +9,8 @@ from legal_ai.retrieval.keyword import search_keyword
 from legal_ai.retrieval.metadata import MetadataFilters
 from legal_ai.schemas.evidence import Provenance, SourceRef
 
-# Deliberately nonsense: guarantees these fixtures are the only matches in
-# a database that also holds the full ~36k-document real corpus.
+# Nonsense term, so these fixtures are the only matches in a database that
+# also holds the full real corpus.
 DISTINCTIVE = "zzqvxk flibbertigibbet"
 
 

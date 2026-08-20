@@ -1,12 +1,9 @@
-"""Structured metadata: shared SQL filters, plus exact-lookup as a signal.
+"""Structured metadata: shared SQL filters, plus exact lookup as a signal.
 
-See docs/superpowers/specs/2026-08-19-phase2-milestone5-hybrid-retrieval-design.md.
-
-Two responsibilities, deliberately in one module because they are the same
-concern seen from two sides: MetadataFilters constrains *other* signals in
-SQL, and search_metadata is itself a signal -- an exact structured lookup
-that resolves "Section 18 of the ... Act, 2016" straight to a document id,
-which neither fuzzy vector similarity nor keyword matching does reliably.
+Two sides of one concern. MetadataFilters constrains the other signals in
+SQL; search_metadata is itself a signal, resolving a statutory reference
+such as "Section 18 of the ... Act, 2016" straight to a document id --
+something neither vector similarity nor keyword matching does reliably.
 """
 
 from __future__ import annotations
@@ -19,9 +16,8 @@ import psycopg
 from legal_ai.ingestion.statute_citations import extract_section_references
 from legal_ai.knowledge.static.store import find_act_by_name, get_document
 
-# An exact structured match is either right or absent -- there is no
-# meaningful gradation, so every hit scores the same. Rank, not score, is
-# what the fusion in hybrid.py actually consumes.
+# An exact match is either right or absent, so every hit scores the same;
+# hybrid.py fuses on rank, not score.
 EXACT_MATCH_SCORE = 1.0
 
 
@@ -33,29 +29,33 @@ class MetadataFilters:
     decision_date_from: date | None = None
     decision_date_to: date | None = None
 
-    def to_sql(self) -> tuple[str, list]:
+    def to_sql(self, alias: str = "") -> tuple[str, list]:
         """SQL fragment (starting with ' AND ', or empty) plus its params.
 
-        Filtering happens in the database rather than in Python afterwards,
-        so a signal's LIMIT applies to rows that already passed the filter.
+        `alias` qualifies the column names for queries that join, e.g.
+        alias="d" yields "d.document_type = %s".
+
+        Filtering in SQL rather than in Python means a signal's LIMIT
+        applies to rows that already passed the filter.
         """
+        prefix = f"{alias}." if alias else ""
         clauses: list[str] = []
         params: list = []
 
         if self.document_type is not None:
-            clauses.append("document_type = %s")
+            clauses.append(f"{prefix}document_type = %s")
             params.append(self.document_type)
         if self.court is not None:
-            clauses.append("court = %s")
+            clauses.append(f"{prefix}court = %s")
             params.append(self.court)
         if self.act_id is not None:
-            clauses.append("act_id = %s")
+            clauses.append(f"{prefix}act_id = %s")
             params.append(self.act_id)
         if self.decision_date_from is not None:
-            clauses.append("decision_date >= %s")
+            clauses.append(f"{prefix}decision_date >= %s")
             params.append(self.decision_date_from)
         if self.decision_date_to is not None:
-            clauses.append("decision_date <= %s")
+            clauses.append(f"{prefix}decision_date <= %s")
             params.append(self.decision_date_to)
 
         if not clauses:
@@ -91,9 +91,9 @@ def search_metadata(
 ) -> list[tuple[str, float]]:
     """Resolve statutory references in `query` to exact document ids.
 
-    Returns [] when the query contains no recognisable statutory reference
-    -- that is the normal case for a plain natural-language question, not a
-    failure, and the other signals carry the query instead.
+    Returns [] when the query holds no recognisable statutory reference --
+    normal for a plain natural-language question, not a failure. The other
+    signals carry the query in that case.
     """
     results: list[tuple[str, float]] = []
     seen: set[str] = set()

@@ -1,19 +1,16 @@
-"""Knowledge-graph expansion -- what else connects to what we already found.
+"""Knowledge-graph expansion -- finds documents connected to a seed set.
 
-See docs/superpowers/specs/2026-08-19-phase2-milestone5-hybrid-retrieval-design.md.
+Expansion rather than a standalone signal: the graph stores no text to
+match a raw query against, so it can only answer "what connects to these
+documents?".
 
-Deliberately expansion rather than a standalone signal: the graph stores no
-text to match a raw query against, so the only question it can answer well
-is "given these documents, what is connected to them?".
+Traverses CONTAINS (Act->Section), CITES (Judgment->Judgment) and
+CITES_SECTION (Judgment->Section) in both directions. Score is the
+fraction of seeds reaching a document, so one that several seeds share
+ranks above one reached from a single seed.
 
-Traverses the existing structural edges in both directions -- CONTAINS
-(Act->Section), CITES (Judgment->Judgment), CITES_SECTION
-(Judgment->Section). A document reached from more distinct seeds scores
-higher, so a Section that several retrieved judgments all rely on rises.
-
-Does not import from legal_ai.tools: tools/graph.py imports to_evidence
-from retrieval/evidence_builder.py, so importing it back here would be a
-circular import.
+Must not import from legal_ai.tools -- tools/graph.py imports to_evidence
+from retrieval/evidence_builder.py, so the reverse would be circular.
 """
 
 from __future__ import annotations

@@ -1,8 +1,9 @@
-"""Query tools for Acts and Sections — Phase 2 Milestone 4.
+"""Query tools for Acts and Sections.
 
 See docs/superpowers/specs/2026-08-19-phase2-milestone4-tool-contracts-design.md.
-Thin wrappers over the Phase 1 static store — no new fetching or
-verification logic here, just Evidence construction.
+
+Thin wrappers over the static store: no fetching or verification logic
+here, only Evidence construction.
 """
 
 from __future__ import annotations
@@ -16,8 +17,7 @@ from legal_ai.schemas.evidence import Evidence
 _STATUTE_TYPES = {"act", "section"}
 
 # find_similar has no document_type filter, so over-fetch and filter in
-# Python — cheap at this corpus size, and avoids changing a function
-# several other callers already depend on for an unfiltered result.
+# Python rather than changing a function other callers rely on.
 _OVERFETCH_FACTOR = 5
 
 

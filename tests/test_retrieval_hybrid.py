@@ -53,8 +53,8 @@ def test_fusion_ranks_a_document_found_by_two_signals_above_one_found_by_one():
 
 
 def test_fusion_uses_rank_not_raw_score():
-    # doc-b's raw score is far larger, but it ranks second in its own list,
-    # so a document ranked first elsewhere must not be beaten by scale alone.
+    # doc-b's raw score is far larger but it ranks second in its own list;
+    # a document ranked first elsewhere must not lose on scale alone.
     list_one = [("doc-a", 0.001)]
     list_two = [("doc-c", 999.0), ("doc-b", 998.0)]
 
