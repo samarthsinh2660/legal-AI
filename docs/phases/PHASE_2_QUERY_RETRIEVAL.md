@@ -298,6 +298,32 @@ Decomposed into four sub-projects (see
    matters more than ranking quality). Latency above is a development
    laptop; re-measure on the CPU-only server before enabling by default.
 
+**Relevance floor removed (`retrieval/vector.py`).** An earlier
+`DEFAULT_MAX_DISTANCE = 0.60` was derived from a flawed measurement: it
+compared each query's *top hit* distance against nonsense queries, not the
+distance to the *correct* answer. Measured properly, correct answers span
+0.31-0.76 while nonsense bottoms out at 0.66 -- the ranges overlap, so no
+cut-off separates them. Chunking tightened the overlap further, since a
+short passage sits near almost any query. The 0.60 floor was discarding 3
+of 15 correct answers outright; a floor loose enough to keep them filtered
+nothing. Removed rather than left as an inert knob.
+
+This also explains, and retracts, an earlier claim that the keyword/metadata
+fan-in was net-negative. That comparison ran vector-only with no floor
+against the full fan-in *with* the 0.60 floor -- it measured the floor, not
+fusion. The fan-in is not the problem.
+
+**End-to-end result on the 15-query benchmark, full corpus:**
+
+| configuration | MRR | recall@1 | recall@5 | recall@10 |
+|---|---|---|---|---|
+| fan-in only | 0.299 | 13% | 67% | 73% |
+| **fan-in + rerank** | **0.530** | **40%** | **87%** | **87%** |
+
+Reranking is therefore load-bearing, not optional polish: without it the
+pipeline retrieves poorly. It still defaults to off pending a latency
+measurement on the target server, but that default should be revisited.
+
 **Measured retrieval quality after sub-project 1 (honest baseline, not a
 success claim).** For the query *"builder failed to give possession on
 time refund"* against the real corpus:

@@ -16,14 +16,18 @@ import psycopg
 from legal_ai.knowledge.static.embeddings import embed
 from legal_ai.retrieval.metadata import MetadataFilters
 
-# Relevance floor: nearest-neighbour search has no notion of "nothing here
-# is relevant", so without this a meaningless query still returns the
-# least-distant documents in the corpus.
+# No relevance floor by default. An absolute distance cut-off cannot
+# separate relevant from irrelevant on this corpus: measured against
+# *correct* answers (not top hits), real answers run 0.31-0.76 while
+# nonsense queries bottom out at 0.66 -- the ranges overlap, and chunking
+# tightened the overlap further by putting a short passage near almost any
+# query. A floor tight enough to block nonsense discarded 3 of 15 correct
+# answers; one loose enough to keep them blocked nothing.
 #
-# Model-specific -- re-measure whenever EMBEDDING_MODEL changes. Current
-# value separates real legal queries (<= ~0.51) from nonsense (>= ~0.66)
-# for all-mpnet-base-v2.
-DEFAULT_MAX_DISTANCE = 0.60
+# Ordering quality is handled by the reranker instead, which scores query
+# against passage directly rather than guessing from distance alone.
+# Callers may still pass max_distance explicitly.
+DEFAULT_MAX_DISTANCE = None
 
 
 def search_vector(
@@ -33,10 +37,10 @@ def search_vector(
     filters: MetadataFilters | None = None,
     max_distance: float | None = DEFAULT_MAX_DISTANCE,
 ) -> list[tuple[str, float]]:
-    """Semantically nearest documents, excluding ones beyond the relevance floor.
+    """Semantically nearest documents, searching whole documents and chunks.
 
-    Pass max_distance=None to disable the floor and get raw nearest
-    neighbours (useful for diagnostics, or for re-measuring the threshold).
+    `max_distance` imposes a distance cut-off; None (the default) applies
+    none. See DEFAULT_MAX_DISTANCE for why there is no useful default.
     """
     filter_sql, filter_params = (filters or MetadataFilters()).to_sql()
     query_embedding = embed(query)

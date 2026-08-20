@@ -118,9 +118,13 @@ def test_hybrid_search_respects_metadata_filters(conn):
     assert "test:h-act" not in result_ids
 
 
-def test_hybrid_search_returns_empty_when_nothing_matches(conn):
-    results = hybrid_search("quhwjxbz vurpleknack nonexistentterm", limit=5, expand_graph=False)
-    assert results == []
+def test_hybrid_search_returns_weak_candidates_rather_than_nothing(conn):
+    # Deliberate: no absolute distance threshold separates relevant from
+    # irrelevant here, so retrieval returns its best candidates and lets
+    # the reranker and the caller judge, instead of silently returning
+    # nothing when a correct answer might be present.
+    results = hybrid_search("zxcvbnm qwertyuiop asdfghjkl", limit=5, expand_graph=False)
+    assert results != []
 
 
 def test_hybrid_search_with_reranking_returns_evidence(conn):

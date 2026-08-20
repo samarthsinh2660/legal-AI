@@ -79,21 +79,27 @@ def test_search_vector_respects_limit(conn):
     assert len(results) <= 3
 
 
-def test_search_vector_excludes_results_beyond_the_relevance_floor(conn):
-    # Nearest-neighbour search always returns something; the floor is what
-    # stops a meaningless query returning irrelevant law.
-    results = search_vector(conn, "quhwjxbz vurpleknack nonexistentterm", limit=5)
+def test_search_vector_applies_an_explicitly_given_floor(conn):
+    # No floor is applied by default -- distances of correct answers and of
+    # nonsense overlap on this corpus, so no cut-off separates them. A
+    # caller may still impose one.
+    results = search_vector(conn, "possession of immovable property", limit=20, max_distance=0.4)
 
-    assert results == []
+    assert all(distance <= 0.4 for _doc_id, distance in results)
+
+
+def test_search_vector_has_no_floor_by_default(conn):
+    assert DEFAULT_MAX_DISTANCE is None
+    assert search_vector(conn, "zxcvbnm qwertyuiop asdfghjkl", limit=5) != []
 
 
 def test_search_vector_without_a_floor_returns_raw_nearest_neighbours(conn):
     results = search_vector(
-        conn, "quhwjxbz vurpleknack nonexistentterm", limit=5, max_distance=None
+        conn, "zxcvbnm qwertyuiop asdfghjkl", limit=5, max_distance=None
     )
 
     assert len(results) == 5
-    assert all(distance > DEFAULT_MAX_DISTANCE for _doc_id, distance in results)
+    assert all(distance > 0.5 for _doc_id, distance in results)
 
 
 def test_search_vector_still_finds_a_genuinely_relevant_real_query(conn):
