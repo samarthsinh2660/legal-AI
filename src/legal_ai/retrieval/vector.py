@@ -16,14 +16,18 @@ import psycopg
 from legal_ai.knowledge.static.embeddings import embed
 from legal_ai.retrieval.metadata import MetadataFilters
 
-# Relevance floor: nearest-neighbour search has no notion of "nothing here
-# is relevant", so without this a meaningless query still returns the
-# least-distant documents in the corpus.
+# No relevance floor by default. An absolute distance cut-off cannot
+# separate relevant from irrelevant on this corpus: measured against
+# *correct* answers (not top hits), real answers run 0.31-0.76 while
+# nonsense queries bottom out at 0.66 -- the ranges overlap, and chunking
+# tightened the overlap further by putting a short passage near almost any
+# query. A floor tight enough to block nonsense discarded 3 of 15 correct
+# answers; one loose enough to keep them blocked nothing.
 #
-# Model-specific -- re-measure whenever EMBEDDING_MODEL changes. Current
-# value separates real legal queries (<= ~0.51) from nonsense (>= ~0.66)
-# for all-mpnet-base-v2.
-DEFAULT_MAX_DISTANCE = 0.60
+# Ordering quality is handled by the reranker instead, which scores query
+# against passage directly rather than guessing from distance alone.
+# Callers may still pass max_distance explicitly.
+DEFAULT_MAX_DISTANCE = None
 
 
 def search_vector(
@@ -33,10 +37,10 @@ def search_vector(
     filters: MetadataFilters | None = None,
     max_distance: float | None = DEFAULT_MAX_DISTANCE,
 ) -> list[tuple[str, float]]:
-    """Semantically nearest documents, excluding ones beyond the relevance floor.
+    """Semantically nearest documents, searching whole documents and chunks.
 
-    Pass max_distance=None to disable the floor and get raw nearest
-    neighbours (useful for diagnostics, or for re-measuring the threshold).
+    `max_distance` imposes a distance cut-off; None (the default) applies
+    none. See DEFAULT_MAX_DISTANCE for why there is no useful default.
     """
     filter_sql, filter_params = (filters or MetadataFilters()).to_sql()
     query_embedding = embed(query)
@@ -88,3 +92,45 @@ def search_vector(
             best[document_id] = distance
 
     return sorted(best.items(), key=lambda item: item[1])[:limit]
+
+
+def best_passages(
+    conn: psycopg.Connection,
+    query: str,
+    document_ids: list[str],
+    max_chars: int = 2000,
+) -> list[tuple[str, str]]:
+    """The passage of each document that best matches `query`.
+
+    A reranker scores query against passage, so it needs the piece that
+    actually matched -- for a chunked document that is the nearest chunk,
+    not the head of a long document that may be about something else.
+
+    Returns (document_id, passage) in the order given.
+    """
+    if not document_ids:
+        return []
+
+    query_embedding = embed(query)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT document_id, text FROM (
+              SELECT document_id, left(full_text, %s) AS text,
+                     row_number() OVER (PARTITION BY document_id
+                                        ORDER BY embedding <=> %s::vector) AS rn
+              FROM documents
+              WHERE embedding IS NOT NULL AND document_id = ANY(%s)
+              UNION ALL
+              SELECT document_id, left(text, %s),
+                     row_number() OVER (PARTITION BY document_id
+                                        ORDER BY embedding <=> %s::vector)
+              FROM document_chunks
+              WHERE embedding IS NOT NULL AND document_id = ANY(%s)
+            ) t WHERE rn = 1
+            """,
+            (max_chars, query_embedding, document_ids, max_chars, query_embedding, document_ids),
+        )
+        found = dict(cur.fetchall())
+
+    return [(doc_id, found[doc_id]) for doc_id in document_ids if doc_id in found]
