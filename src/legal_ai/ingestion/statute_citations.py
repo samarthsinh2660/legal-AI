@@ -7,11 +7,9 @@ of the Real Estate (Regulation and Development) Act, 2016" or "Section
 citations.py — see docs/superpowers/specs/2026-08-15-phase1-ingestion-design.md
 §3.4.
 
-This is necessarily best-effort: Act names are written in judgments with
-huge variation (short titles, abbreviations, "the said Act", etc.). A
-reference this module can't parse, or can't resolve to a stored Act, is
-left unresolved rather than guessed — same non-fabrication discipline as
-the rest of this project.
+Best-effort by nature: Act names vary widely in judgments (short titles,
+abbreviations, "the said Act"). Anything unparseable or unresolvable is
+left unresolved rather than guessed.
 """
 
 from __future__ import annotations

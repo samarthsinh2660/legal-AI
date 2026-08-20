@@ -32,6 +32,7 @@ from legal_ai.graphdb.ingest import write_act_section
 from legal_ai.ingestion.schema import CanonicalDocument, content_hash
 from legal_ai.knowledge.static.db import get_connection
 from legal_ai.knowledge.static.embeddings import embed
+from legal_ai.knowledge.static.chunk_store import chunk_and_store
 from legal_ai.knowledge.static.store import upsert_document
 from legal_ai.schemas.evidence import Provenance, SourceRef
 from legal_ai.sources.http import polite_get
@@ -175,6 +176,7 @@ def run() -> None:
             )
             section_vector = embed(section_doc.full_text)
             upsert_document(conn, section_doc, embedding=section_vector)
+            chunk_and_store(conn, section_doc.document_id, section_doc.full_text, section_doc.document_type)
             write_act_section(driver, act_doc, section_doc)
             filled += 1
 

@@ -15,6 +15,7 @@ from legal_ai.ingestion.schema import CanonicalDocument
 from legal_ai.ingestion.verification_gate import VerificationResult, verify_batch
 from legal_ai.knowledge.static.db import get_connection
 from legal_ai.knowledge.static.embeddings import embed
+from legal_ai.knowledge.static.chunk_store import chunk_and_store
 from legal_ai.knowledge.static.store import upsert_document
 
 
@@ -84,6 +85,7 @@ def ingest_india_code(
         for doc in all_docs:
             vector = embed(doc.full_text) if doc.full_text.strip() else None
             if upsert_document(conn, doc, embedding=vector):
+                chunk_and_store(conn, doc.document_id, doc.full_text, doc.document_type)
                 store_writes += 1
         for act, section in act_sections:
             write_act_section(driver, act, section)

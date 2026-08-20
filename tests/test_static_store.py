@@ -80,10 +80,17 @@ def test_get_document_returns_none_for_missing_id(conn):
 
 
 def test_find_similar_returns_nearest_by_embedding(conn):
-    upsert_document(conn, _doc("test:4", "about adverse possession"), embedding=_sparse_vector((0, 1.0)))
-    upsert_document(conn, _doc("test:5", "about contract law"), embedding=_sparse_vector((1, 1.0)))
+    # Real embeddings, not synthetic sparse vectors: the corpus is indexed
+    # with HNSW, whose graph traversal cannot reliably reach an artificial
+    # outlier like [1, 0, 0, ...] among dense normalised vectors.
+    from legal_ai.knowledge.static.embeddings import embed
 
-    results = find_similar(conn, query_embedding=_sparse_vector((0, 0.9), (1, 0.1)), limit=1)
+    nearest = "zzqvxk flibbertigibbet adverse possession of land"
+    other = "wugglesnarf blorptix formation of a commercial contract"
+    upsert_document(conn, _doc("test:4", nearest), embedding=embed(nearest))
+    upsert_document(conn, _doc("test:5", other), embedding=embed(other))
+
+    results = find_similar(conn, query_embedding=embed(nearest), limit=1)
 
     assert len(results) == 1
     assert results[0][0].document_id == "test:4"

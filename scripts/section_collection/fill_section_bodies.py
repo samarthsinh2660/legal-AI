@@ -23,6 +23,7 @@ from legal_ai.ingestion.india_code.section_body import extract_section_ajax_ids,
 from legal_ai.ingestion.schema import content_hash
 from legal_ai.knowledge.static.db import get_connection
 from legal_ai.knowledge.static.embeddings import embed
+from legal_ai.knowledge.static.chunk_store import chunk_and_store
 from legal_ai.knowledge.static.store import get_document, upsert_document
 from legal_ai.sources.http import polite_get
 
@@ -126,6 +127,7 @@ def run() -> None:
             doc.content_hash = content_hash(text)
             vector = embed(text) if text.strip() else None
             upsert_document(conn, doc, embedding=vector)
+            chunk_and_store(conn, doc.document_id, doc.full_text, doc.document_type)
             filled += 1
 
         total_filled += filled

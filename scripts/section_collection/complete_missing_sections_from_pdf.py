@@ -29,6 +29,7 @@ from google import genai
 from legal_ai.ingestion.schema import content_hash
 from legal_ai.knowledge.static.db import get_connection
 from legal_ai.knowledge.static.embeddings import embed
+from legal_ai.knowledge.static.chunk_store import chunk_and_store
 from legal_ai.knowledge.static.store import get_document, upsert_document
 from legal_ai.schemas.evidence import Provenance, SourceRef
 from legal_ai.sources.http import polite_get
@@ -185,6 +186,7 @@ def run() -> None:
             )
             vector = embed(doc.full_text)
             upsert_document(conn, doc, embedding=vector)
+            chunk_and_store(conn, doc.document_id, doc.full_text, doc.document_type)
             filled += 1
 
         total_filled += filled

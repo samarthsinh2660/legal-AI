@@ -111,12 +111,191 @@ were deliberately left out -- no real backing logic exists for them yet
 `PHASE_1_DATA_FOUNDATION.md`). 11 tests, all passing, real Postgres/Neo4j
 (no mocks).
 
-### Milestone 5 (not started)
+### Milestone 5 (in progress -- 1 of 4 sub-projects complete)
 
 Hybrid legal retrieval -- keyword + vector + metadata + graph fan-in,
 reranking, and evidence-building (`src/legal_ai/retrieval/` per
 `PROJECT_STRUCTURE.md` §8). Sits on top of Milestone 4's tools rather than
 replacing them.
+
+Decomposed into four sub-projects (see
+`docs/superpowers/specs/2026-08-19-phase2-milestone5-hybrid-retrieval-design.md`):
+
+1. **Core fan-in engine -- complete 2026-08-19.**
+   `retrieval/keyword.py` (Postgres FTS -- deliberately *not* called BM25,
+   because `ts_rank_cd` is not BM25), `retrieval/vector.py`,
+   `retrieval/metadata.py` (`MetadataFilters` + exact statutory lookup),
+   `retrieval/graph_search.py` (one-hop seed expansion),
+   `retrieval/hybrid.py` (Reciprocal Rank Fusion), and
+   `retrieval/evidence_builder.py` (now the single home for
+   `to_evidence`, consolidating three duplicate copies out of `tools/`).
+   Schema: generated `tsvector` column + GIN index, and an HNSW index on
+   `embedding` (the table previously had no index but its primary key).
+   40 tests, all passing, real Postgres/Neo4j.
+2. Embeddings provider abstraction + InLegalBERT benchmarking --
+   **benchmarked 2026-08-19, and dropped on the evidence.** `PROJECT_STRUCTURE.md`
+   §8 proposed benchmarking `law-ai/InLegalBERT` against the general-purpose
+   `all-MiniLM-L6-v2`. Measured before building anything:
+
+   | model | query~RERA §18 (correct) | query~sale-of-goods (junk) | separation |
+   |---|---|---|---|
+   | all-MiniLM-L6-v2 (current) | 0.372 | 0.173 | **+0.198** |
+   | InLegalBERT (mean-pooled) | 0.715 | 0.655 | **+0.059** |
+
+   InLegalBERT's higher absolute similarity is an anisotropy artifact --
+   mean-pooled BERT vectors cluster in a narrow cone, so everything scores
+   ~0.65-0.72, including entirely unrelated provisions. Raw cosine values
+   are **not comparable across models**; only separation between a correct
+   and an irrelevant document is. By that measure InLegalBERT is 3.4x
+   *worse* at discriminating. Not adopted -- switching would also have cost
+   a re-embed of all 36,467 documents and a 384->768 dimension migration.
+
+   Caveat: this tests InLegalBERT mean-pooled, which is how a raw BERT
+   checkpoint must be used for similarity. A sentence-transformers model
+   fine-tuned on legal text (were a good one available) could still beat
+   MiniLM; that is a different experiment, not this one.
+
+   **Follow-up benchmark, 2026-08-19/20 -- a model swap IS warranted, just
+   not to InLegalBERT.** Rank-based evaluation (rank of the known-correct
+   section among a 10,005-document pool of real sections), using natural
+   user phrasings that deliberately avoid the sections' own vocabulary:
+
+   First run used only 5 queries and reported MiniLM MRR 0.626 vs mpnet
+   0.900 (recall@10 80% -> 100%). **Re-run with 15 queries across contract,
+   criminal, property, labour, consumer and arbitration law -- the honest
+   numbers are materially smaller:**
+
+   | model | MRR | recall@1 | recall@5 | recall@10 | CPU time /10k docs |
+   |---|---|---|---|---|---|
+   | all-MiniLM-L6-v2 (current) | 0.600 | 53% | 67% | 73% | 198s |
+   | **all-mpnet-base-v2** | **0.694** | 60% | **87%** | **87%** | 2352s |
+
+   mpnet better on 6/15 queries, worse on 4/15. The n=5 result overstated
+   the gain roughly threefold -- a caution worth remembering about small
+   eval sets.
+
+   Where mpnet wins are exactly the vocabulary-gap cases: IT Act §66D
+   ("impersonated" vs statutory "cheating by personation") 55 -> 1, RERA
+   §18 ("builder" vs "promoter") 9 -> 1, TPA §54 27 -> 4, BNS §356 4 -> 1.
+   Notably a *general-purpose* model closed the legal vocabulary gap that
+   the legal-domain model (InLegalBERT) could not.
+
+   Where it regresses: Contract Act §27 (restraint of trade) 52 -> 143,
+   plus minor slippage on already-good queries (§138 1->3, §103 1->4,
+   RERA §3 1->2). Caveat on §27: the corpus holds a near-duplicate --
+   `act:2394:sec-54` (Partnership Act, "Agreements in restraint of trade")
+   -- so that ground-truth label is arguably wrong rather than mpnet being
+   wrong.
+
+   **Decision basis:** recall@5 (67% -> 87%) matters more than MRR here,
+   because retrieval feeds a top-k window to an agent; "the right section
+   is in the window" is the property that determines whether a grounded
+   answer is possible at all.
+
+   **Longer-context candidates (nomic-embed, gte-multilingual, bge-m3) were
+   dropped on hardware grounds, not quality.** They were never measured:
+   two runs were killed by the Linux OOM killer (confirmed in the kernel
+   log), because an 8192-token context allocates attention buffers larger
+   than the free RAM. The deployment target is a CPU-only server with
+   4-5GB RAM that also runs Postgres and Neo4j, leaving ~3-3.5GB; bge-m3
+   (~3-4GB) and gte (~2.5-3GB) do not fit, and nomic only fits if its
+   context is capped to ~1024, which removes the long-context advantage
+   that justified testing it. mpnet (~1-1.5GB) fits comfortably.
+
+   **Full-corpus baseline for reference** (36,467 docs, current MiniLM
+   embeddings): MRR 0.508, recall@10 60% -- ranks [29, 1, 1, 2, 196].
+   Note pool size dominates these numbers: the same five queries score MRR
+   0.833 against a 405-document pool, 0.626 against 10k, 0.508 against the
+   full corpus. Never compare MRR across different pool sizes.
+
+   **Adopted 2026-08-20.** `all-mpnet-base-v2` is now the default; all
+   36,465 documents were re-embedded at 768 dimensions and the HNSW index
+   rebuilt (~60 min locally at ~10 docs/s with batched encoding).
+
+   Full-corpus ranks before vs. after, for the five queries where a
+   pre-migration baseline exists:
+
+   | query | MiniLM | mpnet |
+   |---|---|---|
+   | RERA §18 ("builder" vs "promoter") | 29 | **1** |
+   | IT Act §66D ("impersonated") | 196 | **5** |
+   | BNS §316 | 1 | 1 |
+   | RERA §3 | 1 | 2 |
+   | Arbitration §11 | 2 | 3 |
+
+   MRR 0.508 -> 0.607, recall@10 60% -> 100% on that set. The two headline
+   failures that motivated the whole investigation are fixed; the small
+   regressions are all within the top 3 and cost nothing at a top-5 window.
+
+   Honest limitation: migrating overwrote the MiniLM vectors, so the other
+   ten queries can no longer be A/B'd at full-corpus scale -- only the
+   10k-pool comparison above exists for them.
+
+   `DEFAULT_MAX_DISTANCE` re-measured for mpnet and changed 0.65 -> 0.60
+   (mpnet: nonsense 0.664-0.802, real 0.225-0.514; carrying 0.65 over would
+   have left only 0.014 of margin). See `retrieval/vector.py`.
+
+   Ground-truth caveat found while verifying: for "someone impersonated me
+   online using my identity to cheat people", the system returns BNS §319
+   ("Cheating by personation") first, which is arguably a *better* answer
+   than the labelled IT Act §66D. Some of the measured "misses" above are
+   therefore label noise rather than retrieval failure.
+
+   Reframed scope for this sub-project: rather than the originally-planned
+   InLegalBERT benchmark, `embeddings.py` should make the model a
+   **swappable config value** instead of a hardcoded string, so a future
+   upgrade (GPU box, larger VM) is a config change plus a re-run of this
+   benchmark -- not a code rewrite. Small piece of work, real payoff.
+
+   Test-set caveat: n=5 queries. Directionally consistent and both fixes
+   land where predicted, but widen the set before treating 0.900 as precise.
+3. Chunking pipeline (`chunking/statute.py`, `chunking/judgment.py`) -- not started.
+4. Cross-encoder reranking (`rerank.py`) -- not started.
+
+**Measured retrieval quality after sub-project 1 (honest baseline, not a
+success claim).** For the query *"builder failed to give possession on
+time refund"* against the real corpus:
+
+- Keyword search returns exactly the right two real-estate delay/refund
+  judgments -- the strongest signal here.
+- Vector search returns five irrelevant sections -- effectively noise.
+- **RERA §18 ("Return of amount and compensation"), the single most
+  on-point provision, does not surface at all**, even at limit=20.
+
+Root cause, diagnosed rather than assumed: the statute says *"promoter
+fails to complete or is unable to give possession"* while users say
+*"builder"*, so keyword search cannot bridge the vocabulary gap, and the
+general-purpose `all-MiniLM-L6-v2` embedding is too weak to bridge it
+semantically. This is the same RERA §18 gap the earlier real-estate pilot
+found, now precisely root-caused -- and it is exactly what sub-projects 2
+(legal-domain embeddings) and 4 (reranking) exist to fix. The fan-in
+plumbing is correct; ranking quality is the open problem.
+
+**Over-engineering review (2026-08-19), prompted by the question "was the
+missing index the whole problem, and is a new system justified?"** Each
+piece was measured against the pre-existing Phase 1 vector search:
+
+| Piece | Earns its place? | Evidence |
+|---|---|---|
+| HNSW index | Speed only, **not** relevance | 72ms -> 1.8ms, but byte-identical results. It never could have fixed retrieval quality -- speed and relevance were two separate problems, and the index only addressed one. |
+| Keyword signal | Yes | Surfaced the Ireo Grace and Kabra judgments, which vector-only search missed entirely. |
+| Metadata exact lookup | Yes | Vector-only failed to return RERA §18 even when the query literally spelled out "Section 18 of the Real Estate (Regulation and Development) Act, 2016". |
+| Fusion (RRF) | Yes | ~30 lines; required to combine the above. |
+| Graph expansion | **Not yet** | Added six documents: one relevant (RERA §31), five noise. Kept and tested, but **defaults to off** -- with six judgments the graph is too sparse. Flip `expand_graph=True` and re-measure once the corpus grows. |
+
+Net: 3 of 5 tested queries improved over the pre-existing vector search.
+The vocabulary gap ("builder" vs. "promoter") remains genuinely unfixed by
+any of this, and is the target of sub-project 2.
+
+**Backlog item identified 2026-08-19, deferred to this milestone:**
+`search_judgments` is deliberately a "find and verify one specific case"
+tool (0 or 1 result), not a "browse related case law on a topic" one --
+the Bharat Courts archive returns up to 3 candidates internally but only
+`results[0]` is kept, and Indian Kanoon search only ever takes its top
+hit. A `search_related_judgments(topic, limit=N)` tool -- take all N
+candidates, verify each, store and return all as `Evidence` -- is the
+natural way to get more than one relevant case per query, and belongs
+here rather than in Milestone 4's single-case-lookup tools.
 
 ------------------------------------------------------------------------
 

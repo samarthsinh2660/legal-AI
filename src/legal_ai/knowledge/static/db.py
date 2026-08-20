@@ -11,8 +11,22 @@ import os
 import psycopg
 from pgvector.psycopg import register_vector
 
-# Embedding dimension for the Task 1 default model, all-MiniLM-L6-v2.
-EMBEDDING_DIM = 384
+from legal_ai.knowledge.static.embeddings import embedding_dim
+
+
+def _embedding_dim() -> int:
+    """Dimension of the currently-selected embedding model.
+
+    Read through a function, not frozen at import, so overriding
+    EMBEDDING_MODEL cannot leave schema and vectors disagreeing.
+    """
+    return embedding_dim()
+
+
+# Import-time snapshot kept for backwards compatibility. Prefer
+# _embedding_dim() in new code; this will not follow a later
+# EMBEDDING_MODEL change.
+EMBEDDING_DIM = embedding_dim()
 
 _DEFAULT_DSN = "postgresql://legal_ai:legal_ai_dev@localhost:5433/legal_ai"
 
@@ -24,6 +38,111 @@ def get_connection() -> psycopg.Connection:
     conn.commit()
     register_vector(conn)
     return conn
+
+
+def ensure_retrieval_schema(conn: psycopg.Connection) -> dict[str, bool]:
+    """Additive, idempotent indexes for hybrid retrieval.
+
+    Separate from ensure_schema() because these are retrieval concerns;
+    ingestion works without them.
+
+    Returns which structures are in place. "vector_index" may be False:
+    HNSW needs a fixed-dimension column, so a corpus with mixed embedding
+    dimensions falls back to a sequential scan rather than raising.
+    """
+    conn.execute(
+        """
+        ALTER TABLE documents ADD COLUMN IF NOT EXISTS search_vector tsvector
+        GENERATED ALWAYS AS (
+            to_tsvector('english', coalesce(title, '') || ' ' || coalesce(full_text, ''))
+        ) STORED
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS documents_search_vector_gin
+        ON documents USING GIN (search_vector)
+        """
+    )
+    conn.commit()
+
+    ensure_chunk_schema(conn)
+    vector_index = _ensure_vector_index(conn)
+    return {
+        "search_vector_column": True,
+        "keyword_index": True,
+        "vector_index": vector_index,
+    }
+
+
+def _ensure_vector_index(conn: psycopg.Connection) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM pg_indexes WHERE tablename = 'documents' "
+            "AND indexname = 'documents_embedding_hnsw'"
+        )
+        if cur.fetchone() is not None:
+            return True
+
+        # pgvector stores a column's declared dimension in atttypmod; a
+        # bare VECTOR is -1, which HNSW cannot index.
+        cur.execute(
+            "SELECT atttypmod FROM pg_attribute "
+            "WHERE attrelid = 'documents'::regclass AND attname = 'embedding'"
+        )
+        typmod = cur.fetchone()[0]
+
+        if typmod < 0:
+            cur.execute(
+                "SELECT DISTINCT vector_dims(embedding) FROM documents WHERE embedding IS NOT NULL"
+            )
+            dims = [row[0] for row in cur.fetchall()]
+            if dims not in ([_embedding_dim()], []):
+                return False
+            cur.execute(
+                f"ALTER TABLE documents ALTER COLUMN embedding TYPE vector({_embedding_dim()})"
+            )
+
+    conn.commit()
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS documents_embedding_hnsw "
+        "ON documents USING hnsw (embedding vector_cosine_ops)"
+    )
+    conn.commit()
+    return True
+
+
+def ensure_chunk_schema(conn: psycopg.Connection) -> None:
+    """Table holding embeddable pieces of documents too long to embed whole.
+
+    Kept out of `documents`, which is the canonical store: chunks are a
+    retrieval-layer artifact and must be re-buildable without touching
+    canonical data. ON DELETE CASCADE keeps them from outliving a parent.
+    """
+    dim = _embedding_dim()
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS document_chunks (
+            chunk_id TEXT PRIMARY KEY,
+            document_id TEXT NOT NULL REFERENCES documents(document_id) ON DELETE CASCADE,
+            ordinal INT NOT NULL,
+            label TEXT,
+            text TEXT NOT NULL,
+            embedding vector({dim}),
+            UNIQUE (document_id, ordinal)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS document_chunks_document_id_idx "
+        "ON document_chunks (document_id)"
+    )
+    conn.commit()
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS document_chunks_embedding_hnsw "
+        "ON document_chunks USING hnsw (embedding vector_cosine_ops)"
+    )
+    conn.commit()
 
 
 def ensure_schema(conn: psycopg.Connection) -> None:

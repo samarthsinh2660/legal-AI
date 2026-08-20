@@ -49,15 +49,10 @@ def write_judgment(
     of the extra Postgres round-trips per reference.
     """
     citations_in_text = extract_citations(judgment.full_text)
-    # own_citation identifies THIS document for other judgments' CITES
-    # edges to resolve against — it must be the document's own, actually-
-    # known citation (judgment.citation), never guessed from citations
-    # its own body text merely *mentions*. That fallback used to be
-    # `citations_in_text[0]`, which silently mislabeled a document as
-    # having whatever citation it happened to reference first — e.g. two
-    # unrelated RERA judgments that both cited "(2021) 3 SCC 241" in
-    # passing each got mislabeled as *being* "(2021) 3 SCC 241" and
-    # produced false CITES edges (confirmed live 2026-08-19).
+    # Identifies THIS document for other judgments' CITES edges to
+    # resolve against, so it must be the document's own known citation --
+    # never inferred from a citation its body text merely mentions, which
+    # would mislabel it as being the case it cites.
     own_citation = judgment.citation
 
     with driver.session() as session:
