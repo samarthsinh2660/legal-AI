@@ -52,6 +52,9 @@ def hybrid_search(
     query: str,
     limit: int = 10,
     filters: MetadataFilters | None = None,
+    # OFF for now: measured effect is nil today because the citation edges
+    # it would traverse barely exist yet. Can be turned on once the corpus
+    # is much bigger -- re-measure first, see the docstring below.
     expand_graph: bool = False,
     rerank: bool = True,
 ) -> list[Evidence]:
@@ -66,10 +69,23 @@ def hybrid_search(
     roughly a second or two per query on CPU; pass rerank=False, or set
     RERANK_MODEL to the lighter L-6, where latency matters more.
 
-    `expand_graph` defaults to False: with few judgments stored, most
-    CITES/CITES_SECTION edges do not exist and expansion contributes more
-    noise than signal. Enable it, and re-measure, once the judgment corpus
-    is substantially larger.
+    `expand_graph` is OFF for now, and can be turned on later once the
+    corpus is much bigger.
+
+    Measured effect today is nil (identical MRR and recall) for +0.5s per
+    query, because the useful edges barely exist: ~35,600 CONTAINS edges
+    against a handful of CITES/CITES_SECTION, which come from judgments
+    and only a few are stored. Expansion therefore mostly walks Section ->
+    parent Act, and Acts are containers the reranker correctly discards.
+
+    When the judgment corpus is large, re-measure before switching it on
+    rather than assuming it helps: more edges can mean more noise, since a
+    heavily-cited section expands into hundreds of loosely-related
+    candidates. If it hurts then, the fix is edge weighting (down-weight
+    hub nodes, require agreement across several seeds), not simply
+    disabling it again. Note that the explicit graph tools in
+    legal_ai.tools.graph answer structural questions directly and need no
+    such tuning.
     """
     # With reranking on, the signals must return at least the shortlist the
     # reranker expects -- otherwise the deep candidates it exists to rescue

@@ -296,7 +296,7 @@ Decomposed into four sub-projects (see
 
    Model is swappable via `RERANK_MODEL` (L-6 registered for when latency
    matters more than ranking quality). Latency above is a development
-   laptop; re-measure on the CPU-only server before enabling by default.
+   laptop and should be re-measured on the CPU-only server.
 
 **Relevance floor removed (`retrieval/vector.py`).** An earlier
 `DEFAULT_MAX_DISTANCE = 0.60` was derived from a flawed measurement: it
@@ -320,9 +320,10 @@ fusion. The fan-in is not the problem.
 | fan-in only | 0.299 | 13% | 67% | 73% |
 | **fan-in + rerank** | **0.530** | **40%** | **87%** | **87%** |
 
-Reranking is therefore load-bearing, not optional polish: without it the
-pipeline retrieves poorly. It still defaults to off pending a latency
-measurement on the target server, but that default should be revisited.
+Reranking is therefore load-bearing, not optional polish, and is **on by
+default**. It costs roughly 1-3s per query on CPU; `rerank=False` or
+`RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2` trade quality for
+latency where that matters.
 
 **Measured retrieval quality after sub-project 1 (honest baseline, not a
 success claim).** For the query *"builder failed to give possession on
