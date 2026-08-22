@@ -62,9 +62,11 @@ def test_parse_plan_handles_a_fenced_code_block():
 
 
 def test_every_allowed_tool_is_actually_executable():
-    from legal_ai.agents.executor import TOOLS
+    from legal_ai.tools.registry import TOOLS
 
-    assert set(TOOLS) == set(ALLOWED_TOOLS)
+    # Every tool a plan may name must be bound in the registry. The registry
+    # may hold more (get_statute is reachable by other callers).
+    assert set(ALLOWED_TOOLS) <= set(TOOLS)
 
 
 # --------------------------------------------------------------- executor
@@ -211,22 +213,45 @@ def test_interactive_research_never_triggers_a_live_archive_scan():
     # Measured at 228s for a query that found nothing: with no court given
     # the archive scans the Supreme Court and all ~25 High Court partitions.
     # A research loop a person is waiting on must not block on that.
-    from legal_ai.agents.executor import FORCED_ARGS
+    from legal_ai.tools.registry import FORCED_ARGS
 
     assert FORCED_ARGS["search_judgments"]["live"] is False
 
 
-def test_a_plan_asking_for_a_live_search_is_overridden(monkeypatch):
-    captured = {}
+def test_a_plan_asking_for_a_live_search_is_overridden():
+    # FORCED_ARGS wins over whatever the plan asked for, so a model cannot
+    # opt an interactive run into the 228s archive scan.
+    from legal_ai.tools.registry import resolve_args
 
-    def fake_search(**kwargs):
-        captured.update(kwargs)
-        return []
+    assert resolve_args("search_judgments", {"query": "x", "live": True})["live"] is False
 
-    monkeypatch.setitem(__import__(
-        "legal_ai.agents.executor", fromlist=["TOOLS"]).TOOLS, "search_judgments", fake_search)
-    execute_step(PlanStep("search_judgments", {"query": "x", "live": True}))
-    assert captured["live"] is False
+
+def test_resolve_args_drops_parameters_the_tool_does_not_accept():
+    from legal_ai.tools.registry import resolve_args
+
+    assert "temperature" not in resolve_args("search_statutes", {"query": "x", "temperature": 0.7})
+
+
+def test_resolve_args_applies_the_search_limit_only_when_unspecified():
+    from legal_ai.tools.registry import SEARCH_LIMIT, resolve_args
+
+    assert resolve_args("search_statutes", {"query": "x"})["limit"] == SEARCH_LIMIT
+    assert resolve_args("search_statutes", {"query": "x", "limit": 3})["limit"] == 3
+
+
+def test_resolve_args_of_an_unregistered_tool_is_empty():
+    from legal_ai.tools.registry import resolve_args
+
+    assert resolve_args("invented_tool", {"query": "x"}) == {}
+
+
+def test_get_tool_returns_none_rather_than_raising_for_an_invented_name():
+    # A model inventing a tool is a step to drop, not an error to unwind the
+    # whole run with.
+    from legal_ai.tools.registry import get_tool
+
+    assert get_tool("delete_everything") is None
+    assert get_tool("search_statutes") is not None
 
 
 def test_db_only_judgment_search_returns_quickly_and_says_why():
@@ -266,6 +291,6 @@ def test_ranking_a_single_result_is_a_no_op():
 def test_search_steps_request_a_deeper_slice_than_the_human_default():
     # The tool default of 5 is tuned for a person reading a list; an agent
     # that reranks afterwards wants more to rerank from.
-    from legal_ai.agents.executor import DEFAULT_SEARCH_LIMIT
+    from legal_ai.tools.registry import SEARCH_LIMIT
 
-    assert DEFAULT_SEARCH_LIMIT > 5
+    assert SEARCH_LIMIT > 5

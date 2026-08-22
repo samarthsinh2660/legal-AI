@@ -1,27 +1,14 @@
-"""Caps and model settings for the research graph.
+"""Graph configuration -- now a thin alias over legal_ai.config.
 
-Every limit here is enforced in code, never in a prompt. A prompt is a
-request; a cap is a guarantee.
-
-Values are lower than open_deep_research's defaults because this runs on the
-Gemini free tier, where a three-way fan-out multiplies every call.
+The settings themselves live in legal_ai.config.settings so that caps,
+models and retrieval limits are answerable from one file rather than six.
+This module stays because the graph and its tests import GraphConfig.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from legal_ai.config import DEFAULT_CONFIG, Configuration
 
+GraphConfig = Configuration
 
-@dataclass(frozen=True)
-class GraphConfig:
-    # Parallel research agents per supervisor round.
-    max_concurrent_research_units: int = 3
-    # Supervisor reflect-and-go-again rounds.
-    max_researcher_iterations: int = 3
-    # Tool steps a single plan may contain.
-    max_plan_steps: int = 8
-    # Re-research passes triggered by unsupported claims.
-    max_verification_passes: int = 2
-
-
-DEFAULT_CONFIG = GraphConfig()
+__all__ = ["Configuration", "GraphConfig", "DEFAULT_CONFIG"]

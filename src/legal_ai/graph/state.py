@@ -35,8 +35,12 @@ class ResearchState(TypedDict, total=False):
     # sensibly start. A non-empty value halts the run for the user.
     clarification_needed: Optional[str]
 
-    # Claims verification could not ground. Populated from Milestone 8;
-    # a non-empty value sends the run back for bounded re-research.
+    # Structured claims from the Analyst, each carrying its Evidence ids.
+    # Empty until Phase 5; verification is vacuous without them.
+    claims: list
+
+    # Claims verification could not ground. A non-empty value sends the run
+    # back for bounded re-research, up to GraphConfig.max_verification_passes.
     unsupported_claims: list[str]
 
     answer: Optional[str]

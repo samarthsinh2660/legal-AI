@@ -83,12 +83,27 @@ def analyst(state: ResearchState) -> dict:
 
 
 def verification(state: ResearchState) -> dict:
-    """Groundedness, legal correctness, coverage.
+    """Groundedness, then coverage.
 
-    Pass-through until Milestone 8. Groundedness runs first and uses no
-    model, so it cannot itself hallucinate.
+    Groundedness runs first and uses no model, so it cannot itself
+    hallucinate. See legal_ai.verification.
     """
-    return {"verification_passes": state.get("verification_passes", 0) + 1}
+    from legal_ai.knowledge.static.db import get_connection
+    from legal_ai.verification.groundedness import check_groundedness
+
+    passes = state.get("verification_passes", 0) + 1
+    claims = state.get("claims") or []
+    if not claims:
+        # Nothing produces claims until the Analyst lands in Phase 5.
+        return {"verification_passes": passes, "unsupported_claims": []}
+
+    retrieved = {item.document_id for item in state.get("findings") or [] if item.document_id}
+    conn = get_connection()
+    try:
+        result = check_groundedness(claims, conn, available_ids=retrieved)
+    finally:
+        conn.close()
+    return {"verification_passes": passes, "unsupported_claims": result.unsupported_texts}
 
 
 def draft(state: ResearchState) -> dict:

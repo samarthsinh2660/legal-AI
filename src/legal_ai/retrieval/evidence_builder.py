@@ -20,15 +20,14 @@ from __future__ import annotations
 
 import psycopg
 
+from legal_ai.config import DEFAULT_CONFIG
 from legal_ai.ingestion.schema import CanonicalDocument
 from legal_ai.knowledge.static.embeddings import embed
 from legal_ai.knowledge.static.store import get_document
 from legal_ai.schemas.evidence import Evidence, Location
 
-# Characters of a matched passage returned per document. Enough for a source
-# panel extract and for a cross-encoder to score, without shipping the
-# document.
-PASSAGE_CHARS = 2000
+# Set in legal_ai.config.settings, which carries the reasoning.
+PASSAGE_CHARS = DEFAULT_CONFIG.passage_chars
 
 
 def to_evidence(doc: CanonicalDocument, content: str | None = None,

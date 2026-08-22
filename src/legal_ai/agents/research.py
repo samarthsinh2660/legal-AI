@@ -29,11 +29,11 @@ from legal_ai.llm.client import generate
 from legal_ai.retrieval.rerank import rerank as rerank_candidates
 from legal_ai.schemas.evidence import Evidence
 
-# Rounds a single angle may take. Distinct from the supervisor's own loop.
-DEFAULT_MAX_ROUNDS = 2
+from legal_ai.config import DEFAULT_CONFIG
 
-# Findings returned per angle after reranking.
-DEFAULT_LIMIT = 10
+# Set in legal_ai.config.settings, which carries the reasoning.
+DEFAULT_MAX_ROUNDS = DEFAULT_CONFIG.max_agent_rounds
+DEFAULT_LIMIT = DEFAULT_CONFIG.limit_per_angle
 
 
 def rank_by_relevance(angle: str, evidence: list[Evidence], limit: int) -> list[Evidence]:
@@ -132,7 +132,39 @@ def research_angle(
     limit: int = DEFAULT_LIMIT,
     conn: psycopg.Connection | None = None,
 ) -> ResearchResult:
-    """Research one angle and return a compressed, validated finding."""
+    """Research one angle and return a compressed, validated finding.
+
+    `conn` is optional. When omitted this opens its own connection, so
+    angles running in parallel each get one -- a psycopg connection is not
+    thread-safe, and sharing one would either corrupt state or force
+    validation to silently fall back to structural checks only.
+    """
+    owned_conn = None
+    if conn is None:
+        from legal_ai.knowledge.static.db import get_connection
+
+        try:
+            owned_conn = get_connection()
+            conn = owned_conn
+        except Exception:
+            # No database reachable: structural validation still runs.
+            conn = None
+
+    try:
+        return _research_angle(angle, context, max_rounds, max_steps, limit, conn)
+    finally:
+        if owned_conn is not None:
+            owned_conn.close()
+
+
+def _research_angle(
+    angle: str,
+    context: str,
+    max_rounds: int,
+    max_steps: int,
+    limit: int,
+    conn: psycopg.Connection | None,
+) -> ResearchResult:
     collected: list[Evidence] = []
     dropped: list[tuple[str, str]] = []
     seen: set[str] = set()

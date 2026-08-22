@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 
+from evals.preflight import FailureTracker, require_model
 from evals.dataset import load_questions
 from evals.evaluators.ranking import first_relevant_rank, mean_reciprocal_rank, recall_at_k
 from legal_ai.agents.research import research_angle
@@ -29,6 +30,9 @@ def main() -> None:
     parser.add_argument("--max-steps", type=int, default=8)
     parser.add_argument("--limit", type=int, default=0, help="first N questions only")
     args = parser.parse_args()
+
+    require_model()
+    tracker = FailureTracker()
 
     questions = load_questions()
     if args.limit:
@@ -46,7 +50,8 @@ def main() -> None:
             )
             ids = [item.document_id for item in result.evidence if item.document_id]
             rank = first_relevant_rank(ids, question.expected)
-            ranks.append(rank)
+            tracker.record_model_failures()
+        ranks.append(rank)
             print(
                 f"  {question.id:<30} {'miss' if rank is None else f'rank {rank}':<8} "
                 f"rounds {result.rounds}  kept {len(result.evidence)}  "

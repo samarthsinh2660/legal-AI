@@ -312,12 +312,50 @@ highest-risk detail in the phase.
 | 6.1 | Harness --- `evals/` datasets, evaluators, 50 questions | **done** |
 | 6.2 | `ThreadContext` --- builder, revisions, invalidation, `case_id`, filters | **done** |
 | 6.3 | Graph skeleton --- `langgraph.json`, state, nodes, caps | **done** |
-| 6.4 | **Document Agent** --- extract structure from an upload into the context | to do |
-| 6.5 | Clarification gate | to do |
-| 6.6 | Tier-1 `Evidence` --- matched passage, location, court, citation | to do |
-| 7.1 | Researcher subgraph --- plan, execute, validate, compress | to do |
-| 7.2 | Supervisor --- fan-out, reflect loop, caps, overflow | to do |
-| 8 | Verification --- groundedness, coverage, bounded re-research | to do |
+| 6.4 | Document Agent --- extract structure from an upload into the context | **done** |
+| 6.5 | Clarification gate | **done** |
+| 6.6 | Tier-1 `Evidence` --- matched passage, location, court, citation | **done** |
+| 7.1 | Researcher subgraph --- plan, execute, validate, compress | **done**, measured below |
+| 7.2 | Supervisor --- decompose, fan-out, merge | **done**, measurement pending |
+| 8 | Verification --- groundedness, coverage, bounded re-research | **done** |
+
+**Measured, and honest about it.** On the 50-question lookup benchmark the
+research agent scores MRR 0.376 against 0.670 for a single query-rewrite
+call and 0.467 for plain retrieval. It does not clear the bar. The queries
+its planner writes are good; the loss is structural, and the benchmark
+itself is the deeper limitation --- every question there has exactly one
+correct answer in one Act, so it is a *lookup* benchmark and cannot show
+what decomposition is for.
+
+The multi-angle dataset (`evals/datasets/multi_angle.json`, 10 questions
+whose answer is a *set* of provisions across Acts, scored by coverage)
+exists for that reason. **The control ran; the fan-out cannot run on the free tier.**
+
+    .venv/bin/python -m evals.run_multi_angle --single   # control: 22%
+    .venv/bin/python -m evals.run_multi_angle            # fan-out: aborts
+
+Single-angle control, reproduced twice: **coverage@10 22%, complete 0%**.
+No multi-angle question was answered completely, which is the honest
+baseline the supervisor has to beat.
+
+**Fan-out is rate-limited by construction.** Measured 2026-08-22: three
+concurrent calls to `gemini-flash-latest` all return 429 immediately, while
+the same call sequentially succeeds. The free tier caps requests *per
+minute*, so parallel research -- the one thing fan-out exists to do -- is
+what the tier forbids. This is not the daily cap; quota was confirmed
+healthy before and after.
+
+The harness aborts rather than scoring under those conditions. An earlier
+run reported "5% coverage" against the 22% control, which looked like a
+design result and was in fact three of ten questions failing to reach a
+model at all.
+
+**7.2 therefore remains unmeasured**, and its verdict is open. Options, in
+order of cost: stagger the fan-out with a delay between angles (slower, but
+free); run angles sequentially (loses the parallelism but still tests
+whether decomposition finds more); or a paid tier. Until one of those runs,
+whether the supervisor earns its cost is unknown -- and should be stated as
+unknown rather than assumed either way.
 
 Milestone numbering is project-wide, not per-phase: Phase 1 ran milestones
 0--3, Phase 2 ran 4--5, so Phase 3 begins at 6.

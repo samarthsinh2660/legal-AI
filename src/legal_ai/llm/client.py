@@ -21,22 +21,23 @@ from __future__ import annotations
 import os
 import time
 
-# Ordered by preference: strongest first, then progressively lighter models
-# that are cheaper and less likely to be contended.
-MODEL_CHAIN: tuple[str, ...] = (
-    "gemini-flash-latest",
-    "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3-flash-preview",
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-lite-latest",
-)
+from legal_ai.config import DEFAULT_CONFIG
 
-# Transient-overload retries per model before falling through. Kept low:
-# with eight models to fall back on, moving on is cheaper than waiting.
-MAX_RETRIES_PER_MODEL = 2
+# Re-exported for callers that want the chain without importing config.
+# The values live in legal_ai.config.settings, which carries the reasoning.
+MODEL_CHAIN: tuple[str, ...] = DEFAULT_CONFIG.model_chain
+MAX_RETRIES_PER_MODEL = DEFAULT_CONFIG.max_retries_per_model
+
+
+# Counts of chain-wide failures, for evals to distinguish "the system found
+# nothing" from "the API was unreachable". The two look identical in a score
+# and mean opposite things.
+UNAVAILABLE_COUNT = 0
+
+
+def reset_unavailable_count() -> None:
+    global UNAVAILABLE_COUNT
+    UNAVAILABLE_COUNT = 0
 
 
 class AllModelsUnavailable(RuntimeError):
@@ -85,4 +86,6 @@ def generate(prompt: str, chain: tuple[str, ...] = MODEL_CHAIN) -> str:
                     continue
                 break  # exhausted, missing, or out of retries -- next model
 
+    global UNAVAILABLE_COUNT
+    UNAVAILABLE_COUNT += 1
     raise AllModelsUnavailable(f"all {len(chain)} models failed: {failures}")
