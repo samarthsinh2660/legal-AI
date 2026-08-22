@@ -325,6 +325,68 @@ default**. It costs roughly 1-3s per query on CPU; `rerank=False` or
 `RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2` trade quality for
 latency where that matters.
 
+### Re-measured 2026-08-20, on a versioned benchmark
+
+The 15-query set above was never committed to the repository, so those
+numbers cannot be reproduced. Phase 3 milestone 6a rebuilt the benchmark as
+`evals/`, with the questions and their ground-truth document ids under
+version control:
+
+    .venv/bin/python -m evals.run
+    .venv/bin/python -m evals.run --no-rerank
+
+This is a **different question set**, so the figures are not expected to
+match the table above and identical numbers would be coincidence. What
+carries over is the finding that justified turning reranking on.
+
+**50 questions, full corpus, limit=10:**
+
+| configuration | MRR | recall@1 | recall@5 | recall@10 |
+|---|---|---|---|---|
+| fan-in only | 0.345 | 16% | 60% | 74% |
+| **fan-in + rerank** | **0.467** | **32%** | **64%** | **78%** |
+
+(The fan-in row predates two ground-truth corrections and understates that
+configuration slightly; the reranked row is current.)
+
+**The reranking decision holds, but its measured benefit is smaller than
+the original set implied.** MRR improves by ~0.12 and recall@1 by 16 points,
+against the +0.231 MRR the 15-query set reported. Reranking is still clearly
+worth its cost -- it nearly doubles the rate at which the correct provision
+lands at rank 1 -- but "0.299 to 0.530" overstated the effect, most likely
+because a 15-question set is too small for a stable MRR.
+
+Note also that reranking moves ordering, not membership: recall@5 is
+identical either way. Its whole contribution is pushing the right answer
+towards the top of a list it was already in.
+
+An intermediate 14-question run measured MRR 0.574 vs 0.400 and showed
+recall@10 *regressing* under reranking, 93% to 86%. That regression did not
+survive the move to 50 questions (74% to 78%), and was a single question
+moving a small denominator -- recorded here as a caution against reading
+per-question movements on a small set as findings.
+
+**The dominant failure mode is right Act, wrong section: 9 of 11 misses
+returned the correct Act inside the top 10 without returning the correct
+section.** Retrieval is not lost on these questions -- it reaches the right
+statute and then fails to discriminate between sections that share its
+vocabulary. That is the expected shape of the problem with 35,601 sections
+embedded, and it is the failure a research agent is meant to close, since
+`get_section(act_id, number)` can navigate within an Act once the Act is
+known.
+
+Two ground-truth labels were corrected after inspecting the misses: BNS s.86
+("cruelty" defined) now also accepts s.85, which it explicitly cross-refers
+to, and the online-impersonation question accepts BNS s.319 alongside IT Act
+s.66D. Both were single-label errors on questions with two correct answers.
+
+The remaining hard cases are genuine retrieval failures, not labelling errors.
+Contract Act §27 (restraint of trade) misses under both configurations: the
+question says *employment contract* and *competitor* while the section says
+*restrained from exercising a lawful profession, trade or business*. The
+Partnership Act §54 near-duplicate flagged earlier concerns partners on
+dissolution, not employees, so §27 remains the correct label.
+
 **Measured retrieval quality after sub-project 1 (honest baseline, not a
 success claim).** For the query *"builder failed to give possession on
 time refund"* against the real corpus:

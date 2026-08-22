@@ -1,0 +1,405 @@
+[
+  {
+    "id": "rera-possession-refund",
+    "question": "builder failed to give possession of my flat on time, can I get a refund",
+    "expected": [
+      "act:2158:sec-18"
+    ],
+    "note": "RERA s.18 - Return of amount and compensation"
+  },
+  {
+    "id": "rera-project-registration",
+    "question": "does a builder have to register the housing project before selling flats",
+    "expected": [
+      "act:2158:sec-3"
+    ],
+    "note": "RERA s.3 - Prior registration of real estate project"
+  },
+  {
+    "id": "rera-registration-application",
+    "question": "how does a promoter apply to register a real estate project",
+    "expected": [
+      "act:2158:sec-4"
+    ],
+    "note": "RERA s.4 - Application for registration"
+  },
+  {
+    "id": "cheque-bounce",
+    "question": "the cheque I received bounced due to insufficient funds, what is the offence",
+    "expected": [
+      "act:2189:sec-138"
+    ],
+    "note": "NI Act s.138 - Dishonour of cheque"
+  },
+  {
+    "id": "restraint-of-trade",
+    "question": "my employment contract stops me joining a competitor after I leave",
+    "expected": [
+      "act:2187:sec-27"
+    ],
+    "note": "Contract Act s.27 - Agreement in restraint of trade, void"
+  },
+  {
+    "id": "free-consent-defined",
+    "question": "what does free consent mean in a contract",
+    "expected": [
+      "act:2187:sec-14"
+    ],
+    "note": "Contract Act s.14 - Free consent defined"
+  },
+  {
+    "id": "consent-voidability",
+    "question": "I signed the agreement under pressure, is it still binding",
+    "expected": [
+      "act:2187:sec-19"
+    ],
+    "note": "Contract Act s.19 - Voidability of agreements without free consent"
+  },
+  {
+    "id": "bailment-defined",
+    "question": "I gave my goods to someone for safekeeping, what is that relationship called",
+    "expected": [
+      "act:2187:sec-148"
+    ],
+    "note": "Contract Act s.148 - Bailment, bailor and bailee defined"
+  },
+  {
+    "id": "murder-punishment",
+    "question": "what is the punishment for murder",
+    "expected": [
+      "act:20062:sec-103"
+    ],
+    "note": "BNS s.103 - Punishment for murder"
+  },
+  {
+    "id": "rape-punishment",
+    "question": "what punishment does the law prescribe for rape",
+    "expected": [
+      "act:20062:sec-64"
+    ],
+    "note": "BNS s.64 - Punishment for rape"
+  },
+  {
+    "id": "grievous-hurt",
+    "question": "what injuries count as grievous hurt",
+    "expected": [
+      "act:20062:sec-116"
+    ],
+    "note": "BNS s.116 - Grievous hurt"
+  },
+  {
+    "id": "criminal-breach-of-trust",
+    "question": "someone I entrusted money to has misappropriated it",
+    "expected": [
+      "act:20062:sec-316"
+    ],
+    "note": "BNS s.316 - Criminal breach of trust"
+  },
+  {
+    "id": "maintenance-wife-children",
+    "question": "my husband has stopped supporting me and the children, can I claim maintenance",
+    "expected": [
+      "act:20099:sec-144"
+    ],
+    "note": "BNSS s.144 - Order for maintenance of wives, children and parents"
+  },
+  {
+    "id": "consumer-district-commission",
+    "question": "which forum hears a consumer complaint at the district level",
+    "expected": [
+      "act:15256:sec-28"
+    ],
+    "note": "Consumer Protection Act s.28 - District Consumer Disputes Redressal Commission"
+  },
+  {
+    "id": "rera-promoter-duties",
+    "question": "what obligations does a builder have towards flat buyers",
+    "expected": [
+      "act:2158:sec-11"
+    ],
+    "note": "RERA s.11 - Functions and duties of promoter"
+  },
+  {
+    "id": "rera-allottee-rights",
+    "question": "what rights do I have as a flat buyer under the real estate law",
+    "expected": [
+      "act:2158:sec-19"
+    ],
+    "note": "RERA s.19 - Rights and duties of allottees"
+  },
+  {
+    "id": "contingent-contract",
+    "question": "an agreement that only takes effect if something else happens first",
+    "expected": [
+      "act:2187:sec-31"
+    ],
+    "note": "Contract Act s.31 - Contingent contract defined"
+  },
+  {
+    "id": "dishonour-notice-time",
+    "question": "how quickly must I inform the other party that the cheque bounced",
+    "expected": [
+      "act:2189:sec-106"
+    ],
+    "note": "NI Act s.106 - Reasonable time of giving notice of dishonour"
+  },
+  {
+    "id": "dishonour-notice-transmit",
+    "question": "do I have to pass on the bounce notice to the earlier endorser",
+    "expected": [
+      "act:2189:sec-95"
+    ],
+    "note": "NI Act s.95 - Party receiving must transmit notice of dishonour"
+  },
+  {
+    "id": "defamation-offence",
+    "question": "someone posted false things about me and damaged my reputation",
+    "expected": [
+      "act:20062:sec-356"
+    ],
+    "note": "BNS s.356 - Defamation"
+  },
+  {
+    "id": "defamation-prosecution",
+    "question": "how does a court take up a defamation complaint",
+    "expected": [
+      "act:20099:sec-222"
+    ],
+    "note": "BNSS s.222 - Prosecution for defamation"
+  },
+  {
+    "id": "wrongful-restraint",
+    "question": "my neighbour blocked me from using the common passage",
+    "expected": [
+      "act:20062:sec-126",
+      "act:2349:sec-33"
+    ],
+    "note": "BNS s.126 wrongful restraint (criminal) or Indian Easements Act s.33 suit for disturbance of easement (civil). A blocked right of way has both remedies."
+  },
+  {
+    "id": "murder-life-convict",
+    "question": "what happens if a person already serving life imprisonment commits murder",
+    "expected": [
+      "act:20062:sec-104"
+    ],
+    "note": "BNS s.104 - Punishment for murder by life-convict"
+  },
+  {
+    "id": "hurt-dangerous-weapon",
+    "question": "he attacked me with a knife and injured me",
+    "expected": [
+      "act:20062:sec-118"
+    ],
+    "note": "BNS s.118 - Voluntarily causing hurt by dangerous weapons"
+  },
+  {
+    "id": "extortion",
+    "question": "they threatened to harm my family unless I paid them money",
+    "expected": [
+      "act:20062:sec-308"
+    ],
+    "note": "BNS s.308 - Extortion"
+  },
+  {
+    "id": "kidnapping",
+    "question": "someone took my child away without my permission",
+    "expected": [
+      "act:20062:sec-137"
+    ],
+    "note": "BNS s.137 - Kidnapping"
+  },
+  {
+    "id": "child-kidnapping",
+    "question": "abduction of a minor under the juvenile justice law",
+    "expected": [
+      "act:2148:sec-84"
+    ],
+    "note": "JJ Act s.84 - Kidnapping and abduction of child"
+  },
+  {
+    "id": "dowry-death",
+    "question": "my sister died within seven years of marriage after dowry harassment",
+    "expected": [
+      "act:20062:sec-80"
+    ],
+    "note": "BNS s.80 - Dowry death"
+  },
+  {
+    "id": "dowry-death-presumption",
+    "question": "what does the court assume when a woman dies over dowry demands",
+    "expected": [
+      "act:20063:sec-118"
+    ],
+    "note": "BSA s.118 - Presumption as to dowry death"
+  },
+  {
+    "id": "cruelty-defined",
+    "question": "what counts as cruelty by a husband or his relatives",
+    "expected": [
+      "act:20062:sec-86",
+      "act:20062:sec-85"
+    ],
+    "note": "BNS s.86 defines cruelty 'for the purposes of section 85'; s.85 is the offence. Either answers the question."
+  },
+  {
+    "id": "child-cruelty",
+    "question": "punishment for a guardian who assaults or neglects a child",
+    "expected": [
+      "act:2148:sec-75"
+    ],
+    "note": "JJ Act s.75 - Punishment for cruelty to child"
+  },
+  {
+    "id": "abetment-suicide",
+    "question": "he was pushed to take his own life by constant harassment",
+    "expected": [
+      "act:20062:sec-108"
+    ],
+    "note": "BNS s.108 - Abetment of suicide"
+  },
+  {
+    "id": "death-by-negligence",
+    "question": "a rash driver killed a pedestrian without intending to",
+    "expected": [
+      "act:20062:sec-106"
+    ],
+    "note": "BNS s.106 - Causing death by negligence"
+  },
+  {
+    "id": "rape-certain-cases",
+    "question": "harsher punishment for rape by a police officer or public servant",
+    "expected": [
+      "act:20062:sec-65"
+    ],
+    "note": "BNS s.65 - Punishment for rape in certain cases"
+  },
+  {
+    "id": "state-consumer-commission",
+    "question": "which body hears consumer appeals at the state level",
+    "expected": [
+      "act:15256:sec-42"
+    ],
+    "note": "Consumer Protection Act s.42 - State Commission"
+  },
+  {
+    "id": "product-liability",
+    "question": "the appliance I bought caught fire and injured me, can I sue the manufacturer",
+    "expected": [
+      "act:15256:sec-83"
+    ],
+    "note": "Consumer Protection Act s.83 - Product liability action"
+  },
+  {
+    "id": "product-liability-exceptions",
+    "question": "when is a manufacturer not answerable for a defective product",
+    "expected": [
+      "act:15256:sec-87"
+    ],
+    "note": "Consumer Protection Act s.87 - Exceptions to product liability"
+  },
+  {
+    "id": "ecommerce-unfair-practice",
+    "question": "online seller used misleading tactics to push a sale",
+    "expected": [
+      "act:15256:sec-94"
+    ],
+    "note": "Consumer Protection Act s.94 - Unfair trade practices in e-commerce"
+  },
+  {
+    "id": "data-protection-compensation",
+    "question": "the company leaked my personal data, can I claim compensation",
+    "expected": [
+      "act:1999:sec-43A"
+    ],
+    "note": "IT Act s.43A - Compensation for failure to protect data"
+  },
+  {
+    "id": "identity-theft",
+    "question": "someone used my password and pretended to be me online",
+    "expected": [
+      "act:1999:sec-66C"
+    ],
+    "note": "IT Act s.66C - Punishment for identity theft"
+  },
+  {
+    "id": "online-impersonation-cheating",
+    "question": "a fake profile in my name was used to cheat people",
+    "expected": [
+      "act:1999:sec-66D",
+      "act:20062:sec-319"
+    ],
+    "note": "IT Act s.66D is the online-specific offence; BNS s.319 is cheating by personation generally. Both correct."
+  },
+  {
+    "id": "cyber-terrorism",
+    "question": "hacking a government system to threaten national security",
+    "expected": [
+      "act:1999:sec-66F"
+    ],
+    "note": "IT Act s.66F - Punishment for cyber terrorism"
+  },
+  {
+    "id": "lease-defined",
+    "question": "what legally makes an arrangement a lease of property",
+    "expected": [
+      "act:2338:sec-105"
+    ],
+    "note": "Transfer of Property Act s.105 - Lease defined"
+  },
+  {
+    "id": "easement-defined",
+    "question": "my right to walk across my neighbour's land to reach the road",
+    "expected": [
+      "act:2349:sec-4"
+    ],
+    "note": "Indian Easements Act s.4 - Easement defined"
+  },
+  {
+    "id": "arbitration-agreement",
+    "question": "what makes a clause a valid agreement to arbitrate disputes",
+    "expected": [
+      "act:1978:sec-7"
+    ],
+    "note": "Arbitration and Conciliation Act s.7 - Arbitration agreement"
+  },
+  {
+    "id": "specific-performance-goods",
+    "question": "the seller refuses to deliver the exact goods I contracted for",
+    "expected": [
+      "act:2390:sec-58"
+    ],
+    "note": "Sale of Goods Act s.58 - Specific performance"
+  },
+  {
+    "id": "food-misleading-advertisement",
+    "question": "a food company advertised false health claims",
+    "expected": [
+      "act:2027:sec-24"
+    ],
+    "note": "Food Safety Act s.24 - Restrictions of advertisement, unfair trade practices"
+  },
+  {
+    "id": "adoption-jj",
+    "question": "legal adoption of a child in need of care and protection",
+    "expected": [
+      "act:2148:sec-56"
+    ],
+    "note": "JJ Act s.56 - Adoption"
+  },
+  {
+    "id": "adoption-effect",
+    "question": "once adopted, what is the child's status in the new family",
+    "expected": [
+      "act:2148:sec-63"
+    ],
+    "note": "JJ Act s.63 - Effect of adoption"
+  },
+  {
+    "id": "outgoing-partner-competing",
+    "question": "I left my partnership firm, can I start a similar business",
+    "expected": [
+      "act:2394:sec-36"
+    ],
+    "note": "Partnership Act s.36 - Rights of outgoing partner to carry on competing business"
+  }
+]

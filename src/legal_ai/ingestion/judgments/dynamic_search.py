@@ -246,7 +246,10 @@ def _search_indian_kanoon(query: str) -> Optional[CanonicalDocument]:
 
 
 def search_judgment(
-    query: str, year: int | tuple[int, int] | None = None, skip_db: bool = False
+    query: str,
+    year: int | tuple[int, int] | None = None,
+    skip_db: bool = False,
+    live: bool = True,
 ) -> JudgmentSearchResult:
     """Find a real judgment for `query` (case name or citation).
 
@@ -261,6 +264,12 @@ def search_judgment(
     `skip_db=True` to force a fresh live search when a cached match is
     the wrong document.
 
+    `live=False` searches the database only. The live path is slow by
+    nature — with no court given the archive scans the Supreme Court and all
+    ~25 High Court partitions, measured at 228s for a query that found
+    nothing — so an interactive caller must not block on it. Fetching a
+    judgment the corpus lacks is corpus growth, not query-time work.
+
     Does not store anything — see module docstring. Caller decides what
     to do with a found-and-verified CanonicalDocument (e.g. hand it to
     upsert_document + write_judgment once that step is built).
@@ -269,6 +278,13 @@ def search_judgment(
         db_hit = _check_db(query)
         if db_hit is not None:
             return db_hit
+
+    if not live:
+        return JudgmentSearchResult(
+            found=False,
+            source="none",
+            notes=[f"no stored judgment matches {query!r}; live search was not attempted"],
+        )
 
     document = _search_bharat_courts_archive(query, year)
     source: SourceName = "bharat_courts_archive"

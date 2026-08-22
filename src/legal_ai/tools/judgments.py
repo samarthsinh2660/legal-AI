@@ -22,11 +22,16 @@ def search_judgments(
     year: int | tuple[int, int] | None = None,
     store: bool = True,
     skip_db: bool = False,
+    live: bool = True,
 ) -> list[Evidence]:
     """`skip_db=True` forces a fresh live search even if a cached DB
     match exists — use when a previous cached match turned out to be the
-    wrong document (see dynamic_search.search_judgment's docstring)."""
-    result = search_judgment(query, year=year, skip_db=skip_db)
+    wrong document (see dynamic_search.search_judgment's docstring).
+
+    `live=False` restricts the search to what is already stored. Interactive
+    callers should pass it: the live path scans every archive partition when
+    no court is given, measured at 228s for a query that found nothing."""
+    result = search_judgment(query, year=year, skip_db=skip_db, live=live)
     if not result.found or result.document is None:
         return []
 
