@@ -294,3 +294,49 @@ def test_search_steps_request_a_deeper_slice_than_the_human_default():
     from legal_ai.tools.registry import SEARCH_LIMIT
 
     assert SEARCH_LIMIT > 5
+
+
+def test_a_plan_always_begins_with_the_statutory_rewrite(monkeypatch):
+    # The rewrite is the largest measured gain in the project (MRR 0.467 ->
+    # 0.670). Too valuable to leave to whether the planner happens to phrase
+    # its first query well.
+    from legal_ai.agents import planner
+
+    monkeypatch.setattr(planner, "rewrite_query", lambda q: "promoter fails to give possession")
+    monkeypatch.setattr(planner, "generate", lambda p: '[{"tool":"search_statutes","args":{"query":"other"}}]')
+    plan = planner.build_plan("builder did not hand over my flat")
+    assert plan.steps[0].args["query"] == "promoter fails to give possession"
+
+
+def test_a_planner_query_identical_to_the_rewrite_is_not_run_twice(monkeypatch):
+    from legal_ai.agents import planner
+
+    monkeypatch.setattr(planner, "rewrite_query", lambda q: "same query")
+    monkeypatch.setattr(planner, "generate", lambda p: '[{"tool":"search_statutes","args":{"query":"same query"}}]')
+    assert len(planner.build_plan("q").steps) == 1
+
+
+def test_the_rewrite_survives_the_planner_failing(monkeypatch):
+    from legal_ai.agents import planner
+
+    monkeypatch.setattr(planner, "rewrite_query", lambda q: "statutory phrasing")
+    monkeypatch.setattr(planner, "generate", lambda p: (_ for _ in ()).throw(RuntimeError("429")))
+    plan = planner.build_plan("q")
+    assert len(plan.steps) == 1
+    assert plan.steps[0].args["query"] == "statutory phrasing"
+
+
+def test_the_rewrite_falls_back_to_the_original_question(monkeypatch):
+    from legal_ai.agents import rewrite
+
+    monkeypatch.setattr(rewrite, "generate", lambda p: (_ for _ in ()).throw(RuntimeError("429")))
+    assert rewrite.rewrite_query("my builder is late") == "my builder is late"
+
+
+def test_evals_measure_the_rewrite_that_actually_ships():
+    # A second copy in evals/ would let the measured thing and the shipped
+    # thing drift apart, which is the one failure a harness must not have.
+    from evals.rewrite import rewrite_query as measured
+    from legal_ai.agents.rewrite import rewrite_query as shipped
+
+    assert measured is shipped

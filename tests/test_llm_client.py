@@ -32,11 +32,29 @@ def test_uses_the_first_model_when_it_works(fake):
     assert models.calls == ["a"]
 
 
-def test_quota_exhaustion_moves_on_without_retrying(fake):
-    # Retrying a 429 is what destroys the remaining daily budget.
+def test_rate_limiting_backs_off_once_then_moves_on(fake, monkeypatch):
+    # A 429 is two failures wearing one code: a per-minute limit, which
+    # clears in seconds, and a daily cap, which does not. One backoff
+    # distinguishes them cheaply; retrying harder destroys a daily budget.
+    monkeypatch.setattr(llm.time, "sleep", lambda _s: None)
     models = fake({"a": "429 RESOURCE_EXHAUSTED"})
     assert llm.generate("hi", chain=("a", "b")) == "answer from b"
-    assert models.calls == ["a", "b"]
+    assert models.calls == ["a", "a", "b"]
+
+
+def test_a_rate_limit_that_clears_is_served_by_the_same_model(fake, monkeypatch):
+    monkeypatch.setattr(llm.time, "sleep", lambda _s: None)
+    models = fake({"a": "429 RESOURCE_EXHAUSTED"})
+
+    original = models.generate_content
+
+    def clears_after_first(model, contents):
+        if models.calls.count("a") >= 1:
+            models.behaviour.pop("a", None)
+        return original(model, contents)
+
+    models.generate_content = clears_after_first
+    assert llm.generate("hi", chain=("a", "b")) == "answer from a"
 
 
 def test_a_retired_model_moves_on_without_retrying(fake):

@@ -123,3 +123,56 @@ def test_a_question_with_no_findings_still_returns_a_result(monkeypatch):
     result = sup.supervise("q")
     assert result.evidence == []
     assert result.agents_spawned == 1
+
+
+def test_angles_can_be_researched_sequentially(monkeypatch):
+    # Concurrency is a latency optimisation, not what decomposition is for.
+    # On a rate-limited tier it is self-defeating: three concurrent calls all
+    # returned 429 while the same calls sequentially succeeded, so the
+    # backoff they provoked made a parallel run slower than a serial one.
+    order = []
+    monkeypatch.setattr(sup, "generate", lambda p: '["first", "second", "third"]')
+
+    def record(angle, **kw):
+        order.append(angle)
+        return _finding(angle, [f"x:{angle}"])
+
+    monkeypatch.setattr(sup, "research_angle", record)
+    result = sup.supervise("q", parallel=False)
+    assert order == ["first", "second", "third"]
+    assert result.agents_spawned == 3
+
+
+def test_sequential_and_parallel_produce_the_same_evidence(monkeypatch):
+    monkeypatch.setattr(sup, "generate", lambda p: '["one", "two"]')
+    findings = {"one": _finding("one", ["a1", "a2"]), "two": _finding("two", ["b1"])}
+    monkeypatch.setattr(sup, "research_angle", lambda angle, **kw: findings[angle])
+    serial = [e.document_id for e in sup.supervise("q", parallel=False).evidence]
+    concurrent = [e.document_id for e in sup.supervise("q", parallel=True).evidence]
+    assert serial == concurrent
+
+
+def test_the_supervisor_passes_its_context_to_the_angles_it_chooses(monkeypatch):
+    # §6: the context is built once and passed to every agent the supervisor
+    # spawns. No agent re-derives it -- that is what makes a fan-out
+    # consistent rather than merely parallel.
+    seen = {}
+    monkeypatch.setattr(sup, "generate", lambda p: '["one angle"]')
+
+    def capture(angle, **kw):
+        seen["context"] = kw.get("context")
+        return _finding(angle, ["x:1"])
+
+    monkeypatch.setattr(sup, "research_angle", capture)
+    sup.supervise("q", context="Court: Gujarat High Court")
+    assert seen["context"] == "Court: Gujarat High Court"
+
+
+def test_the_context_reaches_the_decomposition_prompt(monkeypatch):
+    # Angles for a Gujarat matter differ from a Maharashtra one, so the
+    # context has to be present before angles are chosen, not after.
+    prompts = []
+    monkeypatch.setattr(sup, "generate", lambda p: prompts.append(p) or '["a"]')
+    monkeypatch.setattr(sup, "research_angle", lambda angle, **kw: _finding(angle, ["x:1"]))
+    sup.supervise("q", context="Court: Gujarat High Court")
+    assert "Gujarat High Court" in prompts[0]

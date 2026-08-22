@@ -8,8 +8,15 @@ The three failure modes are not interchangeable, and treating them alike is
 what burned a day's quota on 2026-08-20:
 
     503 UNAVAILABLE      transient overload  -> retry the SAME model
-    429 RESOURCE_EXHAUSTED  daily cap        -> move on, NEVER retry
+    429 RESOURCE_EXHAUSTED  rate limited     -> back off ONCE, then move on
     404 NOT_FOUND        model retired       -> move on
+
+A 429 is two different failures wearing one code: a per-minute rate limit,
+which clears in seconds, and a daily cap, which does not. Measured
+2026-08-22: three concurrent calls all returned 429 while the same call
+sequentially succeeded -- that is the per-minute limit, and fan-out provokes
+it by construction. So a 429 gets one short backoff before the chain moves
+on. Retrying it harder than that is what destroys a daily budget.
 
 Model chain verified against the live API on 2026-08-21. `gemini-2.5-flash`
 and `gemini-2.5-flash-lite` are listed by models.list() but return 404 on
@@ -27,6 +34,11 @@ from legal_ai.config import DEFAULT_CONFIG
 # The values live in legal_ai.config.settings, which carries the reasoning.
 MODEL_CHAIN: tuple[str, ...] = DEFAULT_CONFIG.model_chain
 MAX_RETRIES_PER_MODEL = DEFAULT_CONFIG.max_retries_per_model
+
+# Seconds to wait after a 429 before retrying the same model once. Long
+# enough to clear a per-minute window, short enough that a genuine daily cap
+# costs little to discover.
+RATE_LIMIT_BACKOFF_SECONDS = 8
 
 
 # Counts of chain-wide failures, for evals to distinguish "the system found
@@ -84,7 +96,12 @@ def generate(prompt: str, chain: tuple[str, ...] = MODEL_CHAIN) -> str:
                 if kind == "transient" and attempt + 1 < MAX_RETRIES_PER_MODEL:
                     time.sleep(2 * (attempt + 1))
                     continue
-                break  # exhausted, missing, or out of retries -- next model
+                if kind == "exhausted" and attempt == 0:
+                    # One backoff, in case this is the per-minute limit
+                    # rather than the daily cap.
+                    time.sleep(RATE_LIMIT_BACKOFF_SECONDS)
+                    continue
+                break  # missing, capped, or out of retries -- next model
 
     global UNAVAILABLE_COUNT
     UNAVAILABLE_COUNT += 1

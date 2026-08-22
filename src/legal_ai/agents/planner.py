@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from legal_ai.agents.rewrite import rewrite_query
 from legal_ai.llm.client import generate
 
 # Tools a plan may name. A step naming anything else is dropped rather than
@@ -111,14 +112,37 @@ def parse_plan(raw: str, max_steps: int) -> Plan:
 def build_plan(angle: str, context: str = "", max_steps: int = 8) -> Plan:
     """Ask the model for a plan for one research angle.
 
-    Returns an empty Plan if the model fails; the caller decides whether an
+    The plan always *starts* with a search on a dedicated statutory-vocabulary
+    rewrite of the angle. That single rewrite is the largest measured gain in
+    the project -- MRR 0.467 to 0.670 on the 50-question benchmark, more than
+    the whole reranking mechanism contributes -- and it is too valuable to
+    leave to whether the planner happens to phrase its first query well. The
+    planner's own steps follow it.
+
+    Returns an empty Plan if everything fails; the caller decides whether an
     empty plan is a retry or a dead end, rather than an exception unwinding
     the whole research stage.
     """
+    steps: list[PlanStep] = []
+
+    rewritten = rewrite_query(angle)
+    if rewritten:
+        steps.append(PlanStep(tool="search_statutes", args={"query": rewritten}))
+
     prompt = PROMPT.format(
         context=context or "No additional context.", angle=angle, max_steps=max_steps
     )
     try:
-        return parse_plan(generate(prompt), max_steps=max_steps)
+        planned = parse_plan(generate(prompt), max_steps=max_steps)
     except Exception:
-        return Plan(steps=())
+        planned = Plan(steps=())
+
+    # De-duplicate: a planner query identical to the rewrite wastes a call.
+    seen = {(step.tool, str(step.args)) for step in steps}
+    for step in planned.steps:
+        key = (step.tool, str(step.args))
+        if key not in seen:
+            seen.add(key)
+            steps.append(step)
+
+    return Plan(steps=tuple(steps[:max_steps]))

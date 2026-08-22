@@ -67,10 +67,22 @@ def clarification(state: ResearchState) -> dict:
 def research(state: ResearchState) -> dict:
     """Supervisor + fan-out to research agents.
 
-    Pass-through until 7a/7b. The only stage with discretion, and it decides
-    exactly two things: how many angles, and go again or stop.
+    The only stage with discretion, and it decides exactly two things: how
+    many angles, and go again or stop. The ThreadContext built upstream is
+    passed through unchanged -- no agent re-derives it.
     """
-    return {"findings": [], "research_rounds": state.get("research_rounds", 0) + 1}
+    from legal_ai.agents.supervisor import supervise
+    from legal_ai.context.serialization import render
+
+    context = state.get("context")
+    result = supervise(
+        state["question"],
+        context=render(context) if context is not None else "",
+    )
+    return {
+        "findings": result.evidence,
+        "research_rounds": state.get("research_rounds", 0) + 1,
+    }
 
 
 def analyst(state: ResearchState) -> dict:

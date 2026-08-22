@@ -28,6 +28,8 @@ from legal_ai.schemas.evidence import Evidence
 
 DECOMPOSE_PROMPT = """You are planning research on an Indian legal question.
 
+{context}
+
 Question: {question}
 
 Break this into the distinct legal angles it raises -- different remedies,
@@ -57,14 +59,24 @@ class SupervisorResult:
         return len(self.findings)
 
 
-def decompose(question: str, max_angles: int) -> list[str]:
+def decompose(question: str, max_angles: int, context: str = "") -> list[str]:
     """Angles to research. Always returns at least the question itself.
+
+    `context` is the rendered ThreadContext -- jurisdiction, relevant period,
+    what the thread has already established. It matters here more than
+    anywhere: the angles chosen for a Gujarat matter differ from those for a
+    Maharashtra one, and an angle already settled earlier in the thread
+    should not be researched again.
 
     A model failure degrades to single-angle research rather than stopping
     the run -- one angle is a valid plan, not an error.
     """
     try:
-        raw = generate(DECOMPOSE_PROMPT.format(question=question, max_angles=max_angles))
+        raw = generate(DECOMPOSE_PROMPT.format(
+            question=question,
+            max_angles=max_angles,
+            context=context or "No additional context.",
+        ))
     except Exception:
         return [question]
 
@@ -92,6 +104,7 @@ def supervise(
     max_rounds: int = DEFAULT_CONFIG.max_agent_rounds,
     max_steps: int = DEFAULT_CONFIG.max_plan_steps,
     limit_per_angle: int = DEFAULT_CONFIG.limit_per_angle,
+    parallel: bool = True,
     conn: psycopg.Connection | None = None,
 ) -> SupervisorResult:
     """Decompose, research each angle in parallel, merge the evidence.
@@ -99,13 +112,24 @@ def supervise(
     Angles run concurrently because they are independent; the cap on
     `max_angles` bounds both the parallelism and the API spend.
 
+    `parallel=False` runs them one after another. Concurrency is a latency
+    optimisation, not what decomposition is for -- and on a rate-limited
+    tier it is self-defeating: measured 2026-08-22, three concurrent calls
+    all returned 429 while the same calls sequentially succeeded, so the
+    backoff they provoked made a parallel run slower than a serial one.
+
+    The supervisor owns the context: it is built once for the thread, used
+    to choose the angles, and passed unchanged to every agent it spawns. No
+    agent re-derives it -- that is §6 of the architecture, and it is why a
+    fan-out is consistent rather than merely parallel.
+
     Merging is by first appearance across angles rather than by re-ranking
     the union. Each angle's list is already ranked against *its own* angle,
     and a single re-rank against the original question would discard that --
     the evidence for a limitation angle scores poorly against a question
     about refunds even when it is exactly what was asked for.
     """
-    angles = decompose(question, max_angles=max_angles)
+    angles = decompose(question, max_angles=max_angles, context=context)
 
     def run(angle: str) -> ResearchResult:
         return research_angle(
@@ -114,18 +138,18 @@ def supervise(
             max_rounds=max_rounds,
             max_steps=max_steps,
             limit=limit_per_angle,
-            # Only share the caller's connection when nothing runs in
-            # parallel; otherwise each angle opens its own.
-            conn=conn if len(angles) == 1 else None,
+            # Only share the caller's connection when nothing runs
+            # concurrently; otherwise each angle opens its own.
+            conn=conn if (not parallel or len(angles) == 1) else None,
         )
 
-    if len(angles) == 1:
-        findings = [run(angles[0])]
-    else:
+    if parallel and len(angles) > 1:
         # A psycopg connection is not thread-safe, so each angle opens its
         # own (see research_angle); the caller's is not shared across threads.
         with ThreadPoolExecutor(max_workers=len(angles)) as pool:
             findings = list(pool.map(run, angles))
+    else:
+        findings = [run(angle) for angle in angles]
 
     merged: list[Evidence] = []
     seen: set[str] = set()
