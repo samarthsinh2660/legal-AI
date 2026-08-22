@@ -49,11 +49,45 @@ calls it *is* the answer. **Calling it once is the single-agent case, and
 that is the expected common case** --- a simple lookup must not spawn three
 agents.
 
-Each research agent holds the Phase 2 tools unchanged (`search_statutes`,
-`get_section`, `search_judgments`, `get_judgment`, `find_citations`,
-`find_section_citations`, `find_judgment_sections`), and ends by compressing
-its findings so the Supervisor receives summaries rather than every retrieved
-document.
+### The LLM never calls a tool
+
+Control flow belongs to the orchestrator; the LLM handles ambiguity. Each
+research agent invokes a model at exactly **two** bounded points per round,
+and each produces *data*, not actions:
+
+``` text
+Orchestrator     decides the research stage runs
+      |
+Agent call 1     BOUNDED REASONING -- emits a structured plan
+      |          [{tool: search_statutes, query: "..."}, ...]
+      |
+Orchestrator     EXECUTES the plan
+      |
+Tool             Phase 2 contracts, unchanged
+      |
+Validator        deterministic gate -- id resolves, provenance present,
+      |          passage non-empty, Evidence id survives compression
+      |
+State update     only validated Evidence enters state
+      |
+Agent call 2     BOUNDED REASONING -- "sufficient" or "still missing X"
+      |
+Orchestrator     loop or stop; the cap lives in code, not the prompt
+```
+
+A ReAct loop -- the model choosing which of seven tools to call, up to N
+times -- was rejected. A cap bounds the damage without changing who drives.
+Plan-then-execute is testable with a canned plan and no model, its cost is
+knowable before it is spent, and it makes two model calls per angle instead
+of up to eight, which is what keeps the free tier viable.
+
+It loses in-flight adaptation. The outer loop, capped at 3 rounds, gives two
+chances to adapt -- enough for the failure actually measured, where retrieval
+finds the right Act and the wrong section and the fix is to call
+`get_section` on the Act it already found.
+
+Each agent ends by compressing its validated findings, so the Supervisor
+receives summaries rather than every retrieved document.
 
 ### Why not one agent per data layer
 
@@ -84,8 +118,8 @@ same every run, which is what makes it measurable.
 ``` text
         user question  (+ documents, + case)
                 |
-        Document node          only if documents attached
-                |              (pass-through until Phase 4)
+        DOCUMENT AGENT         only if documents attached; returns
+                |              STRUCTURE into the context, never raw text
                 v
         Context Builder        ThreadContext -- built ONCE, read-only
                 |              case_id optional; sets court + date filters
@@ -114,7 +148,55 @@ their bodies without reshaping the graph.
 
 ------------------------------------------------------------------------
 
-## 3. Shared Thread Context
+## 3. Document Agent --- it builds the context, so it lands here
+
+A thread that carries an uploaded document cannot be researched until the
+document is understood. `ThreadContext` is defined to hold case facts,
+parties, dates and documents; something has to *produce* those, and that is
+the Document Agent. It therefore runs **before** the Context Builder, not in
+a later phase.
+
+``` text
+   PDF / DOCX  (a petition may run to 300 pages)
+        |
+        v
+  DOCUMENT AGENT          spends its OWN context window on the raw file
+        |
+        +--> parties
+        +--> dates
+        +--> clauses
+        +--> sections cited
+        +--> issues
+        |
+        v
+  STRUCTURE ONLY  ------> ThreadContext
+  (never raw text)
+        |
+        v
+  CONTEXT BUILDER --> CLARIFICATION --> RESEARCH
+```
+
+**Why it must be a separate agent and not a tool call inside the
+researcher.** A 300-page petition does not fit in the researcher's window,
+and it should not: the researcher needs *what the document says*, not the
+document. The Document Agent burns its own window on the raw file and
+returns structure. That is the identical isolation pattern used for research
+fan-out --- one agent per large input, compressed before it crosses a
+boundary.
+
+**Scope split with Phase 4.** Phase 3 builds what the context needs:
+extraction of parties, dates, clauses, cited sections and issues into
+`ThreadContext`. Phase 4 builds the deeper document intelligence --- clause
+analysis, contradiction detection, and the Documents screen in
+`design/UX_FLOWS.md`.
+
+**Known gap:** `CHUNKABLE_TYPES` is currently `("section", "judgment")`. An
+uploaded petition is a new document type and will not chunk until it is
+registered.
+
+------------------------------------------------------------------------
+
+## 4. Shared Thread Context
 
 Implements `AI_PROJECT_PROPOSAL.md` §6. Built once per thread, passed
 read-only to every node. Three additions in this phase:
@@ -138,7 +220,7 @@ relevant date so the law as it stood then is what gets retrieved.
 
 ------------------------------------------------------------------------
 
-## 4. Static, Dynamic and Active --- how each is actually reached
+## 5. Static, Dynamic and Active --- how each is actually reached
 
 ``` text
 STATIC    hybrid_search over the stored corpus.
@@ -168,7 +250,7 @@ ACTIVE    An unconditional node in the verification stage, not a
 
 ------------------------------------------------------------------------
 
-## 5. Verification --- and the failure nothing else catches
+## 6. Verification --- and the failure nothing else catches
 
 Two failure modes, only one of which was previously covered:
 
@@ -196,7 +278,7 @@ cannot tell a short answer from an incomplete one.
 
 ------------------------------------------------------------------------
 
-## 6. Evidence --- small by default, expand on demand
+## 7. Evidence --- small by default, expand on demand
 
 Three tiers, of which two already exist:
 
@@ -223,43 +305,81 @@ highest-risk detail in the phase.
 
 ------------------------------------------------------------------------
 
-## 7. Milestones
+## 8. Milestones
 
-| # | Deliverable |
-|---|---|
-| 6a | Harness first --- `evals/` datasets and evaluators, expanded question set |
-| 6b | `ThreadContext` --- builder, serialization, revisions, invalidation, `case_id`, filters |
-| 6c | Graph skeleton --- `langgraph.json`, state, build, all nodes as pass-throughs |
-| 6d | Clarification gate |
-| 6e | Tier-1 `Evidence` --- passage, location, court, citation through fan-in |
-| 7a | Researcher subgraph --- Phase 2 tools, search loop, compress-with-provenance |
-| 7b | Supervisor --- `ConductResearch` fan-out, reflect loop, caps, overflow handling |
-| 8 | Verification --- groundedness, coverage stand-in, bounded re-research |
+| # | Deliverable | Status |
+|---|---|---|
+| 6.1 | Harness --- `evals/` datasets, evaluators, 50 questions | **done** |
+| 6.2 | `ThreadContext` --- builder, revisions, invalidation, `case_id`, filters | **done** |
+| 6.3 | Graph skeleton --- `langgraph.json`, state, nodes, caps | **done** |
+| 6.4 | **Document Agent** --- extract structure from an upload into the context | to do |
+| 6.5 | Clarification gate | to do |
+| 6.6 | Tier-1 `Evidence` --- matched passage, location, court, citation | to do |
+| 7.1 | Researcher subgraph --- plan, execute, validate, compress | to do |
+| 7.2 | Supervisor --- fan-out, reflect loop, caps, overflow | to do |
+| 8 | Verification --- groundedness, coverage, bounded re-research | to do |
+
+Milestone numbering is project-wide, not per-phase: Phase 1 ran milestones
+0--3, Phase 2 ran 4--5, so Phase 3 begins at 6.
 
 The harness lands **first**, not last. Without it every agent change is
 guesswork --- the failure mode Phase 2 rejected when it measured away the
 relevance floor and graph expansion.
 
 Caps are configuration, enforced in code rather than prompt: **3** concurrent
-research agents, **3** supervisor iterations, **8** tool calls per agent, **2**
+research agents, **3** supervisor iterations, **8** plan steps per round, **2**
 re-research passes. The loop always terminates on the cap; it never relies on
 the model choosing to stop.
 
-Model is **Gemini**, with a rate-limit fallback model --- fan-out multiplies
-calls and the free tier will throttle.
+Model is **Gemini** (`gemini-flash-latest` or `gemini-3.5-flash`; the 2.0 and
+2.5 flash names now return 404), with a fallback model for rate limits.
+
+`503 UNAVAILABLE` is transient and should be retried with backoff. `429
+RESOURCE_EXHAUSTED` is the daily cap and must **never** be retried --- doing
+so destroys the remaining budget. Distinguishing them is a requirement on the
+client wrapper, learned by exhausting a day's quota on 2026-08-20 by treating
+a 429 as a 503.
+
+**Baseline to beat.** Milestone 6.1 measured Phase 2 retrieval alone at MRR
+0.467, recall@1 32%, recall@5 64% on 50 questions.
+
+A single LLM call then raised that to **MRR 0.670, recall@1 56%, recall@5
+86%** by rewriting the question into statutory vocabulary before searching --
+more than the whole reranking mechanism contributes. Fusing the original
+query with the rewrite was tried and measured *worse* (0.584): the rewrite is
+a better query, not a second opinion to blend.
+
+**So 7.1 must beat 0.670, not 0.467.** A full plan-execute-validate loop that
+cannot beat one rewrite call is not worth its cost, and the honest response
+would be to ship the rewrite alone.
+
+**Where rewriting lives: the planner, not retrieval.** It is tempting to put
+the rewrite inside `hybrid_search`, since that is where the gain shows up.
+It does not belong there. Rewriting is ambiguity resolution --- deciding what
+a person actually means in legal terms --- which is the LLM's job.
+`hybrid_search` is a *tool*, and tools stay deterministic: putting a model
+call inside it would make every search cost quota and a second of latency,
+would stop retrieval being testable without an API key, and would leave two
+places rewriting once the planner also does it.
+
+So **Phase 2 is unchanged.** The finding becomes a requirement on the
+planner prompt --- emit queries in statutory vocabulary, not the user's ---
+which is why it de-risks 7.1 rather than adding work to it.
 
 ------------------------------------------------------------------------
 
-## 8. Deliverable
+## 9. Deliverable
 
 > AI can perform legal research instead of merely performing search.
 
 ------------------------------------------------------------------------
 
-## 9. Explicitly not in this phase
+## 10. Explicitly not in this phase
 
 ``` text
-Document Agent internals       -> Phase 4  (node exists, body is a stub)
+Document clause analysis       -> Phase 4  (extraction into context is 6.4)
+Contradiction detection        -> Phase 4
+Documents screen               -> Phase 4
 Case Agent                     -> Phase 4
 Analyst / Draft internals      -> Phase 5  (nodes exist, bodies are stubs)
 Verification Agent, full       -> Phase 6

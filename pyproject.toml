@@ -16,6 +16,9 @@ dependencies = [
     "neo4j>=5.20",
     "beautifulsoup4>=4.12",
     "bharat-courts[archive]>=0.3.3",
+    "langgraph>=1.2",
+    "langchain-core>=1.6",
+    "google-genai>=1.0",
 ]
 
 [project.optional-dependencies]

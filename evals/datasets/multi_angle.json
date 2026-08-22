@@ -1,0 +1,72 @@
+[
+  {
+    "id": "builder-delay-full-remedy",
+    "question": "the builder is three years late handing over my flat, what are all my options",
+    "expected": ["act:2158:sec-18", "act:2158:sec-19", "act:2158:sec-11", "act:15256:sec-34"],
+    "angles": ["RERA refund remedy", "allottee rights", "promoter duties", "consumer forum"],
+    "note": "RERA s.18 refund, s.19 allottee rights, s.11 promoter duties, CPA s.34 District Commission jurisdiction"
+  },
+  {
+    "id": "cheque-bounce-full-procedure",
+    "question": "a cheque given to me bounced, what is the offence and what notice must I give",
+    "expected": ["act:2189:sec-138", "act:2189:sec-106", "act:2189:sec-95"],
+    "angles": ["the offence", "time for notice", "transmitting notice"],
+    "note": "NI Act s.138 offence, s.106 reasonable time for notice, s.95 transmitting notice"
+  },
+  {
+    "id": "cruelty-and-maintenance",
+    "question": "my husband and his family are harassing me and he has stopped supporting me",
+    "expected": ["act:20062:sec-85", "act:20062:sec-86", "act:20099:sec-144"],
+    "angles": ["cruelty offence", "what cruelty means", "maintenance"],
+    "note": "BNS s.85 offence, s.86 definition, BNSS s.144 maintenance"
+  },
+  {
+    "id": "online-fraud-full",
+    "question": "someone made a fake profile using my identity and cheated people with it",
+    "expected": ["act:1999:sec-66C", "act:1999:sec-66D", "act:20062:sec-319"],
+    "angles": ["identity theft", "personation by computer", "cheating by personation generally"],
+    "note": "IT Act s.66C, s.66D, BNS s.319"
+  },
+  {
+    "id": "defective-product-injury",
+    "question": "an appliance I bought caught fire and injured me, can I claim and where",
+    "expected": ["act:15256:sec-83", "act:15256:sec-87", "act:15256:sec-34"],
+    "angles": ["product liability action", "manufacturer's defences", "which forum"],
+    "note": "CPA s.83 action, s.87 exceptions, s.34 District Commission jurisdiction"
+  },
+  {
+    "id": "blocked-right-of-way",
+    "question": "my neighbour has blocked the passage I use to reach the road",
+    "expected": ["act:20062:sec-126", "act:2349:sec-4", "act:2349:sec-33"],
+    "angles": ["criminal wrongful restraint", "what an easement is", "civil suit for disturbance"],
+    "note": "BNS s.126 criminal, Easements s.4 definition, s.33 civil suit"
+  },
+  {
+    "id": "dowry-death-case",
+    "question": "my sister died of burns within four years of marriage after dowry demands",
+    "expected": ["act:20062:sec-80", "act:20062:sec-85", "act:20063:sec-118"],
+    "angles": ["dowry death offence", "cruelty offence", "evidentiary presumption"],
+    "note": "BNS s.80, s.85, BSA s.118 presumption"
+  },
+  {
+    "id": "adoption-full",
+    "question": "we want to adopt an abandoned child, what does the law require and what changes after",
+    "expected": ["act:2148:sec-56", "act:2148:sec-63"],
+    "angles": ["adoption procedure", "effect of adoption"],
+    "note": "JJ Act s.56 adoption, s.63 effect"
+  },
+  {
+    "id": "arbitration-clause-dispute",
+    "question": "our contract has an arbitration clause but the other side says it is invalid",
+    "expected": ["act:1978:sec-7", "act:1978:sec-16"],
+    "angles": ["what makes a valid arbitration agreement", "who decides validity"],
+    "note": "A&C Act s.7 agreement, s.16 competence-competence"
+  },
+  {
+    "id": "leaving-firm-non-compete",
+    "question": "I am leaving my firm and my agreement stops me competing, is that enforceable",
+    "expected": ["act:2187:sec-27", "act:2394:sec-36"],
+    "angles": ["restraint of trade generally", "outgoing partner's position"],
+    "note": "Contract Act s.27, Partnership Act s.36"
+  }
+]
