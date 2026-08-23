@@ -46,6 +46,16 @@ RATE_LIMIT_BACKOFF_SECONDS = 8
 # and mean opposite things.
 UNAVAILABLE_COUNT = 0
 
+# Which models actually answered, and how often. A benchmark that falls
+# through the chain partway is not one measurement -- the later questions
+# were answered by a weaker model than the earlier ones, and the score
+# blends the two. Reporting this makes that visible instead of silent.
+MODEL_USAGE: dict[str, int] = {}
+
+
+def reset_model_usage() -> None:
+    MODEL_USAGE.clear()
+
 
 def reset_unavailable_count() -> None:
     global UNAVAILABLE_COUNT
@@ -101,6 +111,7 @@ def generate(
                 response = client.models.generate_content(
                     model=model, contents=prompt, config=config
                 )
+                MODEL_USAGE[model] = MODEL_USAGE.get(model, 0) + 1
                 return (response.text or "").strip()
             except Exception as error:
                 kind = _classify(error)

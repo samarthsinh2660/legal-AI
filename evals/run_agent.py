@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 
 from evals.preflight import FailureTracker, require_model
+from legal_ai.llm.client import MODEL_USAGE, reset_model_usage
 from evals.dataset import load_questions
 from evals.evaluators.ranking import first_relevant_rank, mean_reciprocal_rank, recall_at_k
 from legal_ai.agents.supervisor import research
@@ -31,6 +32,7 @@ def main() -> None:
     args = parser.parse_args()
 
     require_model()
+    reset_model_usage()
     tracker = FailureTracker()
 
     questions = load_questions()
@@ -60,6 +62,10 @@ def main() -> None:
         f"\nagent      MRR {mrr:.3f}  r@1 {recall_at_k(ranks,1):.0%}  "
         f"r@5 {recall_at_k(ranks,5):.0%}  r@10 {recall_at_k(ranks,10):.0%}"
     )
+    print(f"\nmodels used: {dict(sorted(MODEL_USAGE.items(), key=lambda kv: -kv[1]))}")
+    if len(MODEL_USAGE) > 1:
+        print("MIXED MODELS -- the chain fell through partway, so later questions")
+        print("were answered by a different model than earlier ones. Not one measurement.")
     print("\nOne run only. Repeat before comparing this to another configuration:")
     print("the query is model-written, so run-to-run spread is roughly +/-0.15 MRR.")
 

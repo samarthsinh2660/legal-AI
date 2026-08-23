@@ -101,7 +101,7 @@ def test_three_angles_cost_no_more_than_one_angle(monkeypatch):
     monkeypatch.setattr(rp, "generate", lambda p, **kw: calls.append("plan") or
         '[{"angle":"a","query":"q1"},{"angle":"b","query":"q2"},{"angle":"c","query":"q3"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: calls.append("summarise") or "s")
-    monkeypatch.setattr(sup, "_search", lambda q, limit=None: [_evidence(f"act:1:sec-{q}", "short")])
+    monkeypatch.setattr(sup, "_search", lambda q, limit: [_evidence(f"act:1:sec-{q}", "short")])
     monkeypatch.setattr(sup, "_merge", lambda per_angle, limit: [e for a in per_angle for e in a])
 
     result = sup.research("q")
@@ -118,7 +118,7 @@ def test_every_angle_is_searched(monkeypatch):
     monkeypatch.setattr(rp, "generate", lambda p, **kw:
         '[{"angle":"a","query":"first"},{"angle":"b","query":"second"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: "s")
-    monkeypatch.setattr(sup, "_search", lambda q, limit=None: searched.append(q) or [])
+    monkeypatch.setattr(sup, "_search", lambda q, limit: searched.append(q) or [])
     sup.research("q")
     assert searched == ["first", "second"]
 
@@ -129,7 +129,7 @@ def test_results_are_deduplicated_across_angles(monkeypatch):
     monkeypatch.setattr(rp, "generate", lambda p, **kw:
         '[{"angle":"a","query":"x"},{"angle":"b","query":"y"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: "s")
-    monkeypatch.setattr(sup, "_search", lambda q, limit=None: [_evidence("act:1:sec-1")])
+    monkeypatch.setattr(sup, "_search", lambda q, limit: [_evidence("act:1:sec-1")])
     # Real fusion here: de-duplication is its job, so stubbing it would test
     # nothing.
     assert len(sup.research("q").evidence) == 1
@@ -168,12 +168,14 @@ def test_summarising_nothing_says_so():
 
 # ---------------------------------------------------------------- ranking
 
-def test_every_angle_searches_at_the_same_width():
-    # Kept because it pins current behaviour, not because narrowing was
-    # shown to be worse -- that comparison was inside benchmark noise.
+def test_search_calls_hybrid_search_directly():
+    # The same call the rewrite-only baseline makes, so a single-angle
+    # question runs that exact path rather than something similar to it.
     import inspect
 
-    assert "per_search_limit" not in inspect.getsource(sup.research)
+    source = inspect.getsource(sup._search)
+    assert "hybrid_search(query" in source
+    assert "get_tool(" not in source
 
 
 def test_a_single_angle_keeps_the_order_search_gave_it():

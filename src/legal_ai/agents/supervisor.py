@@ -29,7 +29,7 @@ from legal_ai.agents.validator import validate
 from legal_ai.config import DEFAULT_CONFIG
 from legal_ai.llm.client import generate
 from legal_ai.schemas.evidence import Evidence
-from legal_ai.tools.registry import get_tool, resolve_args
+from legal_ai.retrieval.hybrid import hybrid_search
 
 SUMMARISE_PROMPT = """Summarise these retrieved Indian legal provisions for
 a colleague researching: {question}
@@ -55,20 +55,21 @@ class ResearchResult:
         return len(self.angles)
 
 
-def _search(query: str, limit: int | None = None) -> list[Evidence]:
-    """One statutory search. No model call.
+def _search(query: str, limit: int) -> list[Evidence]:
+    """One search. No model call.
 
-    `limit` overrides the registry default. A single-angle question wants
-    exactly what it will return -- asking for more and slicing afterwards
-    measured worse, because the extra results come from beyond the point
-    where hybrid_search stopped ranking.
+    Calls hybrid_search directly, at the width it will return. That is
+    exactly what the rewrite-only baseline in evals.run does, so a
+    single-angle question runs the same code as the best-measured path
+    rather than something merely similar -- there is then no difference
+    between them left to measure.
+
+    Deliberately not search_statutes: that over-fetches five-fold and then
+    filters by document type, which is right for a caller browsing statutes
+    and wrong here.
     """
-    tool = get_tool("search_statutes")
-    args = resolve_args("search_statutes", {"query": query})
-    if limit is not None:
-        args["limit"] = limit
     try:
-        return list(tool(**args))
+        return list(hybrid_search(query, limit=limit))
     except Exception:
         return []
 
@@ -155,7 +156,7 @@ def research(
     per_angle: list[list[Evidence]] = []
     dropped: list[tuple[str, str]] = []
     for angle in angles:
-        result = validate(_search(angle.query), conn=conn)
+        result = validate(_search(angle.query, limit=limit), conn=conn)
         dropped.extend(result.dropped)
         per_angle.append(result.kept)
 

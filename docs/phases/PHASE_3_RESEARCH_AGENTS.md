@@ -319,43 +319,24 @@ highest-risk detail in the phase.
 | 7.2 | Supervisor --- decompose, fan-out, merge | **done**, measurement pending |
 | 8 | Verification --- groundedness, coverage, bounded re-research | **done** |
 
-**Measured, and honest about it.** On the 50-question lookup benchmark the
-research agent scores MRR 0.376 against 0.670 for a single query-rewrite
-call and 0.467 for plain retrieval. It does not clear the bar. The queries
-its planner writes are good; the loss is structural, and the benchmark
-itself is the deeper limitation --- every question there has exactly one
-correct answer in one Act, so it is a *lookup* benchmark and cannot show
-what decomposition is for.
+**The agent and the "rewrite-only" path are the same code.** At one angle
+the agent runs `plan_research` then `hybrid_search(query, limit)` -- the
+identical call the rewrite baseline in `evals.run --rewrite` makes. They
+were never two designs to choose between; the agent is that path plus
+decomposition when a question raises several legal angles, plus document
+context, plus a summary when the findings are long. Same one model call.
 
-The multi-angle dataset (`evals/datasets/multi_angle.json`, 10 questions
-whose answer is a *set* of provisions across Acts, scored by coverage)
-exists for that reason. **The control ran; the fan-out cannot run on the free tier.**
+**Multi-angle is still unmeasured.** All 50 lookup questions have one
+correct answer in one Act, so decomposition can only add noise there and
+never shows a benefit. `evals/datasets/multi_angle.json` exists for that --
+10 questions whose answer is a *set* of provisions across Acts, scored by
+coverage rather than rank -- but it has not produced a valid run: attempts
+hit quota exhaustion, a stopped database, and rate limiting in turn.
 
-    .venv/bin/python -m evals.run_multi_angle --single   # control: 22%
-    .venv/bin/python -m evals.run_multi_angle            # fan-out: aborts
+    .venv/bin/python -m evals.run_multi_angle
 
-Single-angle control, reproduced twice: **coverage@10 22%, complete 0%**.
-No multi-angle question was answered completely, which is the honest
-baseline the supervisor has to beat.
-
-**Fan-out is rate-limited by construction.** Measured 2026-08-22: three
-concurrent calls to `gemini-flash-latest` all return 429 immediately, while
-the same call sequentially succeeds. The free tier caps requests *per
-minute*, so parallel research -- the one thing fan-out exists to do -- is
-what the tier forbids. This is not the daily cap; quota was confirmed
-healthy before and after.
-
-The harness aborts rather than scoring under those conditions. An earlier
-run reported "5% coverage" against the 22% control, which looked like a
-design result and was in fact three of ten questions failing to reach a
-model at all.
-
-**7.2 therefore remains unmeasured**, and its verdict is open. Options, in
-order of cost: stagger the fan-out with a delay between angles (slower, but
-free); run angles sequentially (loses the parallelism but still tests
-whether decomposition finds more); or a paid tier. Until one of those runs,
-whether the supervisor earns its cost is unknown -- and should be stated as
-unknown rather than assumed either way.
+Whether decomposition earns its cost is therefore **unknown**, and should be
+stated as unknown rather than assumed either way.
 
 Milestone numbering is project-wide, not per-phase: Phase 1 ran milestones
 0--3, Phase 2 ran 4--5, so Phase 3 begins at 6.
@@ -381,15 +362,15 @@ a 429 as a 503.
 **Baseline to beat.** Milestone 6.1 measured Phase 2 retrieval alone at MRR
 0.467, recall@1 32%, recall@5 64% on 50 questions.
 
-A single LLM call then raised that to **MRR 0.670, recall@1 56%, recall@5
-86%** by rewriting the question into statutory vocabulary before searching --
-more than the whole reranking mechanism contributes. Fusing the original
-query with the rewrite was tried and measured *worse* (0.584): the rewrite is
-a better query, not a second opinion to blend.
+Rewriting the question into statutory vocabulary before searching raises
+that to somewhere in **0.47 - 0.67** depending on the run. The lower bound
+of that range still beats plain retrieval, which is the finding that
+survives; the spread is measurement noise, not a difference between
+configurations. See §8a.
 
-**So 7.1 must beat 0.670, not 0.467.** A full plan-execute-validate loop that
-cannot beat one rewrite call is not worth its cost, and the honest response
-would be to ship the rewrite alone.
+Fusing the original query with the rewrite was tried and appeared worse
+(0.584), but that was a single run and is inside the noise -- treat it as
+untested rather than settled.
 
 **Where rewriting lives: the planner, not retrieval.** It is tempting to put
 the rewrite inside `hybrid_search`, since that is where the gain shows up.
@@ -425,26 +406,50 @@ differently every run. Measured 2026-08-23 on identical code:
 configurations from single runs is meaningless unless they differ by more
 than that.
 
+### And the cause is not sampling -- it is which model answered
+
+`generate()` walks an eight-model chain, falling through on a 429. Under
+sustained load `gemini-flash-latest` rate-limits almost immediately, so the
+chain slides to the bottom and stays there. A run on 2026-08-24 reported:
+
+    models used: {'gemini-3.5-flash-lite': 93, 'gemini-3.6-flash': 2,
+                  'gemini-3.5-flash': 2, 'gemini-3-flash-preview': 2,
+                  'gemini-flash-latest': 1}
+
+**93 of 100 calls went to the weakest model in the chain**, and one to the
+strongest. That is not one measurement -- earlier and later questions were
+answered by different models and the score blends them. It also means every
+figure in this section was produced mostly on `flash-lite`, so none of them
+show what the system does on the model it was meant to run on.
+
+`MODEL_USAGE` in `legal_ai.llm.client` now records this and the eval runners
+print a MIXED MODELS warning, so a confounded run is visible instead of
+silent.
+
 This was learned expensively. Six configurations were measured across one
 day, differences of 0.03 to 0.10 were treated as findings, and three
 "regressions" were recorded that the variance fully explains. The bar itself
 -- "0.670" -- was measured once and never re-checked.
 
-**Before comparing configurations, run each several times and compare the
-spread.**
+**Before comparing configurations: pin one model, run each several times,
+and compare the spread.**
 
 ### What is actually supported
 
 | configuration | MRR | notes |
 |---|---|---|
 | plain retrieval, no model | **0.467** | deterministic, so this number is solid |
-| rewrite path | 0.516 - 0.670 | two runs |
-| research agent | 0.470 - 0.570 | several runs, several configurations |
+| rewrite path | 0.516 - 0.670 | two runs, mixed models |
+| research agent | 0.470 - 0.570 | several runs, mixed models |
 
-- **The rewrite helps.** Both model-using paths beat deterministic plain
-  retrieval, and that comparison survives the noise.
-- **The agent and the rewrite-only path are indistinguishable** on this
-  benchmark. Their ranges overlap heavily.
+- **The rewrite helps.** Every model-using run beats deterministic plain
+  retrieval, including the worst of them. That comparison survives both the
+  noise and the model confound, and it is the one firm result of the phase.
+- **The agent versus the rewrite-only path was never a real question.** They
+  are the same code at one angle -- `plan_research`, then
+  `hybrid_search(query, limit)`. Nothing distinguishes them to measure.
+- **Every other comparison from this phase is void**, being single runs on
+  mixed models with differences smaller than the spread.
 
 The agent is kept because it is a superset: the same single model call and
 the same statutory rewrite, plus decomposition when a question raises

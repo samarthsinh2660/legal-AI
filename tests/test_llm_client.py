@@ -96,3 +96,22 @@ def test_chain_contains_only_models_verified_against_the_live_api():
     assert "gemini-2.5-flash" not in llm.MODEL_CHAIN
     assert "gemini-flash-latest" in llm.MODEL_CHAIN
     assert len(llm.MODEL_CHAIN) >= 5
+
+
+def test_the_model_that_answered_is_recorded(fake):
+    # A benchmark that falls through the chain partway is not one
+    # measurement: later questions were answered by a weaker model than
+    # earlier ones, and the score blends them. Recording this makes it
+    # visible rather than silent.
+    llm.reset_model_usage()
+    fake({"a": "429 RESOURCE_EXHAUSTED"})
+    llm.generate("hi", chain=("a", "b"))
+    assert llm.MODEL_USAGE == {"b": 1}
+
+
+def test_repeated_calls_accumulate_per_model(fake):
+    llm.reset_model_usage()
+    fake({})
+    for _ in range(3):
+        llm.generate("hi", chain=("a", "b"))
+    assert llm.MODEL_USAGE == {"a": 3}

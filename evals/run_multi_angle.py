@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 
 from evals.preflight import FailureTracker, require_model
+from legal_ai.llm.client import MODEL_USAGE, reset_model_usage
 from evals.dataset import MULTI_ANGLE_DATASET, load_questions
 from evals.evaluators.coverage import complete_rate, coverage_at_k, mean_coverage
 from legal_ai.agents.supervisor import research
@@ -37,6 +38,7 @@ def main() -> None:
     args = parser.parse_args()
 
     require_model()
+    reset_model_usage()
     tracker = FailureTracker()
 
     max_angles = 1 if args.single else args.max_angles
