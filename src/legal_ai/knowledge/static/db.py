@@ -169,3 +169,42 @@ def ensure_schema(conn: psycopg.Connection) -> None:
         """
     )
     conn.commit()
+    ensure_version_schema(conn)
+
+
+def ensure_version_schema(conn: psycopg.Connection) -> None:
+    """History of superseded document text.
+
+    `documents` always holds current law -- every retrieval path reads it
+    unchanged and needs no date predicate. When re-ingestion finds the
+    text of a stored document has changed, the *old* row is copied here
+    before being overwritten, so an amendment never destroys the text it
+    replaced.
+
+    On the two timestamps, which are observation times and not legal
+    dates: `first_seen_at` is when we ingested that text, `superseded_at`
+    is when we ingested something different. Neither is the date
+    Parliament commenced an amendment -- India Code does not give us one.
+    A version therefore bounds when the text changed to within our polling
+    interval, and that is all it claims. Callers that need a true
+    commencement date must get it elsewhere.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS document_versions (
+            version_id BIGSERIAL PRIMARY KEY,
+            document_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            full_text TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            provenance JSONB NOT NULL,
+            first_seen_at TIMESTAMPTZ NOT NULL,
+            superseded_at TIMESTAMPTZ NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS document_versions_lookup_idx "
+        "ON document_versions (document_id, superseded_at)"
+    )
+    conn.commit()

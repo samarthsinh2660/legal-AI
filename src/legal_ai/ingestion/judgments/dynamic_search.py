@@ -70,41 +70,53 @@ def _verify(document: CanonicalDocument) -> tuple[bool, list[str]]:
 
 
 def _check_db(query: str) -> Optional[JudgmentSearchResult]:
-    query_words = {w.lower() for w in _WORD_RE.findall(query)}
+    """Best stored judgment whose title shares enough words with `query`.
+
+    Overlap is computed in SQL. Doing it in Python meant selecting every
+    judgment id and then re-reading each row in full -- pulling the entire
+    judgment corpus, full text and all, over the wire to compare titles.
+    That is invisible at nine stored judgments and impossible at fifty
+    thousand, which is where a real precedent corpus lands.
+    """
+    query_words = sorted({w.lower() for w in _WORD_RE.findall(query)})
     if not query_words:
         return None
 
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT document_id FROM documents WHERE document_type = 'judgment'")
-            judgment_ids = [row[0] for row in cur.fetchall()]
-
-        best_doc: Optional[CanonicalDocument] = None
-        best_overlap = 0.0
-        for document_id in judgment_ids:
-            doc = get_document(conn, document_id)
-            if doc is None:
-                continue
-            title_words = {w.lower() for w in _WORD_RE.findall(doc.title)}
-            if not title_words:
-                continue
-            overlap = len(query_words & title_words) / len(query_words)
-            if overlap > best_overlap:
-                best_overlap = overlap
-                best_doc = doc
+            cur.execute(
+                """
+                SELECT document_id,
+                       cardinality(ARRAY(
+                           SELECT unnest(%s::text[])
+                           INTERSECT
+                           SELECT unnest(regexp_split_to_array(lower(title), '[^a-z]+'))
+                       ))::float / %s AS overlap
+                FROM documents
+                WHERE document_type = 'judgment'
+                ORDER BY overlap DESC, document_id ASC
+                LIMIT 1
+                """,
+                (query_words, len(query_words)),
+            )
+            row = cur.fetchone()
+            if row is None or row[1] < DB_TITLE_WORD_OVERLAP_THRESHOLD:
+                return None
+            document_id, overlap = row
+            best_doc = get_document(conn, document_id)
     finally:
         conn.close()
 
-    if best_doc is not None and best_overlap >= DB_TITLE_WORD_OVERLAP_THRESHOLD:
-        return JudgmentSearchResult(
-            found=True,
-            source="database",
-            document=best_doc,
-            verified=True,
-            notes=[f"already in DB, title word overlap={best_overlap:.2f}, no network call made"],
-        )
-    return None
+    if best_doc is None:
+        return None
+    return JudgmentSearchResult(
+        found=True,
+        source="database",
+        document=best_doc,
+        verified=True,
+        notes=[f"already in DB, title word overlap={overlap:.2f}, no network call made"],
+    )
 
 
 def _archive_pdf_url(judgment) -> tuple[str, bool]:

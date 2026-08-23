@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
+from datetime import datetime
 
 import psycopg
 
@@ -21,12 +23,38 @@ def upsert_document(
 ) -> bool:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT content_hash FROM documents WHERE document_id = %s",
+            """
+            SELECT content_hash, title, full_text, provenance, ingested_at
+            FROM documents WHERE document_id = %s
+            """,
             (doc.document_id,),
         )
         row = cur.fetchone()
         if row is not None and row[0] == doc.content_hash:
             return False
+
+        if row is not None:
+            # The stored text is about to be overwritten by different
+            # text -- an amendment, a correction, or a better scrape. Keep
+            # the old version first: a citation to what the law said before
+            # must stay checkable after the law changes.
+            cur.execute(
+                """
+                INSERT INTO document_versions (
+                    document_id, title, full_text, content_hash,
+                    provenance, first_seen_at, superseded_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    doc.document_id,
+                    row[1],
+                    row[2],
+                    row[0],
+                    json.dumps(row[3]),
+                    row[4],
+                    doc.ingested_at,
+                ),
+            )
 
         cur.execute(
             """
@@ -170,3 +198,116 @@ def find_similar(
         )
         rows = cur.fetchall()
     return [(_row_to_document(row[:-1]), row[-1]) for row in rows]
+
+
+@dataclass(frozen=True)
+class VersionedText:
+    """Text of a document as it stood at a point in time, plus what we
+    actually know about the bounds of that claim.
+
+    `is_current` says the answer came from `documents` rather than
+    history. `observed_from` / `observed_until` are the ingestion times
+    that bracket the version -- not commencement and repeal dates. A
+    caller quoting this to a lawyer must pass that distinction on: it
+    says "this is the text we had on record then", not "this is the text
+    Parliament had enacted then".
+    """
+
+    document_id: str
+    title: str
+    full_text: str
+    content_hash: str
+    is_current: bool
+    observed_from: datetime
+    observed_until: datetime | None
+
+
+def get_text_as_on(
+    conn: psycopg.Connection,
+    document_id: str,
+    as_on: datetime,
+) -> VersionedText | None:
+    """The stored text of `document_id` as it stood at `as_on`.
+
+    Which text applies is decided by the date of the cause of action, not
+    the date of the question, so the current text is frequently the wrong
+    one to quote. Returns the oldest superseded version that was still
+    current at `as_on`; falls back to the live row when history has
+    nothing that late, which is the common case for text that has never
+    changed since ingestion.
+
+    Returns None for an unknown document_id.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT title, full_text, content_hash, first_seen_at, superseded_at
+            FROM document_versions
+            WHERE document_id = %s AND superseded_at > %s
+            ORDER BY superseded_at ASC
+            LIMIT 1
+            """,
+            (document_id, as_on),
+        )
+        row = cur.fetchone()
+        if row is not None:
+            return VersionedText(
+                document_id=document_id,
+                title=row[0],
+                full_text=row[1],
+                content_hash=row[2],
+                is_current=False,
+                observed_from=row[3],
+                observed_until=row[4],
+            )
+
+        cur.execute(
+            """
+            SELECT title, full_text, content_hash, ingested_at
+            FROM documents WHERE document_id = %s
+            """,
+            (document_id,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    return VersionedText(
+        document_id=document_id,
+        title=row[0],
+        full_text=row[1],
+        content_hash=row[2],
+        is_current=True,
+        observed_from=row[3],
+        observed_until=None,
+    )
+
+
+def list_versions(conn: psycopg.Connection, document_id: str) -> list[VersionedText]:
+    """Every superseded version of `document_id`, oldest first.
+
+    Excludes the current text, which lives in `documents` -- use
+    get_document for that.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT title, full_text, content_hash, first_seen_at, superseded_at
+            FROM document_versions
+            WHERE document_id = %s
+            ORDER BY superseded_at ASC
+            """,
+            (document_id,),
+        )
+        rows = cur.fetchall()
+    return [
+        VersionedText(
+            document_id=document_id,
+            title=title,
+            full_text=full_text,
+            content_hash=hash_value,
+            is_current=False,
+            observed_from=first_seen_at,
+            observed_until=superseded_at,
+        )
+        for title, full_text, hash_value, first_seen_at, superseded_at in rows
+    ]
