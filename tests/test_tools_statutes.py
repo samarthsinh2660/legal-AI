@@ -92,3 +92,24 @@ def test_search_statutes_excludes_non_statute_document_types(conn):
     result_ids = {e.document_id for e in results}
     assert "test:act-2" in result_ids
     assert "test:j-1" not in result_ids
+
+
+def test_search_statutes_uses_the_full_retrieval_pipeline():
+    # It used bare vector similarity, which is why every research-agent
+    # benchmark scored below plain retrieval: the agent searched with a
+    # weaker tool than the one that was benchmarked.
+    import inspect
+
+    from legal_ai.tools import statutes
+
+    source = inspect.getsource(statutes.search_statutes)
+    assert "hybrid_search" in source
+    assert "find_similar" not in source
+
+
+def test_search_statutes_finds_the_provision_a_grievance_is_about():
+    from legal_ai.tools.statutes import search_statutes
+
+    ids = [e.document_id for e in search_statutes(
+        "promoter fails to give possession return of amount", limit=10)]
+    assert "act:2158:sec-18" in ids

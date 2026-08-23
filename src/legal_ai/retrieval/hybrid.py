@@ -118,9 +118,11 @@ def hybrid_search(
             passages = best_passages(conn, query, shortlist)
             reranked = rerank_candidates(query, passages, limit=limit)
             if reranked:
-                return build_evidence(conn, [document_id for document_id, _score in reranked])
+                return build_evidence(
+                    conn, [document_id for document_id, _score in reranked], query=query
+                )
 
         top_ids = [document_id for document_id, _score in fused[:limit]]
-        return build_evidence(conn, top_ids)
+        return build_evidence(conn, top_ids, query=query)
     finally:
         conn.close()

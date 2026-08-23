@@ -9,27 +9,31 @@ here, only Evidence construction.
 from __future__ import annotations
 
 from legal_ai.knowledge.static.db import get_connection
-from legal_ai.knowledge.static.embeddings import embed
-from legal_ai.knowledge.static.store import find_similar, get_document
+from legal_ai.knowledge.static.store import get_document
 from legal_ai.retrieval.evidence_builder import to_evidence
+from legal_ai.retrieval.hybrid import hybrid_search
 from legal_ai.schemas.evidence import Evidence
 
 _STATUTE_TYPES = {"act", "section"}
 
-# find_similar has no document_type filter, so over-fetch and filter in
-# Python rather than changing a function other callers rely on.
+# hybrid_search takes a single document_type, but a statute search wants both
+# acts and sections, so over-fetch and filter in Python. Narrowing this was
+# measured and is worse -- see search_limit in legal_ai.config.settings.
 _OVERFETCH_FACTOR = 5
 
 
 def search_statutes(query: str, limit: int = 5) -> list[Evidence]:
-    conn = get_connection()
-    try:
-        candidates = find_similar(conn, embed(query), limit=limit * _OVERFETCH_FACTOR)
-    finally:
-        conn.close()
+    """Statutes matching `query`, through the full Phase 2 pipeline.
 
-    matches = [doc for doc, _distance in candidates if doc.document_type in _STATUTE_TYPES]
-    return [to_evidence(doc) for doc in matches[:limit]]
+    Uses hybrid_search -- keyword and vector fused, then reranked -- not bare
+    vector similarity. Measured 2026-08-22: vector-only search here was the
+    reason every research-agent benchmark scored far below plain retrieval.
+    The agent was searching with a weaker tool than the one that was
+    benchmarked, so its results were never comparable.
+    """
+    results = hybrid_search(query, limit=limit * _OVERFETCH_FACTOR)
+    matches = [item for item in results if item.document_type in _STATUTE_TYPES]
+    return matches[:limit]
 
 
 def get_statute(act_id: str) -> Evidence | None:
