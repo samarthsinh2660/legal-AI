@@ -46,6 +46,7 @@ legal-ai/
 │   └── legal_ai/                # the installable package
 │       ├── config/
 │       ├── context/             # §6 shared thread context
+│       ├── case/                # the persistent matter a thread can belong to
 │       ├── schemas/             # pydantic contracts shared by everything
 │       ├── graph/               # LangGraph orchestration
 │       ├── agents/              # agent definitions + prompts
@@ -119,6 +120,33 @@ UI does not free-render prose.
 document id, court, date, citation, paragraph, retrieved_at, source_type.
 
 ---
+
+## 3a. `case/` — the persistent matter
+
+A research session answers one question and ends. A case outlives every
+session in it, which is why this is not part of `context/`: a
+`ThreadContext` is built per thread and thrown away, and a case is what
+many threads write into.
+
+``` text
+case/
+├── models.py       # Case, CaseAnalysis, TimelineEntry — all frozen
+├── store.py        # cases, case_documents, case_findings, case_sessions
+│                   # the only thing that writes case state
+├── timeline.py     # date parsing, deterministic — no model call
+└── session.py      # the join: seed a thread from a case (Flow B),
+                    # write a finished session back (Flow A)
+```
+
+`store.py` is normalised rather than one JSONB blob because the three child
+relations have different cardinality and are read differently: documents
+join against `documents`, findings are read on every new session, and
+questions are an append-only log.
+
+The Case Agent itself lives in `agents/case.py`, not here — this package is
+state, that one is reasoning.
+
+------------------------------------------------------------------------
 
 ## 4. `graph/` — LangGraph orchestration
 
@@ -437,7 +465,8 @@ actually ran.
 ## 16. Boundaries to hold
 
 ``` text
-agents/     →  may import  →  tools/, context/, schemas/
+agents/     →  may import  →  tools/, context/, case/, schemas/
+case/       →  may import  →  context/, schemas/, knowledge/
 tools/      →  may import  →  sources/, retrieval/, knowledge/, schemas/
 sources/    →  may import  →  schemas/ only
 retrieval/  →  may import  →  knowledge/, graphdb/, schemas/

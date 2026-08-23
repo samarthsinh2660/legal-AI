@@ -178,3 +178,137 @@ Verification Agent             -> Phase 6
 Active knowledge promotion     -> Phase 6
 GraphRAG / precedent graph     -> Phase 7
 ```
+
+------------------------------------------------------------------------
+
+## 7. What was built (2026-08-24)
+
+### Milestone 9 --- Document Agent
+
+Landed in Phase 3 as milestone 6.4, because `ThreadContext` is defined to
+hold case facts and something had to produce them. Phase 4 completed the
+wiring: the `document` graph node no longer passes through, it reads each
+`document_id` from the canonical store and extracts structure. Facts
+already on the channel are used as given, which is the path a caller who
+has pre-extracted takes and what keeps the graph runnable without an API
+key.
+
+### Milestone 10 --- Case Agent
+
+``` text
+legal_ai/case/models.py      Case, CaseAnalysis, TimelineEntry
+legal_ai/case/store.py       cases, case_documents, case_findings,
+                             case_sessions -- the only writer
+legal_ai/case/timeline.py    date parsing, deterministic
+legal_ai/case/session.py     Flow A and Flow B
+legal_ai/agents/case.py      the agent
+```
+
+Split the same way every other agent here is:
+
+| output | how |
+|---|---|
+| timeline | deterministic. A model that invents a date loses a limitation point |
+| facts | assembled from `DocumentFacts`, each traced to a document id |
+| applicable law / precedents | Evidence ids copied, never generated |
+| issues, missing facts | one model call, both together |
+
+Issues and missing facts share a call because both need the documents and
+the law weighed at once -- the same merge `plan_research` made in Phase 3
+when four calls became one.
+
+`missing_facts` is the output with no counterpart in a research session.
+Twelve years' possession required, eight evidenced: that gap is only
+visible holding the legal test and the document facts together. Searching
+public law cannot find what is absent from a private file.
+
+### Why the Case Agent is not a node in the research graph
+
+The graph runs per question. A case outlives every question in it, and its
+analysis is a derived view the case workspace requests -- not something to
+recompute on every research run. The graph consumes a case (seeding its
+context from what the case established); it does not contain one.
+
+### Dates are observation times, not legal dates
+
+`TimelineEntry.parsed` is None whenever a date could not be read, and the
+entry is kept anyway. "Within 30 days" is a real event with no resolvable
+date, and dropping it would show a confident timeline with holes in it.
+
+Numeric dates are read **day-first** and month-first is not accepted at
+all. Indian legal documents are day-first throughout; allowing both would
+make every ambiguous date a coin toss, and 03/04/2021 read as 4 March
+moves a limitation date by a month.
+
+------------------------------------------------------------------------
+
+## 8. Fixed on the way in
+
+Three defects found while sizing this phase, all pre-existing:
+
+**`.env` was never loaded.** `python-dotenv` was a declared dependency
+that nothing called. `llm/client.py` reads `os.environ` directly, so
+without exporting the key by hand every model call raised, `plan_research`
+returned its fallback, and the agent silently became plain retrieval --
+no error, just a worse score. Any benchmark run before this date may have
+had no model behind it. Now loaded once in `legal_ai/__init__.py`, with
+`override=False` so a deliberately exported variable still wins.
+
+**Statute text was destroyed on re-ingestion.** `documents` was
+overwrite-in-place, so an amendment lost the text it replaced. Added
+`document_versions`: the old row is archived before being overwritten, and
+`get_text_as_on` returns the wording on record at a past date -- which is
+what governs, since the law that applies is the law as it stood when the
+cause of action arose.
+
+Two limits worth stating. The timestamps are **observation times**, not
+commencement dates -- India Code does not give us one, so a version
+brackets a change to within our polling interval and claims nothing more.
+And nothing re-runs ingestion on a schedule yet, so the mechanism is
+correct but dormant until a periodic re-scrape exists.
+
+**`_check_db` pulled the whole judgment corpus to compare titles.** It
+selected every judgment id and re-read each row in full, including
+`full_text`. Invisible at nine stored judgments, impossible at fifty
+thousand. Now computed in SQL.
+
+------------------------------------------------------------------------
+
+## 9. Not built, and why
+
+**Case-law discovery by issue.** Asked "which Supreme Court cases concern
+drugs", nothing here answers. Measured facts behind that:
+
+- The Vanga archive index is metadata only -- `court`, `year`, `judge`,
+  `party`, `citation`, `cnr`. No subject, no headnote, `description`
+  empty. The word "drugs" appears nowhere in it, so topical search against
+  the archive is impossible rather than slow.
+- The lazy fetch path was built for lookup by name or citation, and its
+  docstring says so. It therefore only ever caches cases someone already
+  named, converging on "the cases our users already knew about".
+- `CITES_SECTION` has 24 edges from 9 stored judgments, so
+  section -> cases returns nothing today.
+
+The design agreed for it, not yet implemented: retrieve the sections
+first, then find cases against **both** the section and the rewritten
+query, fused. Measured on "bail in drug cases", the two signals barely
+overlap -- the rewrite returned Tofan Singh and Noor Aga, the section
+query returned Kerala v Rajesh and Rattan Mallik -- so neither replaces
+the other. The section's distinct contribution is that it is grounded in a
+provision that exists and gives a graph key, so what is fetched caches as
+`CITES_SECTION` edges and answers locally next time.
+
+**Bulk Supreme Court ingest.** Sized, not run: 12,993 judgments 2010-2026,
+~2.5 hours, ~3.4 GB cache. It is an accelerator for the `CITES_SECTION`
+cold start, not a prerequisite -- and it can never cover the High Courts,
+where Delhi alone filed 8,465 in 2023.
+
+**Indian Kanoon robots blocklist.** `robots.txt` carries 9,292 disallow
+rules under `User-Agent: *`, almost all specific `/doc/<id>/` paths --
+judgments ordered de-indexed, typically victim-privacy matters.
+`_search_indian_kanoon` fetches any doc id it finds and checks none of
+them. This must land before any discovery path that fetches more.
+
+**Arguments.** Listed as a Case Agent output in §3, but generating them is
+the Analyst and Draft Agents' job in Phase 5. Building a field nothing
+writes would be speculative.
