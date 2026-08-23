@@ -18,7 +18,7 @@ import argparse
 from evals.preflight import FailureTracker, require_model
 from evals.dataset import load_questions
 from evals.evaluators.ranking import first_relevant_rank, mean_reciprocal_rank, recall_at_k
-from legal_ai.agents.research import research_angle
+from legal_ai.agents.supervisor import research
 from legal_ai.knowledge.static.db import get_connection
 
 BAR_MRR = 0.670
@@ -26,8 +26,6 @@ BAR_MRR = 0.670
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--max-rounds", type=int, default=2)
-    parser.add_argument("--max-steps", type=int, default=8)
     parser.add_argument("--limit", type=int, default=0, help="first N questions only")
     args = parser.parse_args()
 
@@ -42,19 +40,14 @@ def main() -> None:
     ranks: list[int | None] = []
     try:
         for question in questions:
-            result = research_angle(
-                question.question,
-                max_rounds=args.max_rounds,
-                max_steps=args.max_steps,
-                conn=conn,
-            )
+            result = research(question.question, conn=conn)
             ids = [item.document_id for item in result.evidence if item.document_id]
             rank = first_relevant_rank(ids, question.expected)
             tracker.record_model_failures()
-        ranks.append(rank)
+            ranks.append(rank)
             print(
                 f"  {question.id:<30} {'miss' if rank is None else f'rank {rank}':<8} "
-                f"rounds {result.rounds}  kept {len(result.evidence)}  "
+                f"angles {result.agents_spawned}  kept {len(result.evidence)}  "
                 f"dropped {len(result.dropped)}",
                 flush=True,
             )

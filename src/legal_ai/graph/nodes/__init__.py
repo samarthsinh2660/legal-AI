@@ -71,11 +71,11 @@ def research(state: ResearchState) -> dict:
     many angles, and go again or stop. The ThreadContext built upstream is
     passed through unchanged -- no agent re-derives it.
     """
-    from legal_ai.agents.supervisor import supervise
+    from legal_ai.agents.supervisor import research as run_research
     from legal_ai.context.serialization import render
 
     context = state.get("context")
-    result = supervise(
+    result = run_research(
         state["question"],
         context=render(context) if context is not None else "",
     )

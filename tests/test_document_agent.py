@@ -20,7 +20,7 @@ the Real Estate (Regulation and Development) Act, 2016.
 
 
 def _stub(monkeypatch, payload, calls=None):
-    def fake_generate(prompt):
+    def fake_generate(prompt, **kwargs):
         if calls is not None:
             calls.append(prompt)
         return json.dumps(payload) if isinstance(payload, dict) else payload
@@ -68,7 +68,7 @@ def test_a_malformed_generation_degrades_rather_than_raises(monkeypatch):
 
 
 def test_a_failing_model_call_does_not_lose_the_whole_extraction(monkeypatch):
-    monkeypatch.setattr(doc, "generate", lambda prompt: (_ for _ in ()).throw(RuntimeError("429")))
+    monkeypatch.setattr(doc, "generate", lambda prompt, **kw: (_ for _ in ()).throw(RuntimeError("429")))
     facts = doc.extract_document_facts("doc-1", PETITION)
     assert facts.parties == ()
     assert facts.cited_sections

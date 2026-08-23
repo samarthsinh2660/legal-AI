@@ -406,6 +406,74 @@ which is why it de-risks 7.1 rather than adding work to it.
 
 ------------------------------------------------------------------------
 
+## 8a. Measured results
+
+50-question lookup benchmark, full corpus.
+
+| configuration | MRR | recall@1 | recall@5 | recall@10 |
+|---|---|---|---|---|
+| plain retrieval | 0.467 | 32% | 64% | 78% |
+| **single query rewrite** | **0.670** | **56%** | **86%** | **90%** |
+| research agent | 0.542 | 40% | 74% | 88% |
+
+**The rewrite wins, and by a wide margin.** It is the largest measured gain
+in the project -- more than the whole reranking mechanism contributes.
+
+### Why a rewrite is worth more than reranking
+
+The corpus holds statutes, written in drafting language. People describe
+grievances in ordinary language. Neither contains the other's words:
+
+    builder                -> promoter
+    did not hand over      -> fails to give possession
+    get my money back      -> return of amount
+
+Keyword search cannot bridge that: RERA s.18 never uses the word "builder",
+so there is no overlap to score. Vector search should bridge it and does
+not reliably: `all-mpnet-base-v2` is trained on general English, where
+builder and promoter are loosely related, while in Indian statutory usage
+they are the same legal role. With 35,601 sections competing, loosely
+related is not enough.
+
+The rewrite fixes it at the only place it can be fixed -- the query. After
+it, keyword search has literal overlap and vector search compares like with
+like. **Reranking reorders what was found; the rewrite changes what gets
+found at all.**
+
+The proper fix is a legal-domain embedding model. InLegalBERT was tried in
+Phase 2 and measured 3.4x worse. Until a better one exists the rewrite *is*
+the domain knowledge, injected at query time.
+
+### Three agent configurations, all below the bar
+
+| what changed | MRR |
+|---|---|
+| original: 7-13 model calls, per-angle plan/assess/compress | 0.376 |
+| merged to 1-2 calls, `search_statutes` fixed to use `hybrid_search` | **0.542** |
+| per-angle RRF instead of reranking the union | 0.508 |
+
+Two findings worth keeping:
+
+**`search_statutes` was using bare vector search.** No keyword fusion, no
+reranking, no chunks. Every agent measurement before 2026-08-23 was
+therefore made with a weaker tool than the one being compared against, and
+none of them were valid. Fixing it moved MRR 0.376 -> 0.542.
+
+**Per-angle RRF was tried and is worse** (0.508 against 0.542). The
+reasoning was that each angle's list is already ranked against its own
+statutory query, so reranking the union against the user's wording discards
+that. The measurement disagrees: scoring each passage against what was
+actually asked is worth more than the ordering it overwrites.
+
+### Cost
+
+One or two model calls per question, whatever the angle count -- one to plan
+angles and their queries, one to summarise, and the summary is skipped when
+the findings are short enough to hand over as they are. Down from 7 at one
+angle and 13 at three.
+
+------------------------------------------------------------------------
+
 ## 9. Deliverable
 
 > AI can perform legal research instead of merely performing search.

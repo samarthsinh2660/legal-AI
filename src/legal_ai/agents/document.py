@@ -28,6 +28,7 @@ import json
 
 from legal_ai.context.models import DocumentFacts
 from legal_ai.ingestion.statute_citations import extract_section_references
+from legal_ai.config import DEFAULT_CONFIG
 from legal_ai.llm.client import generate
 
 # Characters of a document sent to the model in one pass. Large enough for a
@@ -100,7 +101,10 @@ def extract_document_facts(document_id: str, text: str) -> DocumentFacts:
 
     for window in _windows(text):
         try:
-            parsed = _parse(generate(PROMPT.format(text=window)))
+            parsed = _parse(generate(
+                PROMPT.format(text=window),
+                max_output_tokens=DEFAULT_CONFIG.extraction_model_max_tokens,
+            ))
         except Exception:
             # One failed window degrades the extraction; it does not lose
             # the windows that succeeded.

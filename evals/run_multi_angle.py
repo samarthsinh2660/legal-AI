@@ -25,7 +25,7 @@ import argparse
 from evals.preflight import FailureTracker, require_model
 from evals.dataset import MULTI_ANGLE_DATASET, load_questions
 from evals.evaluators.coverage import complete_rate, coverage_at_k, mean_coverage
-from legal_ai.agents.supervisor import supervise
+from legal_ai.agents.supervisor import research
 
 
 def main() -> None:
@@ -34,12 +34,6 @@ def main() -> None:
     parser.add_argument("--max-angles", type=int, default=3)
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--limit", type=int, default=0, help="first N questions only")
-    parser.add_argument("--max-rounds", type=int, default=1,
-                        help="rounds per angle (1 keeps a run iterable)")
-    parser.add_argument("--max-steps", type=int, default=4,
-                        help="tool steps per plan")
-    parser.add_argument("--parallel", action="store_true",
-                        help="run angles concurrently (rate-limited on the free tier)")
     args = parser.parse_args()
 
     require_model()
@@ -53,13 +47,7 @@ def main() -> None:
     coverages: list[float] = []
     spawned: list[int] = []
     for question in questions:
-        result = supervise(
-            question.question,
-            max_angles=max_angles,
-            max_rounds=args.max_rounds,
-            max_steps=args.max_steps,
-            parallel=args.parallel,
-        )
+        result = research(question.question, max_angles=max_angles)
         ids = [item.document_id for item in result.evidence if item.document_id]
         found = coverage_at_k(ids, question.expected, args.k)
         tracker.record_model_failures()

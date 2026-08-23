@@ -25,15 +25,12 @@ def test_caps_are_bounded_and_conservative():
 
 
 def test_every_consumer_reads_the_same_values():
-    from legal_ai.agents.research import DEFAULT_LIMIT, DEFAULT_MAX_ROUNDS
     from legal_ai.llm.client import MODEL_CHAIN
     from legal_ai.retrieval.evidence_builder import PASSAGE_CHARS
     from legal_ai.tools.registry import SEARCH_LIMIT
 
     assert MODEL_CHAIN == DEFAULT_CONFIG.model_chain
     assert SEARCH_LIMIT == DEFAULT_CONFIG.search_limit
-    assert DEFAULT_MAX_ROUNDS == DEFAULT_CONFIG.max_agent_rounds
-    assert DEFAULT_LIMIT == DEFAULT_CONFIG.limit_per_angle
     assert PASSAGE_CHARS == DEFAULT_CONFIG.passage_chars
 
 

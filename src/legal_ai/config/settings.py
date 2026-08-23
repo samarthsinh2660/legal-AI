@@ -45,9 +45,19 @@ class Configuration(BaseModel):
     # purpose: with eight models behind it, moving on beats waiting.
     max_retries_per_model: int = 2
 
+    # Output token ceilings per role, as open_deep_research does. Sized to
+    # the job: a plan is a short JSON array, a summary is prose. Capping
+    # output is the cheapest lever on both latency and spend, and it stops a
+    # model rambling past the point where its answer is useful.
+    plan_model_max_tokens: int = 512
+    summary_model_max_tokens: int = 1024
+    extraction_model_max_tokens: int = 1024
+
     # ------------------------------------------------------------ fan-out
-    # Parallel research agents per supervisor round. open_deep_research
-    # defaults to 5; 3 here because the free tier throttles.
+    # Research angles the supervisor may fan out to for one question.
+    # open_deep_research defaults to 5; 3 here because the free tier
+    # throttles. One angle is the expected common case -- a lookup question
+    # must not spawn three searches.
     max_concurrent_research_units: int = 3
 
     # Supervisor reflect-and-go-again rounds.
@@ -72,6 +82,11 @@ class Configuration(BaseModel):
     # person reading a list; hybrid_search already reranks ~50 candidates and
     # truncates, so a small limit means reranking an already-truncated pool.
     search_limit: int = 40
+
+    # Findings shorter than this are handed over as they are. Summarising
+    # costs a model call and can only lose detail, so it is worth paying for
+    # only when the findings would not fit in front of a reader as they are.
+    summarise_above_chars: int = 4000
 
     # Passage characters carried per Evidence -- enough for a source panel
     # extract and for a cross-encoder to score, without shipping the document.

@@ -8,7 +8,7 @@ class _FakeModels:
         self.behaviour = behaviour
         self.calls = []
 
-    def generate_content(self, model, contents):
+    def generate_content(self, model, contents, config=None):
         self.calls.append(model)
         outcome = self.behaviour.get(model, "ok")
         if outcome != "ok":
@@ -48,7 +48,7 @@ def test_a_rate_limit_that_clears_is_served_by_the_same_model(fake, monkeypatch)
 
     original = models.generate_content
 
-    def clears_after_first(model, contents):
+    def clears_after_first(model, contents, config=None):
         if models.calls.count("a") >= 1:
             models.behaviour.pop("a", None)
         return original(model, contents)

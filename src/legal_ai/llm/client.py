@@ -77,18 +77,30 @@ def _classify(error: Exception) -> str:
     return "other"
 
 
-def generate(prompt: str, chain: tuple[str, ...] = MODEL_CHAIN) -> str:
+def generate(
+    prompt: str,
+    chain: tuple[str, ...] = MODEL_CHAIN,
+    max_output_tokens: int | None = None,
+) -> str:
     """First successful response from the chain.
+
+    `max_output_tokens` caps the reply. Sizing it to the job is the cheapest
+    lever on latency and spend, and it stops a model rambling past the point
+    where its answer is useful. Per-role defaults are in
+    legal_ai.config.settings.
 
     Raises AllModelsUnavailable if every model fails.
     """
+    config = {"max_output_tokens": max_output_tokens} if max_output_tokens else None
     client = _client()
     failures: dict[str, str] = {}
 
     for model in chain:
         for attempt in range(MAX_RETRIES_PER_MODEL):
             try:
-                response = client.models.generate_content(model=model, contents=prompt)
+                response = client.models.generate_content(
+                    model=model, contents=prompt, config=config
+                )
                 return (response.text or "").strip()
             except Exception as error:
                 kind = _classify(error)
