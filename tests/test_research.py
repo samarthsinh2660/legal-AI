@@ -86,8 +86,8 @@ def test_a_question_never_costs_more_than_two_model_calls(monkeypatch):
     monkeypatch.setattr(sup, "generate", lambda p, **kw: calls.append("summarise") or "summary")
     # Long enough to need summarising -- the upper bound of the cost.
     monkeypatch.setattr(sup, "_search",
-        lambda q: [_evidence(f"act:1:sec-{i}", "x" * 600) for i in range(20)])
-    monkeypatch.setattr(sup, "_rank", lambda question, ev, limit: ev)
+        lambda q, limit=None: [_evidence(f"act:1:sec-{i}", "x" * 600) for i in range(20)])
+    monkeypatch.setattr(sup, "_merge", lambda per_angle, limit: [e for a in per_angle for e in a])
 
     sup.research("q")
     assert calls == ["plan", "summarise"]
@@ -101,8 +101,8 @@ def test_three_angles_cost_no_more_than_one_angle(monkeypatch):
     monkeypatch.setattr(rp, "generate", lambda p, **kw: calls.append("plan") or
         '[{"angle":"a","query":"q1"},{"angle":"b","query":"q2"},{"angle":"c","query":"q3"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: calls.append("summarise") or "s")
-    monkeypatch.setattr(sup, "_search", lambda q: [_evidence(f"act:1:sec-{q}", "short")])
-    monkeypatch.setattr(sup, "_rank", lambda question, ev, limit: ev)
+    monkeypatch.setattr(sup, "_search", lambda q, limit=None: [_evidence(f"act:1:sec-{q}", "short")])
+    monkeypatch.setattr(sup, "_merge", lambda per_angle, limit: [e for a in per_angle for e in a])
 
     result = sup.research("q")
     assert result.agents_spawned == 3
@@ -118,7 +118,7 @@ def test_every_angle_is_searched(monkeypatch):
     monkeypatch.setattr(rp, "generate", lambda p, **kw:
         '[{"angle":"a","query":"first"},{"angle":"b","query":"second"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: "s")
-    monkeypatch.setattr(sup, "_search", lambda q: searched.append(q) or [])
+    monkeypatch.setattr(sup, "_search", lambda q, limit=None: searched.append(q) or [])
     sup.research("q")
     assert searched == ["first", "second"]
 
@@ -129,7 +129,7 @@ def test_results_are_deduplicated_across_angles(monkeypatch):
     monkeypatch.setattr(rp, "generate", lambda p, **kw:
         '[{"angle":"a","query":"x"},{"angle":"b","query":"y"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: "s")
-    monkeypatch.setattr(sup, "_search", lambda q: [_evidence("act:1:sec-1")])
+    monkeypatch.setattr(sup, "_search", lambda q, limit=None: [_evidence("act:1:sec-1")])
     # Real fusion here: de-duplication is its job, so stubbing it would test
     # nothing.
     assert len(sup.research("q").evidence) == 1
@@ -142,8 +142,8 @@ def test_a_failing_search_does_not_lose_the_others(monkeypatch):
         '[{"angle":"a","query":"bad"},{"angle":"b","query":"good"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: "s")
     monkeypatch.setattr(sup, "_search",
-        lambda q: [] if q == "bad" else [_evidence("act:1:sec-2")])
-    monkeypatch.setattr(sup, "_rank", lambda question, ev, limit: ev)
+        lambda q, limit=None: [] if q == "bad" else [_evidence("act:1:sec-2")])
+    monkeypatch.setattr(sup, "_merge", lambda per_angle, limit: [e for a in per_angle for e in a])
     assert len(sup.research("q").evidence) == 1
 
 
@@ -168,22 +168,37 @@ def test_summarising_nothing_says_so():
 
 # ---------------------------------------------------------------- ranking
 
-def test_the_union_is_reranked_against_the_original_question():
-    # Measured: RRF over each angle's ranked list scored 0.508 against this
-    # cross-encoder's 0.542. Scoring each passage against what was actually
-    # asked beats preserving per-angle ordering.
-    relevant = _evidence("act:2158:sec-18",
-        "If the promoter fails to give possession the allottee may claim a refund with interest.")
-    noise = _evidence("act:20062:sec-103", "Punishment for murder.")
-    ranked = sup._rank("refund when promoter fails to give possession", [noise, relevant], limit=10)
-    assert ranked[0].document_id == "act:2158:sec-18"
+def test_every_angle_searches_at_the_same_width():
+    # Kept because it pins current behaviour, not because narrowing was
+    # shown to be worse -- that comparison was inside benchmark noise.
+    import inspect
+
+    assert "per_search_limit" not in inspect.getsource(sup.research)
 
 
-def test_ranking_respects_the_limit():
-    items = [_evidence(f"act:1:sec-{i}", f"provision {i} about contracts") for i in range(20)]
-    assert len(sup._rank("contract provision", items, limit=5)) == 5
+def test_a_single_angle_keeps_the_order_search_gave_it():
+    # That order came from the full Phase 2 pipeline, scored against the
+    # statutory query. Passing it through unchanged is the current
+    # behaviour; re-ranking it appeared worse, but inside benchmark noise.
+    results = [_evidence("first"), _evidence("second"), _evidence("third")]
+    assert [e.document_id for e in sup._merge([results], limit=10)] == [
+        "first", "second", "third"]
 
 
-def test_ranking_a_single_result_is_a_no_op():
-    single = [_evidence("act:1:sec-1")]
-    assert sup._rank("anything", single, limit=10) == single
+def test_several_angles_are_interleaved_so_none_is_buried():
+    a = [_evidence("a1"), _evidence("a2"), _evidence("a3")]
+    b = [_evidence("b1"), _evidence("b2")]
+    ids = [e.document_id for e in sup._merge([a, b], limit=10)]
+    assert ids[:2] == ["a1", "b1"]
+
+
+def test_merging_deduplicates_across_angles():
+    a = [_evidence("same"), _evidence("x")]
+    b = [_evidence("same"), _evidence("y")]
+    ids = [e.document_id for e in sup._merge([a, b], limit=10)]
+    assert ids.count("same") == 1
+
+
+def test_merging_respects_the_limit():
+    a = [_evidence(f"d{i}") for i in range(20)]
+    assert len(sup._merge([a], limit=5)) == 5

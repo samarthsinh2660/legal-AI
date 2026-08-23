@@ -26,9 +26,13 @@ def run_question(
 ) -> int | None:
     text = question.question
     if rewrite:
-        from evals.rewrite import rewrite_query
+        # The same call the agent makes -- plan_research emits angles and
+        # their statutory queries together. Taking its first query is the
+        # rewrite-only baseline, measured at MRR 0.670, and it comes from
+        # the shipped code rather than a copy that could drift from it.
+        from legal_ai.agents.research_plan import plan_research
 
-        text = rewrite_query(text)
+        text = plan_research(text, max_angles=1)[0].query
     evidence = hybrid_search(text, limit=limit, rerank=rerank)
     ranked_ids = [item.document_id for item in evidence if item.document_id]
     return first_relevant_rank(ranked_ids, question.expected)

@@ -408,18 +408,58 @@ which is why it de-risks 7.1 rather than adding work to it.
 
 ## 8a. Measured results
 
-50-question lookup benchmark, full corpus.
+**Read the variance section first. It changes how every number below should
+be read.**
 
-| configuration | MRR | recall@1 | recall@5 | recall@10 |
-|---|---|---|---|---|
-| plain retrieval | 0.467 | 32% | 64% | 78% |
-| **single query rewrite** | **0.670** | **56%** | **86%** | **90%** |
-| research agent | 0.542 | 40% | 74% | 88% |
+### The benchmark is noisy
 
-**The rewrite wins, and by a wide margin.** It is the largest measured gain
-in the project -- more than the whole reranking mechanism contributes.
+The search query is written by a model, so the same configuration scores
+differently every run. Measured 2026-08-23 on identical code:
 
-### Why a rewrite is worth more than reranking
+| run | MRR | recall@1 | recall@5 |
+|---|---|---|---|
+| rewrite path, first run | 0.670 | 56% | 86% |
+| rewrite path, re-run | 0.516 | 40% | 68% |
+
+**Roughly +/-0.15 MRR of run-to-run spread.** Any comparison of two
+configurations from single runs is meaningless unless they differ by more
+than that.
+
+This was learned expensively. Six configurations were measured across one
+day, differences of 0.03 to 0.10 were treated as findings, and three
+"regressions" were recorded that the variance fully explains. The bar itself
+-- "0.670" -- was measured once and never re-checked.
+
+**Before comparing configurations, run each several times and compare the
+spread.**
+
+### What is actually supported
+
+| configuration | MRR | notes |
+|---|---|---|
+| plain retrieval, no model | **0.467** | deterministic, so this number is solid |
+| rewrite path | 0.516 - 0.670 | two runs |
+| research agent | 0.470 - 0.570 | several runs, several configurations |
+
+- **The rewrite helps.** Both model-using paths beat deterministic plain
+  retrieval, and that comparison survives the noise.
+- **The agent and the rewrite-only path are indistinguishable** on this
+  benchmark. Their ranges overlap heavily.
+
+The agent is kept because it is a superset: the same single model call and
+the same statutory rewrite, plus decomposition when a question raises
+several legal angles, plus document context, plus a summary when the
+findings are long. It gives more for the same cost.
+
+### One finding that is not noise
+
+**`search_statutes` was using bare vector search** -- no keyword fusion, no
+reranking, no chunks -- while every comparison was against the full
+`hybrid_search` pipeline. That is a code defect, not a measurement, and
+fixing it is why the tool now goes through `hybrid_search`. Its effect on
+the benchmark cannot be separated from the noise, but the bug was real.
+
+### Why a rewrite helps at all
 
 The corpus holds statutes, written in drafting language. People describe
 grievances in ordinary language. Neither contains the other's words:
@@ -428,49 +468,22 @@ grievances in ordinary language. Neither contains the other's words:
     did not hand over      -> fails to give possession
     get my money back      -> return of amount
 
-Keyword search cannot bridge that: RERA s.18 never uses the word "builder",
-so there is no overlap to score. Vector search should bridge it and does
-not reliably: `all-mpnet-base-v2` is trained on general English, where
-builder and promoter are loosely related, while in Indian statutory usage
-they are the same legal role. With 35,601 sections competing, loosely
-related is not enough.
+Keyword search cannot bridge it: RERA s.18 never uses the word "builder", so
+there is no overlap to score. Vector search should and does not reliably:
+`all-mpnet-base-v2` is trained on general English, where builder and
+promoter are loosely related, while in Indian statutory usage they are the
+same legal role. Against 35,601 competing sections, loosely related is not
+enough.
 
-The rewrite fixes it at the only place it can be fixed -- the query. After
-it, keyword search has literal overlap and vector search compares like with
-like. **Reranking reorders what was found; the rewrite changes what gets
-found at all.**
-
-The proper fix is a legal-domain embedding model. InLegalBERT was tried in
-Phase 2 and measured 3.4x worse. Until a better one exists the rewrite *is*
-the domain knowledge, injected at query time.
-
-### Three agent configurations, all below the bar
-
-| what changed | MRR |
-|---|---|
-| original: 7-13 model calls, per-angle plan/assess/compress | 0.376 |
-| merged to 1-2 calls, `search_statutes` fixed to use `hybrid_search` | **0.542** |
-| per-angle RRF instead of reranking the union | 0.508 |
-
-Two findings worth keeping:
-
-**`search_statutes` was using bare vector search.** No keyword fusion, no
-reranking, no chunks. Every agent measurement before 2026-08-23 was
-therefore made with a weaker tool than the one being compared against, and
-none of them were valid. Fixing it moved MRR 0.376 -> 0.542.
-
-**Per-angle RRF was tried and is worse** (0.508 against 0.542). The
-reasoning was that each angle's list is already ranked against its own
-statutory query, so reranking the union against the user's wording discards
-that. The measurement disagrees: scoring each passage against what was
-actually asked is worth more than the ordering it overwrites.
+The rewrite fixes it at the query, which is the only place it can be fixed.
+The proper fix is a legal-domain embedding model; InLegalBERT was tried in
+Phase 2 and measured 3.4x worse.
 
 ### Cost
 
-One or two model calls per question, whatever the angle count -- one to plan
-angles and their queries, one to summarise, and the summary is skipped when
-the findings are short enough to hand over as they are. Down from 7 at one
-angle and 13 at three.
+One model call per question, whatever the angle count -- angles and their
+statutory queries come back together. A second call summarises, and only
+when the findings are too long to hand over as they are.
 
 ------------------------------------------------------------------------
 

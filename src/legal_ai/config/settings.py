@@ -79,8 +79,13 @@ class Configuration(BaseModel):
 
     # ---------------------------------------------------------- retrieval
     # Results a search returns to an agent. The tool default of 5 suits a
-    # person reading a list; hybrid_search already reranks ~50 candidates and
-    # truncates, so a small limit means reranking an already-truncated pool.
+    # person reading a list; an agent wants a wider net to work from.
+    #
+    # Narrower values were tried and appeared worse, but that comparison is
+    # not trustworthy: the benchmark varies by roughly +/-0.15 MRR run to
+    # run, because the query is written by a model each time. Differences
+    # of that size mean nothing from a single run. Re-measure across several
+    # runs before changing this.
     search_limit: int = 40
 
     # Findings shorter than this are handed over as they are. Summarising

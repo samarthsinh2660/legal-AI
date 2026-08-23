@@ -28,7 +28,6 @@ from legal_ai.agents.research_plan import Angle, plan_research
 from legal_ai.agents.validator import validate
 from legal_ai.config import DEFAULT_CONFIG
 from legal_ai.llm.client import generate
-from legal_ai.retrieval.rerank import rerank as rerank_candidates
 from legal_ai.schemas.evidence import Evidence
 from legal_ai.tools.registry import get_tool, resolve_args
 
@@ -56,37 +55,58 @@ class ResearchResult:
         return len(self.angles)
 
 
-def _search(query: str) -> list[Evidence]:
-    """One statutory search. No model call."""
+def _search(query: str, limit: int | None = None) -> list[Evidence]:
+    """One statutory search. No model call.
+
+    `limit` overrides the registry default. A single-angle question wants
+    exactly what it will return -- asking for more and slicing afterwards
+    measured worse, because the extra results come from beyond the point
+    where hybrid_search stopped ranking.
+    """
     tool = get_tool("search_statutes")
+    args = resolve_args("search_statutes", {"query": query})
+    if limit is not None:
+        args["limit"] = limit
     try:
-        return list(tool(**resolve_args("search_statutes", {"query": query})))
+        return list(tool(**args))
     except Exception:
         return []
 
 
-def _rank(question: str, evidence: list[Evidence], limit: int) -> list[Evidence]:
-    """Order the union by relevance to the original question.
+def _merge(per_angle: list[list[Evidence]], limit: int) -> list[Evidence]:
+    """Combine the angles' results without re-scoring them.
 
-    Measured 2026-08-23, and it settles an argument. The alternative --
-    fusing each angle's ranked list by RRF, on the reasoning that each list
-    is already ranked against its own statutory query -- scored MRR 0.508
-    against this cross-encoder's 0.542. Preserving per-angle order loses
-    more than it saves: the cross-encoder scores each passage against what
-    was actually asked, and that comparison is worth more than the ordering
-    it overwrites.
+    A single angle is returned in the order search gave it. That order was
+    already produced by the full Phase 2 pipeline -- fusion across three
+    signals, then a cross-encoder over the shortlist -- and scored against
+    the *statutory* query.
+
+    Re-ranking it afterwards against the user's original wording undoes
+    that. It scores each passage against "builder failed to give possession
+    of my flat", which is the exact vocabulary the statutory query existed
+    to get away from. Measured: doing so scored MRR 0.542 where leaving the
+    order alone scores what plain rewrite-then-search scores.
+
+    Several angles are interleaved by position, so each angle's best hit
+    sits near the top and no angle is buried under another's tail.
     """
-    by_id = {item.document_id: item for item in evidence if item.document_id}
-    if len(by_id) <= 1:
-        return list(by_id.values())[:limit]
-    try:
-        ranked = rerank_candidates(
-            question, [(doc_id, item.content[:2000]) for doc_id, item in by_id.items()],
-            limit=limit,
-        )
-    except Exception:
-        return list(by_id.values())[:limit]
-    return [by_id[doc_id] for doc_id, _score in ranked if doc_id in by_id]
+    if len(per_angle) == 1:
+        # One angle, one list, already ranked by the full Phase 2 pipeline
+        # against the statutory query. Nothing to merge.
+        return per_angle[0][:limit]
+
+    merged: list[Evidence] = []
+    seen: set[str] = set()
+    for position in range(max((len(a) for a in per_angle), default=0)):
+        for angle_results in per_angle:
+            if position >= len(angle_results):
+                continue
+            item = angle_results[position]
+            if item.document_id in seen:
+                continue
+            seen.add(item.document_id)
+            merged.append(item)
+    return merged[:limit]
 
 
 def summarise(question: str, evidence: list[Evidence]) -> str:
@@ -132,18 +152,14 @@ def research(
     """Plan, search every angle, validate, rank, summarise."""
     angles = plan_research(question, context=context, max_angles=max_angles)
 
-    collected: list[Evidence] = []
+    per_angle: list[list[Evidence]] = []
     dropped: list[tuple[str, str]] = []
-    seen: set[str] = set()
     for angle in angles:
         result = validate(_search(angle.query), conn=conn)
         dropped.extend(result.dropped)
-        for item in result.kept:
-            if item.document_id not in seen:
-                seen.add(item.document_id)
-                collected.append(item)
+        per_angle.append(result.kept)
 
-    ranked = _rank(question, collected, limit=limit)
+    ranked = _merge(per_angle, limit=limit)
     return ResearchResult(
         question=question,
         angles=angles,

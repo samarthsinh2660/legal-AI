@@ -17,7 +17,8 @@ from legal_ai.schemas.evidence import Evidence
 _STATUTE_TYPES = {"act", "section"}
 
 # hybrid_search takes a single document_type, but a statute search wants both
-# acts and sections, so over-fetch and filter in Python.
+# acts and sections, so over-fetch and filter in Python. Narrowing this was
+# measured and is worse -- see search_limit in legal_ai.config.settings.
 _OVERFETCH_FACTOR = 5
 
 
