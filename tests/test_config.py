@@ -55,3 +55,40 @@ def test_graph_config_is_the_same_object_so_old_imports_still_work():
     from legal_ai.graph.configuration import GraphConfig
 
     assert GraphConfig is Configuration
+
+
+def test_gemma_is_in_the_default_chain_as_a_fallback():
+    # Served by the same API on a separate quota pool. Measured
+    # 2026-08-24: gemini-flash-latest returned 429 while gemma-4-31b-it
+    # answered on the same key in the same second, so a Gemini-wide outage
+    # stops being a total outage.
+    from legal_ai.config import DEFAULT_CONFIG
+
+    assert any("gemma" in model for model in DEFAULT_CONFIG.model_chain)
+
+
+def test_gemma_is_last_so_nothing_changes_while_gemini_is_healthy():
+    from legal_ai.config import DEFAULT_CONFIG
+
+    first_gemma = next(
+        i for i, m in enumerate(DEFAULT_CONFIG.model_chain) if "gemma" in m
+    )
+    assert all("gemma" in m for m in DEFAULT_CONFIG.model_chain[first_gemma:])
+
+
+def test_case_analysis_leads_with_gemma():
+    # On measurement, not preference: recall 1.00 vs 0.20 for gemini flash
+    # on evals/run_contradictions.py. Gemini stays behind it as fallback.
+    from legal_ai.config import DEFAULT_CONFIG
+
+    assert DEFAULT_CONFIG.case_model_chain[0].startswith("gemma")
+    assert any("gemini" in m for m in DEFAULT_CONFIG.case_model_chain)
+
+
+def test_research_is_not_switched_on_a_contradiction_result():
+    # plan_research drives retrieval, which the MRR benchmark scores --
+    # not the contradiction eval. Changing it here would be measuring one
+    # thing and concluding about another.
+    from legal_ai.config import DEFAULT_CONFIG
+
+    assert DEFAULT_CONFIG.model_chain[0].startswith("gemini")

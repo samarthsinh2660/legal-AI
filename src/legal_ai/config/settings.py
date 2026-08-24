@@ -38,6 +38,38 @@ class Configuration(BaseModel):
             "gemini-3.5-flash-lite",
             "gemini-3.1-flash-lite",
             "gemini-flash-lite-latest",
+            # Gemma is served by the same API on a SEPARATE quota pool.
+            # Measured 2026-08-24: gemini-flash-latest returned 429 while
+            # gemma-4-31b-it answered on the same key in the same second.
+            # Last in the chain, so nothing changes while Gemini is healthy
+            # and a Google-wide Gemini outage stops being a total outage.
+            "gemma-4-31b-it",
+            "gemma-4-26b-a4b-it",
+        )
+    )
+
+    # Case analysis leads with Gemma on measurement, not preference.
+    # evals/run_contradictions.py, 2026-08-24, same 8 cases:
+    #
+    #     gemini-3.6-flash   recall 0.20 (1/5)   controls clean 3/3
+    #     gemma-4-31b-it     recall 1.00 (5/5)   controls clean 3/3
+    #
+    # Gemini flash found only the conflict stated as a plain negation and
+    # missed every one needing a date or an amount compared across two
+    # documents. One run each on eight cases -- a strong signal, not a
+    # settled number, and the Gemini models stay behind it as fallback.
+    #
+    # Deliberately NOT applied to research: plan_research drives retrieval,
+    # which is scored by the MRR benchmark, not this one. Changing it on
+    # the strength of a contradiction eval would be measuring one thing and
+    # concluding about another.
+    case_model_chain: tuple[str, ...] = Field(
+        default=(
+            "gemma-4-31b-it",
+            "gemma-4-26b-a4b-it",
+            "gemini-flash-latest",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash-lite",
         )
     )
 

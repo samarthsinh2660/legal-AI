@@ -424,3 +424,48 @@ raised as a defect and deliberately kept: twice in one day a bug was pure
 silent degradation (`.env` unloaded, extraction returning empty), and a
 stubbed model would have stayed green through both. A suite that passes
 while the system is broken is worse than a slow one.
+
+------------------------------------------------------------------------
+
+## 11. Model choice for case analysis (2026-08-24)
+
+Gemma is served by the **same Gemini API on a separate quota pool**.
+Demonstrated on one key in the same second:
+
+``` text
+gemini-flash-latest    429 RESOURCE_EXHAUSTED
+gemma-4-31b-it         OK
+gemma-4-26b-a4b-it     OK
+```
+
+That alone earns both models a place at the *end* of the default chain: a
+Gemini-wide outage stops being a total outage, and nothing changes while
+Gemini is healthy.
+
+Then the same contradiction eval, same eight cases:
+
+| model | recall | false alarms | controls clean |
+|---|---|---|---|
+| gemini-3.6-flash | 0.20 (1/5) | 0 | 3/3 |
+| gemma-4-31b-it | **1.00 (5/5)** | 0 | 3/3 |
+
+Gemini flash found only the conflict stated as a plain negation. Gemma
+found all four that needed a **date or an amount compared across two
+documents** -- a registration number against its denial, a memo received
+before it was dated, an instalment accepted after termination, two rents
+for one tenancy.
+
+Run twice, once through a patched chain and once through the shipped
+wiring, both 1.00 with clean controls. Eight cases is still eight cases,
+but 1/5 -> 5/5 with precision holding is not the +/-0.15 noise that §8a
+warns about.
+
+`case_model_chain` therefore leads with Gemma, Gemini behind it as
+fallback.
+
+**Not applied to research.** `plan_research` drives retrieval, which the
+MRR benchmark scores -- not this one. Switching it on the strength of a
+contradiction result would be measuring one thing and concluding about
+another, which is the specific error §8a exists to record. Whether Gemma
+should lead there too is an open question with a benchmark already built
+to answer it.

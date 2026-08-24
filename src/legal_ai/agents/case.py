@@ -266,6 +266,7 @@ def analyse_case(
                         law=_render_law(statutes + judgments),
                         findings=_render_findings(case),
                     ),
+                    chain=DEFAULT_CONFIG.case_model_chain,
                     max_output_tokens=DEFAULT_CONFIG.extraction_model_max_tokens,
                 )
             )

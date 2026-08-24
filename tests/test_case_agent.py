@@ -283,3 +283,17 @@ def test_a_model_failure_leaves_contradictions_empty_not_wrong(monkeypatch):
     assert analysis.contradictions == ()
     # The deterministic half still stands.
     assert len(analysis.timeline) == 1
+
+
+def test_the_case_analysis_call_uses_the_case_chain(monkeypatch):
+    seen = {}
+
+    def capture(prompt, **kwargs):
+        seen.update(kwargs)
+        return json.dumps({"issues": [], "missing_facts": [], "contradictions": []})
+
+    monkeypatch.setattr(case_agent, "generate", capture)
+    case_agent.analyse_case(CASE, (PETITION,), [])
+    from legal_ai.config import DEFAULT_CONFIG
+
+    assert seen["chain"] == DEFAULT_CONFIG.case_model_chain
