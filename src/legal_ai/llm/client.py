@@ -76,7 +76,33 @@ def _client():
     return genai.Client(api_key=api_key)
 
 
+class TruncatedResponse(Exception):
+    """The model stopped because it hit max_output_tokens.
+
+    Its own failure type because it is not an API error -- the call
+    succeeded and returned a fragment. Left unnoticed it is worse than an
+    error: a half-written JSON array parses to nothing, the caller uses its
+    fallback, and the run looks healthy while a component is switched off.
+    """
+
+
+def _was_truncated(response) -> bool:
+    """True when the reply was cut short by the token cap.
+
+    Defensive about shape: the SDK is not guaranteed to populate
+    candidates, and a missing finish_reason must read as "not truncated"
+    rather than raising inside the success path.
+    """
+    try:
+        reason = str(response.candidates[0].finish_reason or "")
+    except (AttributeError, IndexError, TypeError):
+        return False
+    return "MAX_TOKEN" in reason.upper()
+
+
 def _classify(error: Exception) -> str:
+    if isinstance(error, TruncatedResponse):
+        return "truncated"
     text = str(error)
     if "429" in text or "RESOURCE_EXHAUSTED" in text:
         return "exhausted"
@@ -112,6 +138,18 @@ def generate(
                     model=model, contents=prompt, config=config
                 )
                 MODEL_USAGE[model] = MODEL_USAGE.get(model, 0) + 1
+                if _was_truncated(response):
+                    # Not a usable answer. Gemini 3.x spends the output
+                    # budget on internal reasoning first, so a cap sized for
+                    # the visible reply returns a fragment -- JSON that never
+                    # closes. Callers parse that, fail, and fall back to
+                    # their default silently. Treating it as a failure sends
+                    # it to the next model instead, and surfaces it when the
+                    # whole chain does the same.
+                    raise TruncatedResponse(
+                        f"{model} hit max_output_tokens before finishing; "
+                        f"raise the per-role cap in legal_ai.config.settings"
+                    )
                 return (response.text or "").strip()
             except Exception as error:
                 kind = _classify(error)

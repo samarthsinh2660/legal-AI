@@ -77,13 +77,35 @@ class Configuration(BaseModel):
     # purpose: with eight models behind it, moving on beats waiting.
     max_retries_per_model: int = 2
 
-    # Output token ceilings per role, as open_deep_research does. Sized to
-    # the job: a plan is a short JSON array, a summary is prose. Capping
-    # output is the cheapest lever on both latency and spend, and it stops a
-    # model rambling past the point where its answer is useful.
-    plan_model_max_tokens: int = 512
-    summary_model_max_tokens: int = 1024
-    extraction_model_max_tokens: int = 1024
+    # Output token ceilings per role, as open_deep_research does.
+    #
+    # These were 512 / 1024 / 1024, "sized to the job" on the assumption
+    # that the budget pays only for the visible answer. It does not. Gemini
+    # 3.x models spend this budget on internal reasoning first, so the cap
+    # buys thinking tokens and the answer gets whatever is left.
+    #
+    # Measured 2026-08-24, gemini-3.6-flash, the plan prompt:
+    #
+    #     cap=512    65 chars returned, JSON truncated mid-string
+    #     cap=2048  219 chars returned, valid JSON
+    #
+    # At 512 the array never closed, json.loads failed, and plan_research
+    # returned its fallback -- the user's question verbatim, with no
+    # rewrite. Silently. The rewrite is the component measured to beat
+    # plain retrieval, so on a verbose model the whole research path
+    # quietly degraded to the baseline while every test stayed green.
+    #
+    # This is very likely a large part of the "+/-0.15 MRR run-to-run
+    # noise" blamed on model-written queries: a terse model fits the cap
+    # and rewrites, a verbose one truncates and does not. That is not
+    # noise, it is a bug, and it moves with which model answered.
+    #
+    # Extraction gets the most room: it returns six fields over a
+    # 12,000-character window, and truncation there silently drops
+    # parties, dates and clauses from a case.
+    plan_model_max_tokens: int = 2048
+    summary_model_max_tokens: int = 2048
+    extraction_model_max_tokens: int = 4096
 
     # ------------------------------------------------------------ fan-out
     # Research angles the supervisor may fan out to for one question.

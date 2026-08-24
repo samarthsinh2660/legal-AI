@@ -115,3 +115,66 @@ def test_repeated_calls_accumulate_per_model(fake):
     for _ in range(3):
         llm.generate("hi", chain=("a", "b"))
     assert llm.MODEL_USAGE == {"a": 3}
+
+
+# --- truncation: a successful call that returned an unusable fragment ---
+
+class _Truncating:
+    """A client whose reply is cut short by the token cap."""
+
+    def __init__(self, truncate_models):
+        self.truncate = truncate_models
+        self.calls = []
+
+    def generate_content(self, model, contents, config=None):
+        self.calls.append(model)
+        finish = "MAX_TOKENS" if model in self.truncate else "STOP"
+        candidate = type("C", (), {"finish_reason": finish})()
+        return type("R", (), {"text": f"answer from {model}", "candidates": [candidate]})()
+
+
+@pytest.fixture
+def truncating(monkeypatch):
+    def build(models):
+        client = _Truncating(models)
+        monkeypatch.setattr(llm, "_client", lambda: type("C", (), {"models": client})())
+        return client
+
+    return build
+
+
+def test_a_truncated_reply_falls_through_to_the_next_model(truncating):
+    # The call succeeded and returned a fragment. Gemini 3.x spends the
+    # output budget on reasoning first, so a tight cap yields JSON that
+    # never closes -- which the caller parses, fails on, and replaces with
+    # its fallback without telling anyone.
+    models = truncating({"a"})
+    assert llm.generate("hi", chain=("a", "b")) == "answer from b"
+    assert models.calls == ["a", "b"]
+
+
+def test_truncation_everywhere_raises_rather_than_returning_a_fragment(truncating):
+    truncating({"a", "b"})
+    with pytest.raises(llm.AllModelsUnavailable) as excinfo:
+        llm.generate("hi", chain=("a", "b"))
+    assert "truncated" in str(excinfo.value)
+
+
+def test_a_complete_reply_is_returned_normally(truncating):
+    models = truncating(set())
+    assert llm.generate("hi", chain=("a", "b")) == "answer from a"
+    assert models.calls == ["a"]
+
+
+def test_truncation_is_classified_apart_from_api_errors():
+    # It is not an API failure -- the request worked. Retrying the same
+    # model with the same cap would only truncate again.
+    assert llm._classify(llm.TruncatedResponse("cap hit")) == "truncated"
+    assert llm._classify(RuntimeError("503 UNAVAILABLE")) == "transient"
+
+
+def test_a_response_without_candidates_is_not_treated_as_truncated():
+    # The SDK does not guarantee the shape; a missing finish_reason must
+    # read as "fine", never raise inside the success path.
+    assert llm._was_truncated(type("R", (), {"text": "hi"})()) is False
+    assert llm._was_truncated(type("R", (), {"text": "hi", "candidates": []})()) is False

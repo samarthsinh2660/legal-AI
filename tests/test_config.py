@@ -92,3 +92,24 @@ def test_research_is_not_switched_on_a_contradiction_result():
     from legal_ai.config import DEFAULT_CONFIG
 
     assert DEFAULT_CONFIG.model_chain[0].startswith("gemini")
+
+
+def test_token_caps_leave_room_for_reasoning_tokens():
+    # Gemini 3.x spends max_output_tokens on internal reasoning before it
+    # writes anything. Measured 2026-08-24 on gemini-3.6-flash: a cap of
+    # 512 returned 65 characters and truncated the plan JSON mid-string,
+    # so json.loads failed and plan_research silently returned the user's
+    # question unrewritten. A cap that small is not a limit, it is an
+    # off switch for the component that beats plain retrieval.
+    from legal_ai.config import DEFAULT_CONFIG
+
+    assert DEFAULT_CONFIG.plan_model_max_tokens >= 2048
+    assert DEFAULT_CONFIG.summary_model_max_tokens >= 2048
+
+
+def test_extraction_has_the_largest_budget():
+    # It returns six fields over a 12,000-character window; truncation
+    # there drops parties, dates and clauses from a case without saying so.
+    from legal_ai.config import DEFAULT_CONFIG
+
+    assert DEFAULT_CONFIG.extraction_model_max_tokens >= DEFAULT_CONFIG.plan_model_max_tokens
