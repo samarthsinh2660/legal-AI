@@ -524,3 +524,98 @@ comparison needed on the other side.
 pinning, a run slides down the fallback chain partway and blends two models
 into one score. The comparison itself is still open, and the research chain
 stays on Gemini until it is run.
+
+------------------------------------------------------------------------
+
+## 13. Case discovery by issue (2026-08-25)
+
+The gap: asked "give me Supreme Court cases about drugs", the system
+returned statute sections. Three causes, all confirmed by reading the code
+rather than assuming:
+
+- **Nothing called the tool registry.** `TOOLS`, `get_tool`, `resolve_args`
+  had zero callers -- the executor that used them was deleted in the Phase 3
+  simplification, leaving `search_judgments` unreachable from any user path.
+- **`to_filters` had zero callers.** The context carried "Delhi High Court",
+  `MetadataFilters` supported `court=`, and `_search` called
+  `hybrid_search(query, limit=limit)` with no filters at all.
+- **The archive cannot be searched by issue.** Its index is court, year,
+  judge, party, citation, CNR. No subject column, so the word "drugs"
+  appears nowhere in it.
+
+### The shape
+
+``` text
+question
+   |
+   +-- wants_case_law(question)        deterministic gate, no model call
+   |
+   +-- hybrid_search                   statutes, as before
+   |      |
+   |      +-- section_identifiers      "Section 37 NDPS Act, 1985"
+   |
+   +-- discover_judgments              full-text, TWO queries fused:
+   |        question wording           -> the doctrine
+   |        section identifier         -> the provision's own authorities
+   |
+   +-- store_judgment                  corpus grows, CITES_SECTION fills
+```
+
+**Two queries, not one, because they were measured to find different
+things.** On "bail in drug cases" the question's wording returned Tofan
+Singh and Noor Aga -- NDPS doctrine -- while "Section 37 Narcotic Drugs and
+Psychotropic Substances Act" returned Kerala v Rajesh and Rattan Mallik, the
+bail authorities actually asked for. Barely any overlap, so neither
+replaces the other.
+
+**Section identifiers, never section titles.** An early prototype built the
+query from titles and returned *Kesavananda Bharati* for a cheque-bounce
+question: "Cognizance of offences" and "Power to direct interim
+compensation" say nothing about cheques, and a vague query falls back to
+whatever is merely famous. The number and the Act are what a judgment
+quotes.
+
+**A court named in the question beats the case file.** A Gujarat matter
+routinely turns on a Supreme Court authority, so inheriting the case's High
+Court and searching only there would hide the binding precedent.
+
+**The gate is deterministic and deliberately narrow.** Discovery reaches a
+third party, so firing it on every statute lookup would cost every user
+seconds and an outbound request for something they did not ask for. A false
+negative costs one follow-up question; a false positive costs everyone.
+
+### Measured end to end
+
+``` text
+"give me supreme court cases related to drugs and bail"
+    rewrite : narcotic drugs psychotropic substances offences to be
+              cognizable and non-bailable
+    result  : 10 statutes + 5 judgments -- Satender Kumar Antil (the
+              leading bail authority), Sushanta Kumar Banik (NDPS bail),
+              Om Prakash, Vijay Madanlal Choudhary
+
+"what does section 138 say about cheque bounce"
+    result  : 10 statutes, 0 judgments -- the gate correctly did not fire
+```
+
+And the loop closes. One question moved the corpus and the graph:
+
+``` text
+judgments        9 -> 14      (+5)
+CITES_SECTION   24 -> 53      (+29)
+```
+
+That is the growth bulk ingest was going to buy, obtained from ordinary
+use and targeted at what users actually ask about. It is also why the
+Supreme Court bulk ingest was dropped rather than shelved.
+
+### Not measured
+
+Judgment relevance has no ground truth. `retrieval.json` grades sections
+because the correct provision for a question is a fact; the set of
+judgments that correctly answer "cases about NDPS bail" runs to dozens, and
+a hand-written list of five grades the list, not the system. A spot check
+against authorities named in advance scored 2/5, 3/4 and 1/5 -- but the
+misses included Ram Samujh and Surinder Singh Deswal, which are correct
+answers that were simply not on the list. Building a real judgment
+benchmark is its own piece of work.

@@ -265,7 +265,9 @@ def _fetch_indian_kanoon_doc(doc_id: str, title: str) -> Optional[CanonicalDocum
     )
 
 
-def _search_indian_kanoon(query: str, limit: int = 1) -> list[CanonicalDocument]:
+def _search_indian_kanoon(
+    query: str, limit: int = 1, court: str | None = None
+) -> list[CanonicalDocument]:
     """Up to `limit` judgments from Indian Kanoon's full-text search.
 
     This is the only source here that can be searched by *issue* rather
@@ -278,7 +280,11 @@ def _search_indian_kanoon(query: str, limit: int = 1) -> list[CanonicalDocument]
     than one result multiplies how often a suppressed id would be
     requested, which is why the check is here and not left for later.
     """
-    response = polite_get(IK_SEARCH_URL, params={"formInput": query})
+    # `doctypes:` is the site's own court filter, and the only court filter
+    # available on a search by issue -- the archive index has no subject
+    # column to filter instead.
+    form_input = f"{query} doctypes:{court}" if court else query
+    response = polite_get(IK_SEARCH_URL, params={"formInput": form_input})
     if response.status_code != 200:
         return []
     soup = BeautifulSoup(response.text, "html.parser")

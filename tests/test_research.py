@@ -86,7 +86,7 @@ def test_a_question_never_costs_more_than_two_model_calls(monkeypatch):
     monkeypatch.setattr(sup, "generate", lambda p, **kw: calls.append("summarise") or "summary")
     # Long enough to need summarising -- the upper bound of the cost.
     monkeypatch.setattr(sup, "_search",
-        lambda q, limit=None: [_evidence(f"act:1:sec-{i}", "x" * 600) for i in range(20)])
+        lambda q, limit=None, filters=None: [_evidence(f"act:1:sec-{i}", "x" * 600) for i in range(20)])
     monkeypatch.setattr(sup, "_merge", lambda per_angle, limit: [e for a in per_angle for e in a])
 
     sup.research("q")
@@ -101,7 +101,7 @@ def test_three_angles_cost_no_more_than_one_angle(monkeypatch):
     monkeypatch.setattr(rp, "generate", lambda p, **kw: calls.append("plan") or
         '[{"angle":"a","query":"q1"},{"angle":"b","query":"q2"},{"angle":"c","query":"q3"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: calls.append("summarise") or "s")
-    monkeypatch.setattr(sup, "_search", lambda q, limit: [_evidence(f"act:1:sec-{q}", "short")])
+    monkeypatch.setattr(sup, "_search", lambda q, limit, filters=None: [_evidence(f"act:1:sec-{q}", "short")])
     monkeypatch.setattr(sup, "_merge", lambda per_angle, limit: [e for a in per_angle for e in a])
 
     result = sup.research("q")
@@ -118,7 +118,7 @@ def test_every_angle_is_searched(monkeypatch):
     monkeypatch.setattr(rp, "generate", lambda p, **kw:
         '[{"angle":"a","query":"first"},{"angle":"b","query":"second"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: "s")
-    monkeypatch.setattr(sup, "_search", lambda q, limit: searched.append(q) or [])
+    monkeypatch.setattr(sup, "_search", lambda q, limit, filters=None: searched.append(q) or [])
     sup.research("q")
     assert searched == ["first", "second"]
 
@@ -129,7 +129,7 @@ def test_results_are_deduplicated_across_angles(monkeypatch):
     monkeypatch.setattr(rp, "generate", lambda p, **kw:
         '[{"angle":"a","query":"x"},{"angle":"b","query":"y"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: "s")
-    monkeypatch.setattr(sup, "_search", lambda q, limit: [_evidence("act:1:sec-1")])
+    monkeypatch.setattr(sup, "_search", lambda q, limit, filters=None: [_evidence("act:1:sec-1")])
     # Real fusion here: de-duplication is its job, so stubbing it would test
     # nothing.
     assert len(sup.research("q").evidence) == 1
@@ -142,7 +142,7 @@ def test_a_failing_search_does_not_lose_the_others(monkeypatch):
         '[{"angle":"a","query":"bad"},{"angle":"b","query":"good"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: "s")
     monkeypatch.setattr(sup, "_search",
-        lambda q, limit=None: [] if q == "bad" else [_evidence("act:1:sec-2")])
+        lambda q, limit=None, filters=None: [] if q == "bad" else [_evidence("act:1:sec-2")])
     monkeypatch.setattr(sup, "_merge", lambda per_angle, limit: [e for a in per_angle for e in a])
     assert len(sup.research("q").evidence) == 1
 

@@ -11,6 +11,7 @@ match there.
 
 from __future__ import annotations
 
+from legal_ai.ingestion.judgments.dynamic_search import _search_indian_kanoon
 from legal_ai.ingestion.judgments.dynamic_search import search_judgments as _search
 from legal_ai.ingestion.judgments.store import store_judgment
 from legal_ai.knowledge.static.db import get_connection
@@ -52,3 +53,73 @@ def get_judgment(document_id: str) -> Evidence | None:
     finally:
         conn.close()
     return to_evidence(doc) if doc is not None else None
+
+
+def discover_judgments(
+    question: str,
+    section_queries: list[str] | None = None,
+    court: str | None = None,
+    limit: int = 5,
+    store: bool = True,
+) -> list[Evidence]:
+    """Judgments about an *issue*, for a question that names no case.
+
+    This is the gap the lazy fetch path never covered. That path finds a
+    judgment you can already name -- the archive index carries only court,
+    year, judge, party, citation and CNR, with no subject column, so
+    "cases about drugs" has nothing there to match. Full-text search is the
+    only route from an issue to a case name, which is why it is the source
+    here rather than the last resort it is in search_judgments.
+
+    Two queries run, not one, because they were measured to find different
+    things. On "bail in drug cases" the question's own wording returned
+    Tofan Singh and Noor Aga -- the doctrine -- while the provision,
+    "Section 37 Narcotic Drugs and Psychotropic Substances Act", returned
+    Kerala v Rajesh and Rattan Mallik, the bail authorities the question
+    actually asked for. They barely overlapped, so neither replaces the
+    other and both feed the fusion.
+
+    Results interleave by rank rather than being concatenated, so the best
+    hit from each query sits near the top and neither buries the other.
+
+    Stored by default: a judgment fetched once should answer locally the
+    next time, and storing it is what builds the CITES_SECTION edges that
+    let the graph eventually answer without going out at all.
+    """
+    queries = [question] + list(section_queries or [])
+
+    per_query: list[list] = []
+    for query in queries:
+        try:
+            per_query.append(_search_indian_kanoon(query, limit=limit, court=court))
+        except Exception:
+            # One failing query must not lose the others -- a third party
+            # being slow is not a reason to answer with nothing.
+            per_query.append([])
+
+    merged = []
+    seen: set[str] = set()
+    for position in range(max((len(found) for found in per_query), default=0)):
+        for found in per_query:
+            if position >= len(found):
+                continue
+            document = found[position]
+            if document.document_id in seen:
+                continue
+            seen.add(document.document_id)
+            merged.append(document)
+            if len(merged) >= limit:
+                break
+        if len(merged) >= limit:
+            break
+
+    if store:
+        for document in merged:
+            try:
+                store_judgment(document)
+            except Exception:
+                # Storing is corpus growth, not the answer. Failing to
+                # cache must not cost the caller the judgment itself.
+                continue
+
+    return [to_evidence(document) for document in merged]

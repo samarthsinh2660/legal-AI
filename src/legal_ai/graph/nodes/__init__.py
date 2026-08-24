@@ -124,6 +124,7 @@ def research(state: ResearchState) -> dict:
     result = run_research(
         state["question"],
         context=render(context) if context is not None else "",
+        thread_context=context,
     )
     return {
         "findings": result.evidence,
