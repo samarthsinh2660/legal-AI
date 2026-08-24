@@ -1,0 +1,110 @@
+[
+  {
+    "id": "rera-possession-vs-unregistered",
+    "note": "The agreement fixes a possession date; the promoter's reply says the project was never registered, which would mean no agreement could lawfully have been executed under s.13.",
+    "case": {"title": "Patel v. Marvel Developers", "court": "Gujarat High Court", "state": "Gujarat"},
+    "documents": [
+      {"document_id": "doc-1", "document_type": "agreement",
+       "parties": ["Kishor Patel", "Marvel Developers Pvt Ltd"],
+       "dates": ["12 March 2019"],
+       "clauses": ["possession to be handed over by 30 June 2021", "project registered with Gujarat RERA under registration PR/GJ/2019/00412"]},
+      {"document_id": "doc-2", "document_type": "notice",
+       "parties": ["Marvel Developers Pvt Ltd"],
+       "claims": ["the promoter states the project was never registered with the authority and no agreement for sale was executed"]}
+    ],
+    "contradictions": [["doc-1", "doc-2"]]
+  },
+  {
+    "id": "cheque-notice-date-conflict",
+    "note": "s.138 requires notice within 30 days of dishonour. The complaint says the memo was received 5 January; the bank memo is dated 2 February. One of them cannot be right.",
+    "case": {"title": "Sharma v. Verma", "court": "Delhi High Court", "state": "Delhi"},
+    "documents": [
+      {"document_id": "doc-1", "document_type": "petition",
+       "dates": ["5 January 2023", "20 January 2023"],
+       "claims": ["the complainant received the dishonour memo on 5 January 2023 and issued notice on 20 January 2023"]},
+      {"document_id": "doc-2", "document_type": "order",
+       "dates": ["2 February 2023"],
+       "clauses": ["bank memo recording dishonour of the cheque is dated 2 February 2023"]}
+    ],
+    "contradictions": [["doc-1", "doc-2"]]
+  },
+  {
+    "id": "payment-continued-after-termination",
+    "note": "The termination notice says the agreement stood cancelled in March; the receipts show instalments accepted through October of the same year.",
+    "case": {"title": "Rao v. Skyline Estates", "state": "Karnataka"},
+    "documents": [
+      {"document_id": "doc-1", "document_type": "notice",
+       "dates": ["15 March 2022"],
+       "clauses": ["the agreement stands terminated with effect from 15 March 2022 and no further payment shall be accepted"]},
+      {"document_id": "doc-2", "document_type": "agreement",
+       "dates": ["30 October 2022"],
+       "clauses": ["receipt acknowledging instalment of Rs 8,00,000 received on 30 October 2022 against the same unit"]}
+    ],
+    "contradictions": [["doc-1", "doc-2"]]
+  },
+  {
+    "id": "possession-taken-vs-never-offered",
+    "note": "The petition pleads possession was never offered; the handover letter records the allottee taking possession.",
+    "case": {"title": "Iyer v. Coastal Homes", "state": "Kerala"},
+    "documents": [
+      {"document_id": "doc-1", "document_type": "petition",
+       "claims": ["the allottee states possession has never been offered at any time"]},
+      {"document_id": "doc-2", "document_type": "order",
+       "dates": ["8 August 2021"],
+       "clauses": ["letter of handover recording that the allottee took physical possession of the unit on 8 August 2021"]}
+    ],
+    "contradictions": [["doc-1", "doc-2"]]
+  },
+  {
+    "id": "tenancy-rent-amount-conflict",
+    "note": "The lease deed and the demand notice state different monthly rents for the same premises and period.",
+    "case": {"title": "Khan v. Mehta", "state": "Maharashtra"},
+    "documents": [
+      {"document_id": "doc-1", "document_type": "agreement",
+       "clauses": ["monthly rent of Rs 45,000 payable on the fifth day of each month"]},
+      {"document_id": "doc-2", "document_type": "notice",
+       "claims": ["the landlord demands arrears calculated at a monthly rent of Rs 72,000 for the same premises and period"]}
+    ],
+    "contradictions": [["doc-1", "doc-2"]]
+  },
+  {
+    "id": "control-consistent-rera-claim",
+    "note": "NEGATIVE CONTROL. Both documents are consistent -- the notice simply repeats what the agreement says. Any contradiction reported here is a false positive.",
+    "case": {"title": "Desai v. Landmark Realty", "state": "Gujarat"},
+    "documents": [
+      {"document_id": "doc-1", "document_type": "agreement",
+       "dates": ["1 April 2019"],
+       "clauses": ["possession to be handed over by 31 December 2021"]},
+      {"document_id": "doc-2", "document_type": "notice",
+       "dates": ["10 January 2022"],
+       "claims": ["the allottee calls upon the promoter to hand over possession, which was due by 31 December 2021 and remains undelivered"]}
+    ],
+    "contradictions": []
+  },
+  {
+    "id": "control-different-topics",
+    "note": "NEGATIVE CONTROL. The two documents concern different matters in the same case and cannot conflict. Reporting a contradiction here means the model manufactures conflict from mere difference.",
+    "case": {"title": "Nair v. Sundar", "state": "Tamil Nadu"},
+    "documents": [
+      {"document_id": "doc-1", "document_type": "agreement",
+       "clauses": ["the seller shall bear the stamp duty on the conveyance"]},
+      {"document_id": "doc-2", "document_type": "petition",
+       "claims": ["the purchaser seeks specific performance of the agreement to sell"]}
+    ],
+    "contradictions": []
+  },
+  {
+    "id": "control-complementary-dates",
+    "note": "NEGATIVE CONTROL. Two different events on two different dates. A difference in dates is not a contradiction unless the documents describe the SAME event.",
+    "case": {"title": "Bose v. Ganguly", "state": "West Bengal"},
+    "documents": [
+      {"document_id": "doc-1", "document_type": "agreement",
+       "dates": ["3 February 2020"],
+       "clauses": ["agreement to sell executed on 3 February 2020"]},
+      {"document_id": "doc-2", "document_type": "order",
+       "dates": ["19 September 2021"],
+       "clauses": ["order recording that the suit was admitted on 19 September 2021"]}
+    ],
+    "contradictions": []
+  }
+]

@@ -46,17 +46,20 @@ def document(state: ResearchState) -> dict:
         return {}
 
     from legal_ai.agents.document import extract_document_facts
+    from legal_ai.case.files import get_case_file_text
     from legal_ai.knowledge.static.db import get_connection
-    from legal_ai.knowledge.static.store import get_document
 
     facts = []
     conn = get_connection()
     try:
         for document_id in document_ids:
-            stored = get_document(conn, document_id)
-            if stored is None or not stored.full_text.strip():
+            # Read from case_files, not `documents`: an uploaded pleading is
+            # the client's, not corpus, and is deliberately kept out of the
+            # table hybrid_search reads. See legal_ai.case.files.
+            text = get_case_file_text(conn, document_id)
+            if not text or not text.strip():
                 continue
-            facts.append(extract_document_facts(document_id, stored.full_text))
+            facts.append(extract_document_facts(document_id, text))
     finally:
         conn.close()
     return {"document_facts": facts}

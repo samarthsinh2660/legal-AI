@@ -50,6 +50,8 @@ def render(context: ThreadContext) -> str:
             for label, values in (
                 ("parties", facts.parties),
                 ("dates", facts.dates),
+                ("terms", facts.clauses),
+                ("asserts", facts.claims),
                 ("raises", facts.issues),
                 ("cites", facts.cited_sections),
             ):

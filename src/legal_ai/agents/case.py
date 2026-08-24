@@ -14,16 +14,24 @@ structurally cannot:
            facts at once. Searching public law cannot find what is absent
            from a private file.
 
+    "Do our own documents disagree?"
+        -- the agreement promises possession by June 2021; the reply says
+           the project was never registered; a receipt shows payment
+           continuing into 2022. Each document is internally consistent.
+           The conflict exists only between them, so the Document Agent
+           cannot see it: it reads one file at a time, and that isolation
+           is the reason it exists.
+
 Split the same way every other agent here is:
 
     timeline, facts,      deterministic. Dates decide limitation, and a
     applicable law,       model that invents one loses a case; ids are
     precedents            copied, never generated.
 
-    issues, missing       one model call. Both need the documents and the
-    facts                 law weighed together, and asking twice would
-                          cost two calls to answer one question -- the
-                          same merge plan_research made in Phase 3.
+    issues, missing       one model call. All three need the documents and
+    facts,                the law weighed together, and asking three times
+    contradictions        would cost three calls to answer one question --
+                          the same merge plan_research made in Phase 3.
 
 Control flow is code. The model reasons; it never decides what runs.
 """
@@ -83,7 +91,7 @@ LAW AND AUTHORITIES RESEARCHED SO FAR
 ALREADY ESTABLISHED
 {findings}
 
-Two tasks.
+Three tasks.
 
 1. "issues": the distinct legal issues this matter actually raises. Merge
    duplicates. Use the issues the documents raise and the law above -- do
@@ -95,8 +103,17 @@ Two tasks.
    satisfies it, that is a missing fact. Say what is needed, not what is
    wrong.
 
+3. "contradictions": places where the documents above disagree WITH EACH
+   OTHER. Each entry must name what conflicts and cite the document ids it
+   is between, like "agreement [doc-1] gives possession by June 2021 but
+   the reply [doc-2] says the project was never registered". Only report a
+   conflict you can point to in two documents above. A single document
+   saying something you doubt is NOT a contradiction. If the documents do
+   not disagree, return an empty list -- inventing a conflict is worse than
+   reporting none.
+
 Return ONLY a JSON object:
-{{"issues": ["..."], "missing_facts": ["..."]}}
+{{"issues": ["..."], "missing_facts": ["..."], "contradictions": ["..."]}}
 
 Any list with nothing to report must be empty."""
 
@@ -120,10 +137,22 @@ def _render_facts(documents: tuple[DocumentFacts, ...]) -> str:
     shown = documents[:MAX_DOCUMENTS_SHOWN]
     lines: list[str] = []
     for facts in shown:
-        lines.append(f"[{facts.document_id}] {facts.document_type or 'document'}")
+        label = facts.document_type or "document"
+        if facts.extraction_failed:
+            # Say so rather than presenting an empty record as a read one:
+            # the model must not conclude a document raises no issues when
+            # the truth is that nothing read it.
+            lines.append(f"[{facts.document_id}] {label} — NOT YET READ (extraction failed)")
+            continue
+        lines.append(f"[{facts.document_id}] {label}")
         for label, values in (
             ("parties", facts.parties),
             ("dates", facts.dates),
+            # Clauses and claims carry most of the signal for a conflict:
+            # two documents disagree about a term one of them sets, or
+            # about something a party asserted.
+            ("terms", facts.clauses),
+            ("asserts", facts.claims),
             ("raises", facts.issues),
             ("cites", facts.cited_sections),
         ):
@@ -224,6 +253,7 @@ def analyse_case(
 
     issues: tuple[str, ...] = ()
     missing: tuple[str, ...] = ()
+    contradictions: tuple[str, ...] = ()
     if documents or evidence:
         # Nothing to reason over on an empty case -- a model call there
         # would invent a matter rather than analyse one.
@@ -243,6 +273,11 @@ def analyse_case(
             parsed = {}
         issues = _strings(parsed.get("issues"))
         missing = _strings(parsed.get("missing_facts"))
+        # A conflict needs two documents to exist between. Reporting one
+        # from a single-document case would be the model inventing a
+        # disagreement, which is worse than reporting none.
+        if len(documents) > 1:
+            contradictions = _strings(parsed.get("contradictions"))
 
     if not issues:
         # The model failed or found nothing. The documents' own issues are
@@ -258,4 +293,5 @@ def analyse_case(
         applicable_law=tuple(e.document_id for e in statutes if e.document_id),
         precedents=tuple(e.document_id for e in judgments if e.document_id),
         missing_facts=missing,
+        contradictions=contradictions,
     )

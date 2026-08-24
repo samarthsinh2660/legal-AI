@@ -15,7 +15,15 @@ Work is split by what each side is actually good at:
                      already tested, and a citation is a pattern not a
                      judgement call
     parties, dates,  the model -- these are genuinely ambiguous and cannot
-    issues, type     be pattern-matched out of prose
+    issues, clauses, be pattern-matched out of prose
+    claims, type
+
+Contradictions are deliberately NOT here. This agent reads one document at
+a time -- that isolation is the reason it exists -- and a contradiction is
+between documents: an agreement promising possession by June 2021 against a
+reply saying the project was never registered. It is found in
+legal_ai.agents.case, where every document's structure is already in one
+place.
 
 The model's output is parsed and validated here; malformed fields are
 dropped rather than trusted, so a bad generation degrades the extraction
@@ -40,7 +48,7 @@ WINDOW_CHARS = 12_000
 # a thousand-page exhibit bundle.
 MAX_WINDOWS = 6
 
-_FIELDS = ("document_type", "parties", "dates", "issues")
+_FIELDS = ("document_type", "parties", "dates", "issues", "clauses", "claims")
 
 PROMPT = """You are reading part of an Indian legal document.
 
@@ -51,6 +59,11 @@ anything the text does not state. Return JSON with exactly these keys:
   "parties":  names of the parties
   "dates":    dates that matter, each as written in the document
   "issues":   the legal issues this document raises, one short phrase each
+  "clauses":  operative terms this document sets -- a possession date, a
+              payment schedule, a penalty, a termination right, a notice
+              period. What the document SAYS, not what it disputes.
+  "claims":   what a party asserts here, one short phrase each, naming who
+              asserts it. A contention, not a question for the court.
 
 Any key with nothing to report must be an empty list (or null for
 document_type). Return ONLY the JSON object.
@@ -99,7 +112,10 @@ def extract_document_facts(document_id: str, text: str) -> DocumentFacts:
     merged: dict[str, list[str]] = {field: [] for field in _FIELDS if field != "document_type"}
     document_type: str | None = None
 
-    for window in _windows(text):
+    windows = _windows(text)
+    reached_model = 0
+
+    for window in windows:
         try:
             parsed = _parse(generate(
                 PROMPT.format(text=window),
@@ -109,6 +125,7 @@ def extract_document_facts(document_id: str, text: str) -> DocumentFacts:
             # One failed window degrades the extraction; it does not lose
             # the windows that succeeded.
             continue
+        reached_model += 1
         if document_type is None and isinstance(parsed.get("document_type"), str):
             document_type = parsed["document_type"].strip() or None
         for field in merged:
@@ -131,4 +148,9 @@ def extract_document_facts(document_id: str, text: str) -> DocumentFacts:
         dates=tuple(merged["dates"]),
         cited_sections=tuple(dict.fromkeys(cited)),
         issues=tuple(merged["issues"]),
+        clauses=tuple(merged["clauses"]),
+        claims=tuple(merged["claims"]),
+        # Every window failed. Distinguishing this from an empty document
+        # is what lets a caller retry instead of recording "no parties".
+        extraction_failed=bool(windows) and reached_model == 0,
     )

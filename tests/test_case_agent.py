@@ -201,3 +201,85 @@ def test_a_thousand_exhibit_bundle_costs_the_same_prompt_as_eight(monkeypatch):
     calls.clear()
     case_agent.analyse_case(CASE, tuple(DocumentFacts(document_id=f"d{i}") for i in range(8)), [])
     assert small < len(calls[0]) * 4
+
+
+def test_a_document_that_was_never_read_is_labelled_not_guessed(monkeypatch):
+    # The model must not conclude a document raises no issues when the
+    # truth is that an outage stopped anything reading it.
+    calls = []
+    _stub(monkeypatch, {"issues": [], "missing_facts": []}, calls)
+    unread = DocumentFacts(document_id="doc-9", document_type="petition", extraction_failed=True)
+    case_agent.analyse_case(CASE, (unread,), [SECTION])
+    assert "NOT YET READ" in calls[0]
+
+
+# --- contradictions: the cross-document check (Phase 4) ---
+
+AGREEMENT = DocumentFacts(
+    document_id="doc-1",
+    document_type="agreement",
+    clauses=("possession by 30 June 2021",),
+    dates=("30 June 2021",),
+)
+REPLY = DocumentFacts(
+    document_id="doc-2",
+    document_type="notice",
+    claims=("promoter says the project was never registered under RERA",),
+)
+
+
+def test_contradictions_are_reported_between_documents(monkeypatch):
+    _stub(monkeypatch, {
+        "issues": [], "missing_facts": [],
+        "contradictions": ["agreement [doc-1] promises possession by June 2021 "
+                           "but the reply [doc-2] says the project was never registered"],
+    })
+    analysis = case_agent.analyse_case(CASE, (AGREEMENT, REPLY), [])
+    assert len(analysis.contradictions) == 1
+    assert "doc-1" in analysis.contradictions[0]
+
+
+def test_a_single_document_case_reports_no_contradictions(monkeypatch):
+    # A conflict needs two sides. Reporting one from a single document
+    # would be the model inventing a disagreement.
+    _stub(monkeypatch, {
+        "issues": [], "missing_facts": [],
+        "contradictions": ["this document contradicts itself"],
+    })
+    analysis = case_agent.analyse_case(CASE, (AGREEMENT,), [])
+    assert analysis.contradictions == ()
+
+
+def test_documents_that_agree_produce_no_contradictions(monkeypatch):
+    _stub(monkeypatch, {"issues": [], "missing_facts": [], "contradictions": []})
+    analysis = case_agent.analyse_case(CASE, (AGREEMENT, REPLY), [])
+    assert analysis.contradictions == ()
+
+
+def test_clauses_and_claims_are_shown_so_a_conflict_can_be_seen(monkeypatch):
+    # Most conflict signal lives in the terms one document sets and the
+    # assertions another makes. Not rendering them would make the task
+    # impossible rather than hard.
+    calls = []
+    _stub(monkeypatch, {"issues": [], "missing_facts": [], "contradictions": []}, calls)
+    case_agent.analyse_case(CASE, (AGREEMENT, REPLY), [])
+    assert "possession by 30 June 2021" in calls[0]
+    assert "never registered under RERA" in calls[0]
+
+
+def test_contradictions_cost_no_extra_model_call(monkeypatch):
+    calls = []
+    _stub(monkeypatch, {"issues": ["a"], "missing_facts": ["b"], "contradictions": ["c"]}, calls)
+    case_agent.analyse_case(CASE, (AGREEMENT, REPLY), [])
+    assert len(calls) == 1
+
+
+def test_a_model_failure_leaves_contradictions_empty_not_wrong(monkeypatch):
+    def boom(prompt, **kwargs):
+        raise RuntimeError("503 UNAVAILABLE")
+
+    monkeypatch.setattr(case_agent, "generate", boom)
+    analysis = case_agent.analyse_case(CASE, (AGREEMENT, REPLY), [])
+    assert analysis.contradictions == ()
+    # The deterministic half still stands.
+    assert len(analysis.timeline) == 1

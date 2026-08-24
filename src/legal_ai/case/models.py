@@ -87,3 +87,9 @@ class CaseAnalysis:
     # The output with no counterpart in a research session: what the matter
     # would need and does not have.
     missing_facts: tuple[str, ...] = ()
+
+    # Places the case's own documents disagree with each other. Only ever
+    # populated when the case holds more than one document -- a conflict
+    # needs two sides, and one document cannot contradict itself in a way
+    # this could point at.
+    contradictions: tuple[str, ...] = ()

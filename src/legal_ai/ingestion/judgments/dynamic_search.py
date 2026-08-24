@@ -37,6 +37,7 @@ from legal_ai.knowledge.static.db import get_connection
 from legal_ai.knowledge.static.store import get_document
 from legal_ai.schemas.evidence import Provenance, SourceRef
 from legal_ai.sources.http import polite_get
+from legal_ai.sources.robots import is_allowed
 
 _WORD_RE = re.compile(r"[a-zA-Z]{3,}")
 
@@ -55,22 +56,28 @@ SourceName = Literal["database", "bharat_courts_archive", "indian_kanoon", "none
 class JudgmentSearchResult:
     found: bool
     source: SourceName
-    document: Optional[CanonicalDocument] = None
+    documents: list[CanonicalDocument] = field(default_factory=list)
     verified: Optional[bool] = None
     notes: list[str] = field(default_factory=list)
+
+    @property
+    def document(self) -> Optional[CanonicalDocument]:
+        """The best match. Kept so a caller wanting one judgment -- a
+        lookup by case name -- does not have to index into a list."""
+        return self.documents[0] if self.documents else None
 
 
 def _text_check(doc: CanonicalDocument) -> bool:
     return len(doc.full_text.strip()) >= 200
 
 
-def _verify(document: CanonicalDocument) -> tuple[bool, list[str]]:
-    result = verify_batch([document], text_check=_text_check)
+def _verify(documents: list[CanonicalDocument]) -> tuple[bool, list[str]]:
+    result = verify_batch(documents, text_check=_text_check)
     return result.passed, result.notes
 
 
-def _check_db(query: str) -> Optional[JudgmentSearchResult]:
-    """Best stored judgment whose title shares enough words with `query`.
+def _check_db(query: str, limit: int = 1) -> list[CanonicalDocument]:
+    """Stored judgments whose titles share enough words with `query`.
 
     Overlap is computed in SQL. Doing it in Python meant selecting every
     judgment id and then re-reading each row in full -- pulling the entire
@@ -80,43 +87,34 @@ def _check_db(query: str) -> Optional[JudgmentSearchResult]:
     """
     query_words = sorted({w.lower() for w in _WORD_RE.findall(query)})
     if not query_words:
-        return None
+        return []
 
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT document_id,
-                       cardinality(ARRAY(
-                           SELECT unnest(%s::text[])
-                           INTERSECT
-                           SELECT unnest(regexp_split_to_array(lower(title), '[^a-z]+'))
-                       ))::float / %s AS overlap
-                FROM documents
-                WHERE document_type = 'judgment'
+                SELECT document_id FROM (
+                    SELECT document_id,
+                           cardinality(ARRAY(
+                               SELECT unnest(%s::text[])
+                               INTERSECT
+                               SELECT unnest(regexp_split_to_array(lower(title), '[^a-z]+'))
+                           ))::float / %s AS overlap
+                    FROM documents
+                    WHERE document_type = 'judgment'
+                ) scored
+                WHERE overlap >= %s
                 ORDER BY overlap DESC, document_id ASC
-                LIMIT 1
+                LIMIT %s
                 """,
-                (query_words, len(query_words)),
+                (query_words, len(query_words), DB_TITLE_WORD_OVERLAP_THRESHOLD, limit),
             )
-            row = cur.fetchone()
-            if row is None or row[1] < DB_TITLE_WORD_OVERLAP_THRESHOLD:
-                return None
-            document_id, overlap = row
-            best_doc = get_document(conn, document_id)
+            ids = [row[0] for row in cur.fetchall()]
+        found = [doc for doc in (get_document(conn, i) for i in ids) if doc is not None]
     finally:
         conn.close()
-
-    if best_doc is None:
-        return None
-    return JudgmentSearchResult(
-        found=True,
-        source="database",
-        document=best_doc,
-        verified=True,
-        notes=[f"already in DB, title word overlap={overlap:.2f}, no network call made"],
-    )
+    return found
 
 
 def _archive_pdf_url(judgment) -> tuple[str, bool]:
@@ -140,28 +138,8 @@ def _archive_pdf_url(judgment) -> tuple[str, bool]:
     )
 
 
-def _search_bharat_courts_archive(
-    query: str, year: int | tuple[int, int] | None
-) -> Optional[CanonicalDocument]:
-    import bharat_courts as bc
-
-    async def _search_and_fetch():
-        async with bc.ArchiveClient() as client:
-            results = await client.search(party=query, year=year, limit=3)
-            if not results:
-                return None, None
-            judgment = results[0]
-            pdf_bytes = await client.fetch_pdf(judgment)
-            return judgment, pdf_bytes
-
-    judgment, pdf_bytes = asyncio.run(_search_and_fetch())
-    if judgment is None:
-        return None
-
-    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
-    full_text = "\n".join(page.extract_text() or "" for page in reader.pages)
-
-    document_id = f"judgment:{(judgment.cnr or judgment.case_id or content_hash(judgment.title or query)[:12]).lower()}"
+def _to_canonical(judgment, full_text: str, fallback_title: str) -> CanonicalDocument:
+    document_id = f"judgment:{(judgment.cnr or judgment.case_id or content_hash(judgment.title or fallback_title)[:12]).lower()}"
     court_name = judgment.court.name if judgment.court else (judgment.court_name_raw or None)
     parties = None
     if judgment.petitioner or judgment.respondent:
@@ -178,7 +156,7 @@ def _search_bharat_courts_archive(
     return CanonicalDocument(
         document_id=document_id,
         document_type="judgment",
-        title=judgment.title or query,
+        title=judgment.title or fallback_title,
         court=court_name,
         citation=judgment.citation,
         case_number=judgment.case_id,
@@ -202,24 +180,54 @@ def _search_bharat_courts_archive(
     )
 
 
-def _search_indian_kanoon(query: str) -> Optional[CanonicalDocument]:
-    response = polite_get(IK_SEARCH_URL, params={"formInput": query})
-    if response.status_code != 200:
-        return None
-    soup = BeautifulSoup(response.text, "html.parser")
-    result_title = soup.find(class_="result_title")
-    if result_title is None:
-        return None
-    link = result_title.find("a")
-    if link is None or not link.get("href"):
-        return None
-    match = IK_DOC_ID_RE.search(link["href"])
-    if match is None:
-        return None
-    doc_id = match.group(1)
-    title = link.get_text(strip=True)
+def _search_bharat_courts_archive(
+    query: str, year: int | tuple[int, int] | None, limit: int = 1
+) -> list[CanonicalDocument]:
+    """Up to `limit` judgments from the public archive.
 
+    Previously this searched three and kept one, which made the lazy cache
+    grow by a single judgment per lookup no matter how many real matches
+    the query had. A corpus that grows one document at a time never becomes
+    able to answer a question by issue.
+
+    One PDF that fails to parse is skipped, not fatal: a scanned judgment
+    with no text layer must not cost the caller the others.
+    """
+    import bharat_courts as bc
+
+    async def _search_and_fetch():
+        async with bc.ArchiveClient() as client:
+            results = await client.search(party=query, year=year, limit=limit)
+            fetched = []
+            for judgment in results:
+                try:
+                    fetched.append((judgment, await client.fetch_pdf(judgment)))
+                except Exception:
+                    continue
+            return fetched
+
+    documents: list[CanonicalDocument] = []
+    for judgment, pdf_bytes in asyncio.run(_search_and_fetch()):
+        try:
+            reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+            full_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        except Exception:
+            continue
+        if not full_text.strip():
+            continue
+        documents.append(_to_canonical(judgment, full_text, query))
+    return documents
+
+
+def _fetch_indian_kanoon_doc(doc_id: str, title: str) -> Optional[CanonicalDocument]:
     doc_url = f"https://indiankanoon.org/doc/{doc_id}/"
+
+    # robots.txt names thousands of specific /doc/<id>/ paths as disallowed
+    # -- judgments ordered de-indexed, typically victim-privacy matters.
+    # Serving one of those to a user republishes what a court suppressed.
+    if not is_allowed(doc_url):
+        return None
+
     doc_response = polite_get(doc_url)
     if doc_response.status_code != 200:
         return None
@@ -257,18 +265,61 @@ def _search_indian_kanoon(query: str) -> Optional[CanonicalDocument]:
     )
 
 
-def search_judgment(
+def _search_indian_kanoon(query: str, limit: int = 1) -> list[CanonicalDocument]:
+    """Up to `limit` judgments from Indian Kanoon's full-text search.
+
+    This is the only source here that can be searched by *issue* rather
+    than by case name -- the archive index carries no subject, headnote or
+    keyword column, so a query like "commercial quantity bail" has nothing
+    to match there. That makes this path the one that can answer a question
+    the user cannot already name a case for.
+
+    Every document fetch is checked against robots.txt first. Taking more
+    than one result multiplies how often a suppressed id would be
+    requested, which is why the check is here and not left for later.
+    """
+    response = polite_get(IK_SEARCH_URL, params={"formInput": query})
+    if response.status_code != 200:
+        return []
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    documents: list[CanonicalDocument] = []
+    seen: set[str] = set()
+    for result_title in soup.find_all(class_="result_title"):
+        if len(documents) >= limit:
+            break
+        link = result_title.find("a")
+        if link is None or not link.get("href"):
+            continue
+        match = IK_DOC_ID_RE.search(link["href"])
+        if match is None or match.group(1) in seen:
+            continue
+        seen.add(match.group(1))
+        document = _fetch_indian_kanoon_doc(
+            match.group(1), result_title.get_text(strip=True)
+        )
+        if document is not None:
+            documents.append(document)
+    return documents
+
+
+def search_judgments(
     query: str,
     year: int | tuple[int, int] | None = None,
+    limit: int = 1,
     skip_db: bool = False,
     live: bool = True,
 ) -> JudgmentSearchResult:
-    """Find a real judgment for `query` (case name or citation).
+    """Find up to `limit` real judgments for `query`.
 
-    `year` (single year or inclusive range) is strongly recommended: with
-    no court specified the Bharat Courts archive scans the Supreme Court
-    plus all ~25 High Court partitions, and a year enables partition
-    pruning.
+    `limit=1` is a lookup: the caller knows the case name or citation and
+    wants that document. Above one it becomes discovery, and the source
+    that matters changes -- the archive index has no subject column, so
+    only the full-text path can answer a query phrased as an issue.
+
+    `year` (single year or inclusive range) is strongly recommended for the
+    archive: with no court specified it scans the Supreme Court plus all
+    ~25 High Court partitions, and a year enables partition pruning.
 
     `skip_db`: the DB check matches on title word-overlap, which cannot
     distinguish two real proceedings between the same parties (a main
@@ -277,40 +328,69 @@ def search_judgment(
     the wrong document.
 
     `live=False` searches the database only. The live path is slow by
-    nature — with no court given the archive scans the Supreme Court and all
-    ~25 High Court partitions, measured at 228s for a query that found
-    nothing — so an interactive caller must not block on it. Fetching a
-    judgment the corpus lacks is corpus growth, not query-time work.
+    nature -- with no court given the archive scans every partition,
+    measured at 228s for a query that found nothing -- so an interactive
+    caller must not block on it. Fetching a judgment the corpus lacks is
+    corpus growth, not query-time work.
 
-    Does not store anything — see module docstring. Caller decides what
-    to do with a found-and-verified CanonicalDocument (e.g. hand it to
-    upsert_document + write_judgment once that step is built).
+    Does not store anything -- see the module docstring.
     """
     if not skip_db:
-        db_hit = _check_db(query)
-        if db_hit is not None:
-            return db_hit
+        stored = _check_db(query, limit=limit)
+        if len(stored) >= limit:
+            return JudgmentSearchResult(
+                found=True,
+                source="database",
+                documents=stored,
+                verified=True,
+                notes=[f"{len(stored)} match(es) already in DB, no network call made"],
+            )
 
     if not live:
+        stored = stored if not skip_db else []
+        if stored:
+            return JudgmentSearchResult(
+                found=True, source="database", documents=stored, verified=True,
+                notes=[
+                    f"{len(stored)} of {limit} requested found in DB; "
+                    "live search was not attempted"
+                ],
+            )
         return JudgmentSearchResult(
             found=False,
             source="none",
             notes=[f"no stored judgment matches {query!r}; live search was not attempted"],
         )
 
-    document = _search_bharat_courts_archive(query, year)
+    documents = _search_bharat_courts_archive(query, year, limit=limit)
     source: SourceName = "bharat_courts_archive"
-    if document is None:
-        document = _search_indian_kanoon(query)
+    if not documents:
+        documents = _search_indian_kanoon(query, limit=limit)
         source = "indian_kanoon"
 
-    if document is None:
+    if not documents:
         notes = [f"no result for {query!r} in DB, Bharat Courts archive, or Indian Kanoon"]
         if year is None:
             notes.append("no year was given — pass one if known, it materially improves archive recall/speed")
         return JudgmentSearchResult(found=False, source="none", notes=notes)
 
-    passed, notes = _verify(document)
+    passed, notes = _verify(documents)
     if source == "bharat_courts_archive" and year is None:
         notes.append("found without a year filter — this query scanned every partition, consider passing year")
-    return JudgmentSearchResult(found=True, source=source, document=document, verified=passed, notes=notes)
+    return JudgmentSearchResult(
+        found=True, source=source, documents=documents, verified=passed, notes=notes
+    )
+
+
+def search_judgment(
+    query: str,
+    year: int | tuple[int, int] | None = None,
+    skip_db: bool = False,
+    live: bool = True,
+) -> JudgmentSearchResult:
+    """One judgment for `query` -- lookup by case name or citation.
+
+    Kept as the single-result entry point so callers that want exactly one
+    document read as wanting one. See search_judgments for discovery.
+    """
+    return search_judgments(query, year=year, limit=1, skip_db=skip_db, live=live)

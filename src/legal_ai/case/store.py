@@ -74,6 +74,13 @@ def ensure_case_schema(conn: psycopg.Connection) -> None:
     )
     conn.commit()
 
+    # Uploaded files, last because they reference cases. Imported here
+    # rather than at module scope: case.files imports nothing from this
+    # module, and keeping it that way makes the direction obvious.
+    from legal_ai.case.files import ensure_case_file_schema
+
+    ensure_case_file_schema(conn)
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)

@@ -2,14 +2,16 @@
 
 See docs/superpowers/specs/2026-08-19-phase2-milestone4-tool-contracts-design.md.
 
-search_judgments returns 0 or 1 Evidence, never a ranked list: the
-underlying fetch-verify-store flow surfaces one best candidate per source.
-It is a lookup, not ranked search like search_statutes.
+search_judgments returns up to `limit` Evidence. At limit=1 it is a lookup
+-- the caller knows the case name. Above one it is discovery, and only the
+full-text source can serve it: the archive index carries no subject,
+headnote or keyword column, so a query phrased as an issue has nothing to
+match there.
 """
 
 from __future__ import annotations
 
-from legal_ai.ingestion.judgments.dynamic_search import search_judgment
+from legal_ai.ingestion.judgments.dynamic_search import search_judgments as _search
 from legal_ai.ingestion.judgments.store import store_judgment
 from legal_ai.knowledge.static.db import get_connection
 from legal_ai.knowledge.static.store import get_document
@@ -20,6 +22,7 @@ from legal_ai.schemas.evidence import Evidence
 def search_judgments(
     query: str,
     year: int | tuple[int, int] | None = None,
+    limit: int = 1,
     store: bool = True,
     skip_db: bool = False,
     live: bool = True,
@@ -31,14 +34,15 @@ def search_judgments(
     `live=False` restricts the search to what is already stored. Interactive
     callers should pass it: the live path scans every archive partition when
     no court is given, measured at 228s for a query that found nothing."""
-    result = search_judgment(query, year=year, skip_db=skip_db, live=live)
-    if not result.found or result.document is None:
+    result = _search(query, year=year, limit=limit, skip_db=skip_db, live=live)
+    if not result.found:
         return []
 
     if store and result.source != "database" and result.verified:
-        store_judgment(result.document)
+        for document in result.documents:
+            store_judgment(document)
 
-    return [to_evidence(result.document)]
+    return [to_evidence(document) for document in result.documents]
 
 
 def get_judgment(document_id: str) -> Evidence | None:

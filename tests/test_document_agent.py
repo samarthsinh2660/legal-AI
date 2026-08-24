@@ -141,3 +141,100 @@ def test_the_document_node_is_skipped_when_nothing_was_uploaded():
     from legal_ai.graph import nodes
 
     assert nodes.document({"question": "q"}) == {}
+
+
+# --- an unreachable model must not look like an empty document ---
+
+def test_extraction_failure_is_reported(monkeypatch):
+    # A 503 across every model returns the same empty tuples a document
+    # with no parties would. Without this flag a case view reports
+    # "no parties found" when the truth is "we never looked".
+    def unavailable(prompt, **kwargs):
+        raise RuntimeError("503 UNAVAILABLE")
+
+    monkeypatch.setattr(doc, "generate", unavailable)
+    facts = doc.extract_document_facts("doc-1", PETITION)
+    assert facts.extraction_failed is True
+    # The regex half is unaffected -- citations are a pattern, not a model.
+    assert facts.cited_sections
+
+
+def test_a_successful_extraction_is_not_flagged(monkeypatch):
+    _stub(monkeypatch, {"document_type": "petition", "parties": [], "dates": [], "issues": []})
+    facts = doc.extract_document_facts("doc-1", PETITION)
+    assert facts.extraction_failed is False
+
+
+def test_one_failed_window_does_not_flag_the_whole_document(monkeypatch):
+    # Partial extraction is degraded, not failed -- the windows that
+    # succeeded are real and must be kept.
+    calls = []
+
+    def flaky(prompt, **kwargs):
+        calls.append(prompt)
+        if len(calls) == 1:
+            raise RuntimeError("503 UNAVAILABLE")
+        return json.dumps({"parties": ["Kishor Patel"], "dates": [], "issues": []})
+
+    monkeypatch.setattr(doc, "generate", flaky)
+    facts = doc.extract_document_facts("doc-1", "x" * 20_000)
+    assert facts.extraction_failed is False
+    assert facts.parties == ("Kishor Patel",)
+
+
+def test_an_empty_document_is_not_a_failure(monkeypatch):
+    _stub(monkeypatch, {})
+    assert doc.extract_document_facts("doc-1", "").extraction_failed is False
+
+
+# --- clauses and claims (Phase 4) ---
+
+def test_clauses_land_on_the_facts(monkeypatch):
+    _stub(monkeypatch, {
+        "document_type": "agreement",
+        "clauses": ["possession by 30 June 2021", "penalty 10% per annum"],
+        "claims": [], "parties": [], "dates": [], "issues": [],
+    })
+    facts = doc.extract_document_facts("doc-1", PETITION)
+    assert facts.clauses == ("possession by 30 June 2021", "penalty 10% per annum")
+
+
+def test_claims_land_on_the_facts(monkeypatch):
+    _stub(monkeypatch, {
+        "claims": ["promoter says the delay was force majeure"],
+        "clauses": [], "parties": [], "dates": [], "issues": [],
+    })
+    facts = doc.extract_document_facts("doc-1", PETITION)
+    assert facts.claims == ("promoter says the delay was force majeure",)
+
+
+def test_clauses_and_claims_merge_across_windows(monkeypatch):
+    calls = []
+
+    def per_window(prompt, **kwargs):
+        calls.append(prompt)
+        if len(calls) == 1:
+            return json.dumps({"clauses": ["possession by 30 June 2021"], "claims": []})
+        return json.dumps({"clauses": ["penalty 10% per annum"], "claims": ["force majeure"]})
+
+    monkeypatch.setattr(doc, "generate", per_window)
+    facts = doc.extract_document_facts("doc-1", "x" * 20_000)
+    assert facts.clauses == ("possession by 30 June 2021", "penalty 10% per annum")
+    assert facts.claims == ("force majeure",)
+
+
+def test_a_repeated_clause_is_recorded_once(monkeypatch):
+    def same_each_window(prompt, **kwargs):
+        return json.dumps({"clauses": ["possession by 30 June 2021"], "claims": []})
+
+    monkeypatch.setattr(doc, "generate", same_each_window)
+    facts = doc.extract_document_facts("doc-1", "x" * 30_000)
+    assert facts.clauses == ("possession by 30 June 2021",)
+
+
+def test_the_agent_does_not_report_contradictions(monkeypatch):
+    # It reads one document at a time -- that isolation is why it exists.
+    # A contradiction is between documents and belongs to the Case Agent.
+    _stub(monkeypatch, {"contradictions": ["invented"], "clauses": [], "claims": []})
+    facts = doc.extract_document_facts("doc-1", PETITION)
+    assert not hasattr(facts, "contradictions")

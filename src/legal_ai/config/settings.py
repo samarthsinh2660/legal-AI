@@ -88,6 +88,14 @@ class Configuration(BaseModel):
     # runs before changing this.
     search_limit: int = 40
 
+    # Judgments fetched per search. Deliberately far below search_limit:
+    # a statute result is one row already in Postgres, while a judgment
+    # result is a PDF or an HTML page fetched from a third party and parsed.
+    # Forty of those per query would be forty outbound requests to answer
+    # one question. Enough to give a reader a choice of authorities, not
+    # enough to crawl.
+    judgment_search_limit: int = 5
+
     # Findings shorter than this are handed over as they are. Summarising
     # costs a model call and can only lose detail, so it is worth paying for
     # only when the findings would not fit in front of a reader as they are.

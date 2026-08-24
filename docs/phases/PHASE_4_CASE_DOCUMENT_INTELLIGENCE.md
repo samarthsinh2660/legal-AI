@@ -312,3 +312,115 @@ them. This must land before any discovery path that fetches more.
 **Arguments.** Listed as a Case Agent output in §3, but generating them is
 the Analyst and Draft Agents' job in Phase 5. Building a field nothing
 writes would be speculative.
+
+------------------------------------------------------------------------
+
+## 10. Upload path, clauses, claims, contradictions (2026-08-24)
+
+### The front door
+
+`PDF / DOCX` is the first box in §2's own diagram and it did not exist.
+`extract_document_facts` took *text*; nothing produced text from a file, so
+every `DocumentFacts` in the system was hand-built. The case container
+worked and the front door did not.
+
+``` text
+case/files.py    case_files table; pdf, docx, txt, md -> text
+case/upload.py   file -> text -> store -> attach -> DocumentFacts
+```
+
+**Uploaded files are deliberately NOT in `documents`.** `hybrid_search`
+reads that table, so a client's pleading placed there would come back as
+*authority*, and could surface for a different user's query. Keeping
+private material out of the corpus table is a stronger guarantee than
+remembering to filter at every retrieval path, and there are several. A
+test asserts an uploaded file appears in neither `documents` nor
+`document_chunks`.
+
+That decision also meant `DocumentType` stayed `act | section | judgment`.
+Petitions never enter that table, so nothing had to widen.
+
+Verified on real files: a DOCX whose table content survives (legal
+agreements put payment schedules in tables) and a 34,470-character Delhi
+High Court PDF.
+
+### Extraction failure is now distinguishable from an empty document
+
+A 503 across the whole model chain returned exactly what a document with no
+parties returns -- empty tuples, no error. A case view would have reported
+"no parties found" when the truth was "nothing read it". This is the same
+class as the `.env` defect in §8: silent degradation that a passing test
+suite cannot see.
+
+`DocumentFacts.extraction_failed` is set only when *every* window failed;
+one failed window out of six is degraded, not failed, and its siblings'
+results are real and kept. The Case Agent renders such a document as
+`NOT YET READ (extraction failed)` rather than presenting an empty record
+as a read one.
+
+### Clauses and claims
+
+Added to the Document Agent's existing call, no extra cost. A clause is
+what the document *says* -- a possession date, a penalty, a notice period.
+An issue is what it puts in *dispute*. The clause is usually what decides
+the dispute, so blending them lost the operative term. A claim is what a
+party asserts, which is the direct input to the Analyst Agent in Phase 5.
+
+### Contradictions belong to the Case Agent, not the Document Agent
+
+The Document Agent reads one file at a time and that isolation is the
+reason it exists. A contradiction is *between* files, so it is folded into
+`analyse_case` -- still one model call for issues, missing facts and
+contradictions together.
+
+Two guards: it runs only when the case holds more than one document, and
+the prompt requires naming both conflicting document ids. Rendering
+`clauses` and `claims` into the case prompt is what makes the task possible
+at all -- most conflict signal is in the terms one document sets against
+what another asserts.
+
+### Measured: recall 0.20, control precision 1.00
+
+`evals/run_contradictions.py`, 8 cases -- 5 with planted conflicts, 3
+negative controls. Graded on **document ids, not prose**: asking whether
+the model's sentence means the same as the label's is itself a judgement
+call, and scoring a model with a model gives a number nobody can check.
+
+``` text
+planted conflicts   5
+detected            1     recall 0.20
+false alarms        0
+controls clean      3/3   precision 1.00
+models used         {'gemini-3.6-flash': 8}     one model, no fallthrough
+```
+
+Conservative, not eager -- which is the better failure to have, and the
+opposite of what was expected. It did not manufacture conflict from mere
+difference.
+
+The four misses share a pattern. It caught the one case where two sentences
+directly negate each other in plain language, and missed every case needing
+a **value or a date** compared across documents: a registration number
+against its denial, a memo received before it was dated, an instalment
+accepted after termination, two different rents for one tenancy.
+
+Plausible cause: the prompt's closing instruction that "inventing a
+conflict is worse than reporting none" buys the control precision and costs
+the recall. **Not acted on.** Eight cases with five planted conflicts move
+recall in steps of 0.20, so this dataset cannot detect any change that is
+not one-case noise -- exactly the mistake §8a records about the 0.670 MRR
+figure. A larger dataset weighted toward date and value conflicts comes
+first, then a prompt change measured across several runs.
+
+Issues and missing facts have no eval on purpose. Both would need an expert
+label per case, and shipping no number is better than shipping one that
+gets believed.
+
+### Recorded: the test suite calls the live API
+
+`test_graph_skeleton` invokes the real graph, so the suite makes real
+Gemini calls -- normally ~20 minutes, and 33 during an outage. This was
+raised as a defect and deliberately kept: twice in one day a bug was pure
+silent degradation (`.env` unloaded, extraction returning empty), and a
+stubbed model would have stayed green through both. A suite that passes
+while the system is broken is worse than a slow one.
