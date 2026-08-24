@@ -46,7 +46,12 @@ class Angle:
     query: str
 
 
-def plan_research(question: str, context: str = "", max_angles: int = 3) -> list[Angle]:
+def plan_research(
+    question: str,
+    context: str = "",
+    max_angles: int = 3,
+    chain: tuple[str, ...] | None = None,
+) -> list[Angle]:
     """Angles and their statutory queries, in one call.
 
     Falls back to a single angle using the question verbatim, so a model
@@ -60,6 +65,11 @@ def plan_research(question: str, context: str = "", max_angles: int = 3) -> list
                 context=context or "No additional context.",
                 max_angles=max_angles,
             ),
+            # `chain` pins one model for a benchmark run. Without it a run
+            # can slide down the chain partway through, so early questions
+            # are answered by a different model than later ones and the
+            # score blends them -- which is not one measurement.
+            **({"chain": chain} if chain else {}),
             max_output_tokens=DEFAULT_CONFIG.plan_model_max_tokens,
         )
     except Exception:

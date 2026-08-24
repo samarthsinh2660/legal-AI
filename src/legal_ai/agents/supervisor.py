@@ -149,9 +149,14 @@ def research(
     max_angles: int = DEFAULT_CONFIG.max_concurrent_research_units,
     limit: int = DEFAULT_CONFIG.limit_per_angle,
     conn: psycopg.Connection | None = None,
+    chain: tuple[str, ...] | None = None,
 ) -> ResearchResult:
-    """Plan, search every angle, validate, rank, summarise."""
-    angles = plan_research(question, context=context, max_angles=max_angles)
+    """Plan, search every angle, validate, rank, summarise.
+
+    `chain` pins the model, for benchmark runs that must not slide down the
+    fallback chain midway and blend two models into one score.
+    """
+    angles = plan_research(question, context=context, max_angles=max_angles, chain=chain)
 
     per_angle: list[list[Evidence]] = []
     dropped: list[tuple[str, str]] = []

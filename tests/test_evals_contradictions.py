@@ -93,3 +93,47 @@ def test_every_case_has_at_least_two_documents():
 def test_every_case_carries_a_note_explaining_the_ground_truth():
     for case in json.loads(DATASET.read_text()):
         assert case.get("note"), case["id"]
+
+
+def test_the_dataset_is_large_enough_to_tune_against():
+    # At five planted conflicts, recall moved in steps of 0.20 -- no prompt
+    # change could be told apart from one-case noise. That is the mistake
+    # PHASE_3 §8a records about the 0.670 MRR figure, and this is the guard
+    # against repeating it here.
+    cases = json.loads(DATASET.read_text())
+    planted = sum(len(c["contradictions"]) for c in cases)
+    assert planted >= 15, f"only {planted} planted conflicts; a 1-case swing moves recall too far"
+
+
+def test_controls_are_a_meaningful_share_of_the_set():
+    # Recall alone rewards a detector that always says yes. The controls
+    # have to be numerous enough that precision can actually fall.
+    cases = json.loads(DATASET.read_text())
+    controls = [c for c in cases if not c["contradictions"]]
+    assert len(controls) >= len(cases) // 4
+
+
+def test_the_set_covers_date_and_value_conflicts():
+    # Gemini flash found only conflicts stated as plain negation and missed
+    # every one needing a date or an amount compared across documents. The
+    # set has to contain enough of those to measure that difference.
+    cases = json.loads(DATASET.read_text())
+    text = json.dumps(cases).lower()
+    assert text.count("date") >= 5
+    assert text.count("rs ") >= 8
+
+
+def test_a_case_with_three_documents_exists():
+    # Two-document cases make the pair trivially guessable: name both and
+    # score. A third document that conflicts with neither tests whether the
+    # detector actually identifies WHICH two disagree.
+    cases = json.loads(DATASET.read_text())
+    assert any(len(c["documents"]) >= 3 for c in cases)
+
+
+def test_controls_include_a_superseding_amendment():
+    # A supplementary agreement that expressly varies a date is a variation,
+    # not a contradiction. Flagging it would make the feature noise on every
+    # real file, since amended terms are ordinary.
+    cases = json.loads(DATASET.read_text())
+    assert any("supplementary" in json.dumps(c).lower() for c in cases if not c["contradictions"])

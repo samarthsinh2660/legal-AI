@@ -469,3 +469,58 @@ contradiction result would be measuring one thing and concluding about
 another, which is the specific error §8a exists to record. Whether Gemma
 should lead there too is an open question with a benchmark already built
 to answer it.
+
+------------------------------------------------------------------------
+
+## 12. Contradiction detection, measured properly (2026-08-24)
+
+The eight-case set moved recall in steps of 0.20 and could not tell a real
+change from one-case noise. Grown to **28 cases -- 19 planted conflicts, 9
+negative controls** -- weighted at the failure mode Gemini flash showed:
+dates and amounts compared across documents.
+
+``` text
+planted conflicts   19
+detected            18    recall 0.95
+false alarms        0
+controls clean      9/9   precision 1.00
+models used         {gemma-4-31b-it: 28}      one model, no fallthrough
+```
+
+Every case added to target the failure mode was caught: a suit instituted
+before its cause of action arose, a reply dated before the notice it
+answers, a gift deed executed after the donor's death, cheque amount,
+interest rate, carpet area, overlapping lease terms. Including the
+three-document case, where it identified *which two* of three conflict --
+two-document cases can be scored by naming both, so they do not test that.
+
+The controls are the load-bearing half and all nine held, including the
+ones written to trip an eager detector: a partial payment against a total,
+two amounts for two different things, and a supplementary agreement
+expressly varying a possession date. That last matters most -- flagging
+ordinary amendments would make the feature noise on every real file.
+
+### Read it as 0.95 +/- 0.05, and as a ceiling
+
+The single miss, `rera-possession-vs-unregistered`, is a case the same
+model caught on the eight-case run. Same case, same model, different run:
+one flip is 0.05 at this size.
+
+More importantly the dataset is **authored alongside the prompt it scores**.
+Cases written by someone who knows what the detector looks for are easier
+than reality: real conflicts sit buried in clauses rather than stated in a
+line, involve more than two parties, and are often genuinely arguable. This
+is an upper bound, not a field result.
+
+### Not measured: whether Gemma should lead research too
+
+Attempted and failed. Runs were given a 20-minute timeout sized by guess
+rather than measurement; Gemma runs exceeded it and were killed before
+printing, and the retries spent the day's `gemini-3.6-flash` quota that the
+comparison needed on the other side.
+
+`evals/run_agent.py --model` and the `chain` argument on `research()` /
+`plan_research()` were added for this and are the right tools: without
+pinning, a run slides down the fallback chain partway and blends two models
+into one score. The comparison itself is still open, and the research chain
+stays on Gemini until it is run.
