@@ -133,12 +133,24 @@ def research(state: ResearchState) -> dict:
 
 
 def analyst(state: ResearchState) -> dict:
-    """Turn findings into structured claims, each carrying its Evidence id.
+    """Turn findings into structured claims, each carrying its Evidence ids.
 
-    Pass-through until Phase 5. Structured rather than prose so verification
-    is a lookup rather than an LLM re-reading an LLM.
+    Structured rather than prose so verification is a lookup rather than an
+    LLM re-reading an LLM. Until this node did real work the verifier had
+    nothing to check and returned early on every run.
+
+    This replaces the supervisor's summarise call rather than adding to it,
+    so a question still costs one model call here.
     """
-    return {}
+    from legal_ai.agents.analyst import analyse
+
+    context = state.get("context")
+    result = analyse(
+        state["question"],
+        list(state.get("findings") or []),
+        documents=tuple(context.documents) if context is not None else (),
+    )
+    return {"claims": list(result.claims), "analysis": result}
 
 
 def verification(state: ResearchState) -> dict:
@@ -166,8 +178,23 @@ def verification(state: ResearchState) -> dict:
 
 
 def draft(state: ResearchState) -> dict:
-    """Render the DraftAnswer the UI contract expects.
+    """Assemble the DraftAnswer the UI contract expects.
 
-    Pass-through until Phase 5.
+    Deterministic -- no model call. Its inputs are already structured, and
+    re-rendering them through a model would only risk dropping a citation.
+
+    This is where the verifier becomes visible: claims it could not ground
+    are moved into `needs_verification` rather than deleted, so a reader can
+    tell a short answer from an incomplete one.
     """
-    return {"answer": f"[stub answer for: {state['question']}]"}
+    from legal_ai.agents.draft import build_answer, render
+    from legal_ai.schemas.answer import AnalysisResult
+
+    analysis = state.get("analysis") or AnalysisResult()
+    answer = build_answer(
+        state["question"],
+        analysis,
+        list(state.get("findings") or []),
+        unsupported=tuple(state.get("unsupported_claims") or []),
+    )
+    return {"answer": render(answer), "draft_answer": answer}

@@ -192,6 +192,8 @@ def research(
     return ResearchResult(
         question=question,
         angles=angles,
+        # Left as-is for direct callers of research(); inside the graph the
+        # Analyst produces the answer and this is not the cost path.
         summary=summarise(question, evidence),
         evidence=evidence,
         dropped=dropped,

@@ -36,8 +36,17 @@ class ResearchState(TypedDict, total=False):
     clarification_needed: Optional[str]
 
     # Structured claims from the Analyst, each carrying its Evidence ids.
-    # Empty until Phase 5; verification is vacuous without them.
+    # Verification is vacuous without them, which is what it was until the
+    # Analyst landed.
     claims: list
+
+    # The Analyst's full result -- claims plus the lede. Carried separately
+    # so the draft node does not have to re-derive prose from claims.
+    analysis: Optional[object]
+
+    # The assembled DraftAnswer. `answer` stays a string for callers that
+    # only want text; this is the structure the UI renders.
+    draft_answer: Optional[object]
 
     # Claims verification could not ground. A non-empty value sends the run
     # back for bounded re-research, up to GraphConfig.max_verification_passes.
