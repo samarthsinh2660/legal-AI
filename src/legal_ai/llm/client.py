@@ -40,6 +40,11 @@ MAX_RETRIES_PER_MODEL = DEFAULT_CONFIG.max_retries_per_model
 # costs little to discover.
 RATE_LIMIT_BACKOFF_SECONDS = 8
 
+# Per-request ceiling, in milliseconds. Generous enough for a slow model on
+# a long prompt -- gemma-4-31b-it was measured at 44s for a trivial one --
+# and far below the point where a caller should still be waiting.
+REQUEST_TIMEOUT_MS = 120_000
+
 
 # Counts of chain-wide failures, for evals to distinguish "the system found
 # nothing" from "the API was unreachable". The two look identical in a score
@@ -69,14 +74,51 @@ class AllModelsUnavailable(RuntimeError):
 
 def _client():
     from google import genai
+    from google.genai import types
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set")
-    return genai.Client(api_key=api_key)
+    return genai.Client(
+        api_key=api_key,
+        # Without this a request can block indefinitely, and no outer
+        # timeout reliably clears it: a benchmark run was found stuck for
+        # 36 hours inside a single call, having ignored the `timeout 2400`
+        # wrapped around it. Several runs blamed on quota were this.
+        #
+        # A hung connection has to look like a failed model so the chain
+        # moves on -- that is what the chain is for.
+        http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS),
+    )
+
+
+class TruncatedResponse(Exception):
+    """The model stopped because it hit max_output_tokens.
+
+    Its own failure type because it is not an API error -- the call
+    succeeded and returned a fragment. Left unnoticed it is worse than an
+    error: a half-written JSON array parses to nothing, the caller uses its
+    fallback, and the run looks healthy while a component is switched off.
+    """
+
+
+def _was_truncated(response) -> bool:
+    """True when the reply was cut short by the token cap.
+
+    Defensive about shape: the SDK is not guaranteed to populate
+    candidates, and a missing finish_reason must read as "not truncated"
+    rather than raising inside the success path.
+    """
+    try:
+        reason = str(response.candidates[0].finish_reason or "")
+    except (AttributeError, IndexError, TypeError):
+        return False
+    return "MAX_TOKEN" in reason.upper()
 
 
 def _classify(error: Exception) -> str:
+    if isinstance(error, TruncatedResponse):
+        return "truncated"
     text = str(error)
     if "429" in text or "RESOURCE_EXHAUSTED" in text:
         return "exhausted"
@@ -112,6 +154,18 @@ def generate(
                     model=model, contents=prompt, config=config
                 )
                 MODEL_USAGE[model] = MODEL_USAGE.get(model, 0) + 1
+                if _was_truncated(response):
+                    # Not a usable answer. Gemini 3.x spends the output
+                    # budget on internal reasoning first, so a cap sized for
+                    # the visible reply returns a fragment -- JSON that never
+                    # closes. Callers parse that, fail, and fall back to
+                    # their default silently. Treating it as a failure sends
+                    # it to the next model instead, and surfaces it when the
+                    # whole chain does the same.
+                    raise TruncatedResponse(
+                        f"{model} hit max_output_tokens before finishing; "
+                        f"raise the per-role cap in legal_ai.config.settings"
+                    )
                 return (response.text or "").strip()
             except Exception as error:
                 kind = _classify(error)

@@ -56,6 +56,25 @@ class DocumentFacts:
     cited_sections: tuple[str, ...] = ()
     issues: tuple[str, ...] = ()
 
+    # Operative terms of an agreement or notice -- the possession date, the
+    # payment schedule, the penalty, the termination right. Separate from
+    # `issues` because a clause is what the document *says*, while an issue
+    # is what it puts in dispute, and the clause is usually what decides it.
+    clauses: tuple[str, ...] = ()
+
+    # What each party asserts. The direct input to the Analyst Agent in
+    # Phase 5, kept distinct from `issues` for the same reason: "the
+    # promoter says the delay was force majeure" is a contention, not a
+    # question for the court.
+    claims: tuple[str, ...] = ()
+
+    # True when no window of the document reached a model. Without this an
+    # upstream outage is indistinguishable from a document that genuinely
+    # names no parties: both arrive as empty tuples, and a case view would
+    # report "no parties found" when the truth is "we never looked".
+    # `cited_sections` is unaffected either way -- it is regex, not model.
+    extraction_failed: bool = False
+
 
 @dataclass(frozen=True)
 class ThreadContext:

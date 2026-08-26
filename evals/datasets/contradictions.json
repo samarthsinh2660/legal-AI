@@ -1,0 +1,884 @@
+[
+  {
+    "id": "rera-possession-vs-unregistered",
+    "note": "The agreement fixes a possession date; the promoter's reply says the project was never registered, which would mean no agreement could lawfully have been executed under s.13.",
+    "case": {
+      "title": "Patel v. Marvel Developers",
+      "court": "Gujarat High Court",
+      "state": "Gujarat"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "parties": [
+          "Kishor Patel",
+          "Marvel Developers Pvt Ltd"
+        ],
+        "dates": [
+          "12 March 2019"
+        ],
+        "clauses": [
+          "possession to be handed over by 30 June 2021",
+          "project registered with Gujarat RERA under registration PR/GJ/2019/00412"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "notice",
+        "parties": [
+          "Marvel Developers Pvt Ltd"
+        ],
+        "claims": [
+          "the promoter states the project was never registered with the authority and no agreement for sale was executed"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "cheque-notice-date-conflict",
+    "note": "s.138 requires notice within 30 days of dishonour. The complaint says the memo was received 5 January; the bank memo is dated 2 February. One of them cannot be right.",
+    "case": {
+      "title": "Sharma v. Verma",
+      "court": "Delhi High Court",
+      "state": "Delhi"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "petition",
+        "dates": [
+          "5 January 2023",
+          "20 January 2023"
+        ],
+        "claims": [
+          "the complainant received the dishonour memo on 5 January 2023 and issued notice on 20 January 2023"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "order",
+        "dates": [
+          "2 February 2023"
+        ],
+        "clauses": [
+          "bank memo recording dishonour of the cheque is dated 2 February 2023"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "payment-continued-after-termination",
+    "note": "The termination notice says the agreement stood cancelled in March; the receipts show instalments accepted through October of the same year.",
+    "case": {
+      "title": "Rao v. Skyline Estates",
+      "state": "Karnataka"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "notice",
+        "dates": [
+          "15 March 2022"
+        ],
+        "clauses": [
+          "the agreement stands terminated with effect from 15 March 2022 and no further payment shall be accepted"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "agreement",
+        "dates": [
+          "30 October 2022"
+        ],
+        "clauses": [
+          "receipt acknowledging instalment of Rs 8,00,000 received on 30 October 2022 against the same unit"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "possession-taken-vs-never-offered",
+    "note": "The petition pleads possession was never offered; the handover letter records the allottee taking possession.",
+    "case": {
+      "title": "Iyer v. Coastal Homes",
+      "state": "Kerala"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "petition",
+        "claims": [
+          "the allottee states possession has never been offered at any time"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "order",
+        "dates": [
+          "8 August 2021"
+        ],
+        "clauses": [
+          "letter of handover recording that the allottee took physical possession of the unit on 8 August 2021"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "tenancy-rent-amount-conflict",
+    "note": "The lease deed and the demand notice state different monthly rents for the same premises and period.",
+    "case": {
+      "title": "Khan v. Mehta",
+      "state": "Maharashtra"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "clauses": [
+          "monthly rent of Rs 45,000 payable on the fifth day of each month"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "notice",
+        "claims": [
+          "the landlord demands arrears calculated at a monthly rent of Rs 72,000 for the same premises and period"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "control-consistent-rera-claim",
+    "note": "NEGATIVE CONTROL. Both documents are consistent -- the notice simply repeats what the agreement says. Any contradiction reported here is a false positive.",
+    "case": {
+      "title": "Desai v. Landmark Realty",
+      "state": "Gujarat"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "dates": [
+          "1 April 2019"
+        ],
+        "clauses": [
+          "possession to be handed over by 31 December 2021"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "notice",
+        "dates": [
+          "10 January 2022"
+        ],
+        "claims": [
+          "the allottee calls upon the promoter to hand over possession, which was due by 31 December 2021 and remains undelivered"
+        ]
+      }
+    ],
+    "contradictions": []
+  },
+  {
+    "id": "control-different-topics",
+    "note": "NEGATIVE CONTROL. The two documents concern different matters in the same case and cannot conflict. Reporting a contradiction here means the model manufactures conflict from mere difference.",
+    "case": {
+      "title": "Nair v. Sundar",
+      "state": "Tamil Nadu"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "clauses": [
+          "the seller shall bear the stamp duty on the conveyance"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "petition",
+        "claims": [
+          "the purchaser seeks specific performance of the agreement to sell"
+        ]
+      }
+    ],
+    "contradictions": []
+  },
+  {
+    "id": "control-complementary-dates",
+    "note": "NEGATIVE CONTROL. Two different events on two different dates. A difference in dates is not a contradiction unless the documents describe the SAME event.",
+    "case": {
+      "title": "Bose v. Ganguly",
+      "state": "West Bengal"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "dates": [
+          "3 February 2020"
+        ],
+        "clauses": [
+          "agreement to sell executed on 3 February 2020"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "order",
+        "dates": [
+          "19 September 2021"
+        ],
+        "clauses": [
+          "order recording that the suit was admitted on 19 September 2021"
+        ]
+      }
+    ],
+    "contradictions": []
+  },
+  {
+    "id": "limitation-suit-filed-before-cause",
+    "note": "The plaint says the cause of action arose in 2019; the court fee receipt shows the suit was instituted in 2018, before the cause could have arisen.",
+    "case": {
+      "title": "Menon v. Pillai",
+      "state": "Kerala"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "petition",
+        "dates": [
+          "14 August 2019"
+        ],
+        "claims": [
+          "the cause of action arose on 14 August 2019 when the defendant refused to convey the property"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "order",
+        "dates": [
+          "3 March 2018"
+        ],
+        "clauses": [
+          "court fee receipt records institution of the suit on 3 March 2018"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "notice-served-after-reply",
+    "note": "The reply to a legal notice is dated before the notice itself was issued.",
+    "case": {
+      "title": "Ahuja v. Bhatt",
+      "state": "Delhi"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "notice",
+        "dates": [
+          "22 June 2022"
+        ],
+        "clauses": [
+          "legal notice under section 138 issued on 22 June 2022"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "notice",
+        "dates": [
+          "9 June 2022"
+        ],
+        "claims": [
+          "the drawer states this is his reply to the notice dated 22 June 2022, and this reply is dated 9 June 2022"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "lease-term-overlap",
+    "note": "Two leases granted over the same premises for overlapping periods to different tenants.",
+    "case": {
+      "title": "Prasad v. Krishnan",
+      "state": "Tamil Nadu"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "clauses": [
+          "lease of shop no. 4 granted to Prasad for eleven months from 1 January 2022"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "agreement",
+        "clauses": [
+          "lease of shop no. 4 granted to Krishnan for three years from 1 April 2022"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "employment-termination-date-clash",
+    "note": "The termination letter and the relieving certificate give different last working days.",
+    "case": {
+      "title": "Sequeira v. Trident Systems",
+      "state": "Karnataka"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "notice",
+        "dates": [
+          "31 May 2023"
+        ],
+        "clauses": [
+          "employment stands terminated with the last working day being 31 May 2023"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "order",
+        "dates": [
+          "18 July 2023"
+        ],
+        "clauses": [
+          "relieving certificate records the last working day as 18 July 2023"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "gift-deed-after-death",
+    "note": "A gift deed executed by the donor on a date after the donor's recorded date of death.",
+    "case": {
+      "title": "Estate of Ramaswamy",
+      "state": "Tamil Nadu"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "dates": [
+          "6 September 2021"
+        ],
+        "clauses": [
+          "gift deed executed by the donor Ramaswamy on 6 September 2021"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "order",
+        "dates": [
+          "2 February 2021"
+        ],
+        "clauses": [
+          "death certificate recording the death of Ramaswamy on 2 February 2021"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "consideration-amount-clash",
+    "note": "The sale deed and the receipt state different total consideration for the same transaction.",
+    "case": {
+      "title": "Joshi v. Deshmukh",
+      "state": "Maharashtra"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "clauses": [
+          "total sale consideration of Rs 1,15,00,000 for the said flat"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "order",
+        "clauses": [
+          "receipt acknowledging the entire sale consideration of Rs 87,50,000 for the same flat"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "cheque-amount-mismatch",
+    "note": "The complaint and the dishonoured cheque state different amounts.",
+    "case": {
+      "title": "Fernandes v. Rathi",
+      "state": "Maharashtra"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "petition",
+        "claims": [
+          "the complainant states the cheque was drawn for Rs 12,00,000"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "order",
+        "clauses": [
+          "the dishonoured cheque bears an amount of Rs 1,20,000"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "interest-rate-clash",
+    "note": "The loan agreement and the demand notice apply different rates of interest to the same principal.",
+    "case": {
+      "title": "Sethi v. Ganpati Finance",
+      "state": "Delhi"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "clauses": [
+          "interest at 12 percent per annum on the principal of Rs 20,00,000"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "notice",
+        "claims": [
+          "the lender demands arrears computed at 24 percent per annum on the same principal"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "area-of-flat-clash",
+    "note": "The agreement and the possession letter record different carpet areas for the same unit.",
+    "case": {
+      "title": "Chatterjee v. Aurum Realty",
+      "state": "West Bengal"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "clauses": [
+          "carpet area of the apartment is 1,240 square feet"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "order",
+        "clauses": [
+          "possession letter records the carpet area handed over as 980 square feet"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "maintenance-arrears-clash",
+    "note": "Two demand notices claim different arrears for the same period.",
+    "case": {
+      "title": "Green Meadows Association v. Kapoor",
+      "state": "Karnataka"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "notice",
+        "clauses": [
+          "arrears of Rs 1,44,000 for the period April 2021 to March 2022"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "notice",
+        "clauses": [
+          "arrears of Rs 96,000 for the same period April 2021 to March 2022"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "partnership-existence-denied",
+    "note": "The deed records a partnership the reply denies ever existed.",
+    "case": {
+      "title": "Shroff v. Mistry",
+      "state": "Gujarat"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "clauses": [
+          "partnership deed constituting the firm with effect from 1 July 2018 between Shroff and Mistry"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "notice",
+        "claims": [
+          "Mistry states no partnership was ever constituted between the parties at any time"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "notice-receipt-denied",
+    "note": "The postal acknowledgement shows delivery the addressee denies.",
+    "case": {
+      "title": "Tandon v. Malviya",
+      "state": "Delhi"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "order",
+        "dates": [
+          "11 April 2023"
+        ],
+        "clauses": [
+          "postal acknowledgement bearing the addressee's signature recording delivery on 11 April 2023"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "petition",
+        "claims": [
+          "the respondent states no notice was ever served on him and nothing was received"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "possession-of-original-title-deeds",
+    "note": "Each side claims to hold the original title deeds.",
+    "case": {
+      "title": "Reddy v. Naidu",
+      "state": "Karnataka"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "petition",
+        "claims": [
+          "the plaintiff states the original title deeds have remained in his custody throughout"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "notice",
+        "claims": [
+          "the defendant states the original title deeds were deposited with him in 2017 and remain with him"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "three-documents-one-conflict",
+    "note": "Three documents; only the agreement and the reply conflict. The receipt is consistent with both and must not be dragged in.",
+    "case": {
+      "title": "Varma v. Silverline Builders",
+      "state": "Maharashtra"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "dates": [
+          "5 May 2020"
+        ],
+        "clauses": [
+          "possession to be handed over by 31 December 2022"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "notice",
+        "claims": [
+          "the promoter states no date for possession was ever agreed between the parties"
+        ]
+      },
+      {
+        "document_id": "doc-3",
+        "document_type": "order",
+        "dates": [
+          "12 June 2020"
+        ],
+        "clauses": [
+          "receipt for booking amount of Rs 5,00,000 dated 12 June 2020"
+        ]
+      }
+    ],
+    "contradictions": [
+      [
+        "doc-1",
+        "doc-2"
+      ]
+    ]
+  },
+  {
+    "id": "control-amounts-of-different-things",
+    "note": "NEGATIVE CONTROL. Two different amounts for two DIFFERENT things -- booking amount and total consideration. A number difference is not a conflict unless it is the same quantity.",
+    "case": {
+      "title": "Kulkarni v. Orchid Homes",
+      "state": "Maharashtra"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "order",
+        "clauses": [
+          "receipt for booking amount of Rs 5,00,000"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "agreement",
+        "clauses": [
+          "total sale consideration of Rs 92,00,000"
+        ]
+      }
+    ],
+    "contradictions": []
+  },
+  {
+    "id": "control-sequential-dates-are-consistent",
+    "note": "NEGATIVE CONTROL. Notice issued, then reply sent two weeks later. A correct sequence, not a conflict.",
+    "case": {
+      "title": "Bhalla v. Sodhi",
+      "state": "Delhi"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "notice",
+        "dates": [
+          "4 July 2023"
+        ],
+        "clauses": [
+          "legal notice issued on 4 July 2023 calling for payment within fifteen days"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "notice",
+        "dates": [
+          "18 July 2023"
+        ],
+        "claims": [
+          "the recipient replies on 18 July 2023 disputing the demand"
+        ]
+      }
+    ],
+    "contradictions": []
+  },
+  {
+    "id": "control-partial-payment-is-not-a-conflict",
+    "note": "NEGATIVE CONTROL. A receipt for part of the consideration does not contradict the total. Part and whole are not in conflict.",
+    "case": {
+      "title": "Gupta v. Anand",
+      "state": "Rajasthan"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "clauses": [
+          "total consideration of Rs 40,00,000 payable in four instalments"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "order",
+        "clauses": [
+          "receipt acknowledging the second instalment of Rs 10,00,000"
+        ]
+      }
+    ],
+    "contradictions": []
+  },
+  {
+    "id": "control-two-parties-same-side",
+    "note": "NEGATIVE CONTROL. Two co-petitioners describing the same events consistently. Different wording is not disagreement.",
+    "case": {
+      "title": "Saxena and another v. Emerald Estates",
+      "state": "Uttar Pradesh"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "petition",
+        "claims": [
+          "the first petitioner states possession was due in March 2022 and was not given"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "petition",
+        "claims": [
+          "the second petitioner states the promoter failed to deliver possession by March 2022"
+        ]
+      }
+    ],
+    "contradictions": []
+  },
+  {
+    "id": "control-amendment-supersedes-cleanly",
+    "note": "NEGATIVE CONTROL. A supplementary agreement that expressly extends a date is a variation, not a contradiction -- it says so on its face.",
+    "case": {
+      "title": "Nambiar v. Westline Developers",
+      "state": "Kerala"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "agreement",
+        "clauses": [
+          "possession by 30 September 2021"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "agreement",
+        "clauses": [
+          "supplementary agreement expressly varying clause 7 of the principal agreement to extend possession to 31 March 2022, with the consent of both parties"
+        ]
+      }
+    ],
+    "contradictions": []
+  },
+  {
+    "id": "control-unrelated-proceedings",
+    "note": "NEGATIVE CONTROL. A tax notice and a possession complaint in the same file concern different subjects entirely.",
+    "case": {
+      "title": "Iqbal v. Crescent Realty",
+      "state": "Telangana"
+    },
+    "documents": [
+      {
+        "document_id": "doc-1",
+        "document_type": "notice",
+        "clauses": [
+          "property tax demand for the assessment year 2022-23"
+        ]
+      },
+      {
+        "document_id": "doc-2",
+        "document_type": "petition",
+        "claims": [
+          "the allottee seeks possession of the unit booked in 2019"
+        ]
+      }
+    ],
+    "contradictions": []
+  }
+]

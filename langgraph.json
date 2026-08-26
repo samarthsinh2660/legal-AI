@@ -1,8 +1,11 @@
 {
   "graphs": {
-    "Legal Research": "./src/legal_ai/graph/build.py:research_graph"
+    "Legal Research": "./src/legal_ai/graph/build.py:research_graph",
+    "Case Analysis": "./src/legal_ai/graph/build.py:case_graph"
   },
   "python_version": "3.11",
   "env": "./.env",
-  "dependencies": ["."]
+  "dependencies": [
+    "."
+  ]
 }

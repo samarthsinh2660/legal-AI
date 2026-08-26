@@ -36,6 +36,10 @@ TOOLS: dict[str, Callable] = {
 # Set in legal_ai.config.settings, which carries the reasoning.
 SEARCH_LIMIT = DEFAULT_CONFIG.search_limit
 
+# Judgments cost an outbound fetch each, unlike statutes which are already
+# stored -- see Configuration.judgment_search_limit.
+JUDGMENT_SEARCH_LIMIT = DEFAULT_CONFIG.judgment_search_limit
+
 # Applied regardless of what a plan asked for. Interactive research must not
 # block on the live archive scan: with no court given it scans the Supreme
 # Court and all ~25 High Court partitions, measured at 228s for a query that
@@ -47,7 +51,7 @@ FORCED_ARGS: dict[str, dict] = {
 
 DEFAULT_ARGS: dict[str, dict] = {
     "search_statutes": {"limit": SEARCH_LIMIT},
-    "search_judgments": {"limit": SEARCH_LIMIT},
+    "search_judgments": {"limit": JUDGMENT_SEARCH_LIMIT},
 }
 
 

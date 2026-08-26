@@ -29,6 +29,13 @@ from legal_ai.knowledge.static.db import get_connection
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=0, help="first N questions only")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="pin one model instead of the fallback chain; required for any "
+             "run whose number will be compared against another model's",
+    )
     args = parser.parse_args()
 
     require_model()
@@ -43,7 +50,11 @@ def main() -> None:
     ranks: list[int | None] = []
     try:
         for question in questions:
-            result = research(question.question, conn=conn)
+            result = research(
+                question.question,
+                conn=conn,
+                chain=(args.model,) if args.model else None,
+            )
             ids = [item.document_id for item in result.evidence if item.document_id]
             rank = first_relevant_rank(ids, question.expected)
             tracker.record_model_failures()

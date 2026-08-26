@@ -20,34 +20,80 @@ from legal_ai.graph.state import ResearchState
 
 
 def document(state: ResearchState) -> dict:
-    """Extract structure from uploaded documents into the context.
-
-    Milestone 6.4 -- this phase, not Phase 4. It runs BEFORE
-    context_builder because ThreadContext holds parties, dates and case
-    facts, and this is what produces them.
+    """Extract structure from the case's documents into the channel.
 
     A separate agent rather than a tool call inside the researcher: a
     300-page petition does not fit a researcher's window and should not,
     because the researcher needs what the document *says*, not the
     document. This agent spends its own window on the raw file and returns
-    parties, dates, clauses, cited sections and issues -- structure only,
-    never raw text. Same isolation pattern as research fan-out.
+    parties, dates, cited sections and issues -- structure only, never raw
+    text. Same isolation pattern as research fan-out.
 
-    Phase 4 adds clause analysis, contradiction detection and the Documents
-    screen; extraction into the context is here.
+    Facts supplied on the channel are used as given; that is the path a
+    caller who has already extracted them takes, and it keeps the graph
+    runnable without an API key. Otherwise each id is read from the
+    canonical store and extracted here.
+
+    A document that cannot be read is skipped rather than failing the run:
+    one unreadable exhibit in a bundle must not cost the user the whole
+    research thread.
     """
-    return {}
+    if state.get("document_facts"):
+        return {}
+
+    document_ids = state.get("document_ids") or []
+    if not document_ids:
+        return {}
+
+    from legal_ai.agents.document import extract_document_facts
+    from legal_ai.case.files import get_case_file_text
+    from legal_ai.knowledge.static.db import get_connection
+
+    facts = []
+    conn = get_connection()
+    try:
+        for document_id in document_ids:
+            # Read from case_files, not `documents`: an uploaded pleading is
+            # the client's, not corpus, and is deliberately kept out of the
+            # table hybrid_search reads. See legal_ai.case.files.
+            text = get_case_file_text(conn, document_id)
+            if not text or not text.strip():
+                continue
+            facts.append(extract_document_facts(document_id, text))
+    finally:
+        conn.close()
+    return {"document_facts": facts}
 
 
 def context_builder(state: ResearchState) -> dict:
-    """Build the ThreadContext once. Implemented -- see legal_ai.context."""
-    return {
-        "context": build_thread_context(
-            state["question"],
-            case_id=state.get("case_id"),
-            documents=tuple(state.get("document_facts") or []),
+    """Build the ThreadContext once.
+
+    When the thread belongs to a case, it is seeded from what that case has
+    already established rather than built from the question alone -- the
+    fourth question about a matter should not re-derive what the first
+    three settled. See legal_ai.case.session.
+    """
+    documents = tuple(state.get("document_facts") or [])
+    case_id = state.get("case_id")
+
+    if case_id is None:
+        return {
+            "context": build_thread_context(
+                state["question"], case_id=None, documents=documents
+            )
+        }
+
+    from legal_ai.case.session import start_session
+    from legal_ai.knowledge.static.db import get_connection
+
+    conn = get_connection()
+    try:
+        context = start_session(
+            conn, state["question"], case_id=case_id, documents=documents
         )
-    }
+    finally:
+        conn.close()
+    return {"context": context}
 
 
 def clarification(state: ResearchState) -> dict:
@@ -78,6 +124,7 @@ def research(state: ResearchState) -> dict:
     result = run_research(
         state["question"],
         context=render(context) if context is not None else "",
+        thread_context=context,
     )
     return {
         "findings": result.evidence,

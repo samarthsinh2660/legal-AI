@@ -132,3 +132,46 @@ def test_render_caps_findings_so_a_long_thread_cannot_grow_its_own_prompt():
     assert "finding 24" in rendered
     assert "finding 0" not in rendered
     assert "15 earlier omitted" in rendered
+
+
+# --- document facts in the rendered context (Phase 4) ---
+
+def test_document_facts_reach_the_rendered_context():
+    # The researcher was being told the jurisdiction the documents implied
+    # but never what the documents actually said, so a petition pleading
+    # Section 18 and a possession date reached the search as nothing.
+    from legal_ai.context.models import DocumentFacts
+    from legal_ai.context.serialization import render
+
+    facts = DocumentFacts(
+        document_id="doc-1",
+        document_type="petition",
+        dates=("30 June 2021",),
+        issues=("possession not handed over",),
+        cited_sections=("Section 18 of the Real Estate (Regulation and Development) Act, 2016",),
+    )
+    rendered = render(build_thread_context("what are my options", "case-1", (facts,)))
+    assert "possession not handed over" in rendered
+    assert "30 June 2021" in rendered
+    assert "Section 18" in rendered
+    assert "doc-1" in rendered
+
+
+def test_rendered_documents_are_capped():
+    # This string is carried by every node's prompt and multiplied by the
+    # fan-out width, so a hundred-exhibit bundle must not set its size.
+    from legal_ai.context.models import DocumentFacts
+    from legal_ai.context.serialization import MAX_RENDERED_DOCUMENTS, render
+
+    facts = tuple(
+        DocumentFacts(document_id=f"doc-{i}", issues=(f"issue {i}",)) for i in range(40)
+    )
+    rendered = render(build_thread_context("q", documents=facts))
+    assert rendered.count("issue ") == MAX_RENDERED_DOCUMENTS
+    assert "32 more not shown" in rendered
+
+
+def test_a_context_with_no_documents_renders_no_document_section():
+    from legal_ai.context.serialization import render
+
+    assert "case documents" not in render(build_thread_context("plain question of law"))

@@ -38,6 +38,38 @@ class Configuration(BaseModel):
             "gemini-3.5-flash-lite",
             "gemini-3.1-flash-lite",
             "gemini-flash-lite-latest",
+            # Gemma is served by the same API on a SEPARATE quota pool.
+            # Measured 2026-08-24: gemini-flash-latest returned 429 while
+            # gemma-4-31b-it answered on the same key in the same second.
+            # Last in the chain, so nothing changes while Gemini is healthy
+            # and a Google-wide Gemini outage stops being a total outage.
+            "gemma-4-31b-it",
+            "gemma-4-26b-a4b-it",
+        )
+    )
+
+    # Case analysis leads with Gemma on measurement, not preference.
+    # evals/run_contradictions.py, 2026-08-24, same 8 cases:
+    #
+    #     gemini-3.6-flash   recall 0.20 (1/5)   controls clean 3/3
+    #     gemma-4-31b-it     recall 1.00 (5/5)   controls clean 3/3
+    #
+    # Gemini flash found only the conflict stated as a plain negation and
+    # missed every one needing a date or an amount compared across two
+    # documents. One run each on eight cases -- a strong signal, not a
+    # settled number, and the Gemini models stay behind it as fallback.
+    #
+    # Deliberately NOT applied to research: plan_research drives retrieval,
+    # which is scored by the MRR benchmark, not this one. Changing it on
+    # the strength of a contradiction eval would be measuring one thing and
+    # concluding about another.
+    case_model_chain: tuple[str, ...] = Field(
+        default=(
+            "gemma-4-31b-it",
+            "gemma-4-26b-a4b-it",
+            "gemini-flash-latest",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash-lite",
         )
     )
 
@@ -45,13 +77,35 @@ class Configuration(BaseModel):
     # purpose: with eight models behind it, moving on beats waiting.
     max_retries_per_model: int = 2
 
-    # Output token ceilings per role, as open_deep_research does. Sized to
-    # the job: a plan is a short JSON array, a summary is prose. Capping
-    # output is the cheapest lever on both latency and spend, and it stops a
-    # model rambling past the point where its answer is useful.
-    plan_model_max_tokens: int = 512
-    summary_model_max_tokens: int = 1024
-    extraction_model_max_tokens: int = 1024
+    # Output token ceilings per role, as open_deep_research does.
+    #
+    # These were 512 / 1024 / 1024, "sized to the job" on the assumption
+    # that the budget pays only for the visible answer. It does not. Gemini
+    # 3.x models spend this budget on internal reasoning first, so the cap
+    # buys thinking tokens and the answer gets whatever is left.
+    #
+    # Measured 2026-08-24, gemini-3.6-flash, the plan prompt:
+    #
+    #     cap=512    65 chars returned, JSON truncated mid-string
+    #     cap=2048  219 chars returned, valid JSON
+    #
+    # At 512 the array never closed, json.loads failed, and plan_research
+    # returned its fallback -- the user's question verbatim, with no
+    # rewrite. Silently. The rewrite is the component measured to beat
+    # plain retrieval, so on a verbose model the whole research path
+    # quietly degraded to the baseline while every test stayed green.
+    #
+    # This is very likely a large part of the "+/-0.15 MRR run-to-run
+    # noise" blamed on model-written queries: a terse model fits the cap
+    # and rewrites, a verbose one truncates and does not. That is not
+    # noise, it is a bug, and it moves with which model answered.
+    #
+    # Extraction gets the most room: it returns six fields over a
+    # 12,000-character window, and truncation there silently drops
+    # parties, dates and clauses from a case.
+    plan_model_max_tokens: int = 2048
+    summary_model_max_tokens: int = 2048
+    extraction_model_max_tokens: int = 4096
 
     # ------------------------------------------------------------ fan-out
     # Research angles the supervisor may fan out to for one question.
@@ -87,6 +141,14 @@ class Configuration(BaseModel):
     # of that size mean nothing from a single run. Re-measure across several
     # runs before changing this.
     search_limit: int = 40
+
+    # Judgments fetched per search. Deliberately far below search_limit:
+    # a statute result is one row already in Postgres, while a judgment
+    # result is a PDF or an HTML page fetched from a third party and parsed.
+    # Forty of those per query would be forty outbound requests to answer
+    # one question. Enough to give a reader a choice of authorities, not
+    # enough to crawl.
+    judgment_search_limit: int = 5
 
     # Findings shorter than this are handed over as they are. Summarising
     # costs a model call and can only lose detail, so it is worth paying for

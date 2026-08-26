@@ -25,11 +25,14 @@ from dataclasses import dataclass, field
 import psycopg
 
 from legal_ai.agents.research_plan import Angle, plan_research
+from legal_ai.context.models import ThreadContext
+from legal_ai.retrieval.case_law import court_filter, section_identifiers, wants_case_law
 from legal_ai.agents.validator import validate
 from legal_ai.config import DEFAULT_CONFIG
 from legal_ai.llm.client import generate
 from legal_ai.schemas.evidence import Evidence
 from legal_ai.retrieval.hybrid import hybrid_search
+from legal_ai.retrieval.metadata import MetadataFilters
 
 SUMMARISE_PROMPT = """Summarise these retrieved Indian legal provisions for
 a colleague researching: {question}
@@ -55,7 +58,7 @@ class ResearchResult:
         return len(self.angles)
 
 
-def _search(query: str, limit: int) -> list[Evidence]:
+def _search(query: str, limit: int, filters: MetadataFilters | None = None) -> list[Evidence]:
     """One search. No model call.
 
     Calls hybrid_search directly, at the width it will return. That is
@@ -69,7 +72,7 @@ def _search(query: str, limit: int) -> list[Evidence]:
     and wrong here.
     """
     try:
-        return list(hybrid_search(query, limit=limit))
+        return list(hybrid_search(query, limit=limit, filters=filters))
     except Exception:
         return []
 
@@ -149,22 +152,107 @@ def research(
     max_angles: int = DEFAULT_CONFIG.max_concurrent_research_units,
     limit: int = DEFAULT_CONFIG.limit_per_angle,
     conn: psycopg.Connection | None = None,
+    chain: tuple[str, ...] | None = None,
+    thread_context: ThreadContext | None = None,
+    discover_cases: bool | None = None,
 ) -> ResearchResult:
-    """Plan, search every angle, validate, rank, summarise."""
-    angles = plan_research(question, context=context, max_angles=max_angles)
+    """Plan, search every angle, validate, rank, summarise.
+
+    `chain` pins the model, for benchmark runs that must not slide down the
+    fallback chain midway and blend two models into one score.
+
+    `thread_context` supplies the jurisdiction to filter on. Phase 2 shipped
+    those filters and Phase 3 built the context that implies them, and
+    nothing passed one to the other -- so naming a court did nothing until
+    now.
+
+    `discover_cases` overrides the deterministic gate. Left None, judgments
+    are fetched only for a question that asks for them: discovery reaches a
+    third party, and paying that on every statute lookup would cost every
+    user seconds for an answer they did not ask for.
+    """
+    angles = plan_research(question, context=context, max_angles=max_angles, chain=chain)
+    filters = _filters_for(thread_context)
 
     per_angle: list[list[Evidence]] = []
     dropped: list[tuple[str, str]] = []
     for angle in angles:
-        result = validate(_search(angle.query, limit=limit), conn=conn)
+        result = validate(_search(angle.query, limit=limit, filters=filters), conn=conn)
         dropped.extend(result.dropped)
         per_angle.append(result.kept)
 
     ranked = _merge(per_angle, limit=limit)
+
+    judgments: list[Evidence] = []
+    if discover_cases if discover_cases is not None else wants_case_law(question):
+        judgments = _discover(question, ranked, thread_context, conn)
+
+    evidence = ranked + [j for j in judgments if j.document_id not in
+                         {e.document_id for e in ranked}]
     return ResearchResult(
         question=question,
         angles=angles,
-        summary=summarise(question, ranked),
-        evidence=ranked,
+        summary=summarise(question, evidence),
+        evidence=evidence,
         dropped=dropped,
     )
+
+
+def _filters_for(thread_context: ThreadContext | None) -> MetadataFilters | None:
+    """Retrieval filters the thread context implies, or None.
+
+    Not applied when the context names a court: `documents.court` is only
+    populated on judgments, so filtering statutes by it would return
+    nothing. Jurisdiction narrows case law, and case law is discovered
+    through its own path.
+    """
+    if thread_context is None:
+        return None
+    from legal_ai.context.builder import to_filters
+
+    filters = to_filters(thread_context)
+    if filters.decision_date_from is None and filters.decision_date_to is None:
+        return None
+    return MetadataFilters(
+        decision_date_from=filters.decision_date_from,
+        decision_date_to=filters.decision_date_to,
+    )
+
+
+def _discover(
+    question: str,
+    statutes: list[Evidence],
+    thread_context: ThreadContext | None,
+    conn: psycopg.Connection | None,
+) -> list[Evidence]:
+    """Judgments for a question that names no case.
+
+    The provisions just retrieved become the second query. A section number
+    is what a judgment quotes, so it is a far stronger handle on case law
+    than the user's own wording -- and it is grounded, unlike a phrase the
+    model recalled.
+    """
+    from legal_ai.knowledge.static.db import get_connection
+    from legal_ai.tools.judgments import discover_judgments
+
+    owns_connection = conn is None
+    connection = conn or get_connection()
+    try:
+        section_queries = section_identifiers(statutes, connection)
+    except Exception:
+        section_queries = []
+    finally:
+        if owns_connection:
+            connection.close()
+
+    try:
+        return discover_judgments(
+            question,
+            section_queries=section_queries,
+            court=court_filter(question, thread_context),
+            limit=DEFAULT_CONFIG.judgment_search_limit,
+        )
+    except Exception:
+        # Discovery is additive. A third party being down must not cost
+        # the caller the statutes that were already found.
+        return []
