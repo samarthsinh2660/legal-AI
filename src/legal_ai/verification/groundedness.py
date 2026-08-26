@@ -16,16 +16,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from legal_ai.schemas.verification import Claim
+
 import psycopg
-
-
-@dataclass(frozen=True)
-class Claim:
-    """A statement the system intends to make, and what it rests on."""
-
-    text: str
-    evidence_ids: tuple[str, ...] = ()
-    paragraph: int | None = None
 
 
 @dataclass(frozen=True)

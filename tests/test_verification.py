@@ -127,14 +127,20 @@ def test_coverage_of_no_citations_suggests_nothing(conn):
 
 # ------------------------------------------------------- graph integration
 
-def test_the_graph_loops_back_to_research_on_an_unsupported_claim():
-    from legal_ai.graph import nodes
+def test_the_graph_loops_back_to_research_on_an_unsupported_claim(monkeypatch):
     from legal_ai.graph.build import build_research_graph
 
+    # Claims come from the Analyst now, so the fabricated one is injected
+    # there rather than into the initial state -- the Analyst re-runs on
+    # every pass, which is what lets the loop reconsider newly researched
+    # findings, and would overwrite anything seeded on the channel.
+    monkeypatch.setattr(
+        "legal_ai.graph.nodes.analyst",
+        lambda state: {"claims": [Claim("a fabricated holding", (FAKE,))]},
+    )
     graph = build_research_graph()
     result = graph.invoke({
         "question": "what is the punishment for murder",
-        "claims": [Claim("a fabricated holding", (FAKE,))],
     })
     # Bounded: it re-researches, then ships with the gap flagged rather than
     # looping forever or silently dropping the claim.
@@ -143,7 +149,7 @@ def test_the_graph_loops_back_to_research_on_an_unsupported_claim():
     assert result["answer"]
 
 
-def test_the_graph_does_not_loop_when_every_claim_is_grounded():
+def test_the_graph_does_not_loop_when_every_claim_is_grounded(monkeypatch):
     from datetime import datetime, timezone
 
     from legal_ai.graph.build import build_research_graph
@@ -159,22 +165,28 @@ def test_the_graph_does_not_loop_when_every_claim_is_grounded():
             attribution_required=False,
         ),
     )
+    monkeypatch.setattr(
+        "legal_ai.graph.nodes.analyst",
+        lambda state: {"claims": [Claim("promoter must refund", (REAL,))]},
+    )
     result = build_research_graph().invoke({
         "question": "what is the punishment for murder",
-        "claims": [Claim("promoter must refund", (REAL,))],
         "findings": [retrieved],
     })
     assert result["verification_passes"] == 1
     assert result["unsupported_claims"] == []
 
 
-def test_a_claim_citing_a_real_document_the_thread_never_retrieved_still_loops():
+def test_a_claim_citing_a_real_document_the_thread_never_retrieved_still_loops(monkeypatch):
     # Cited correctly but never actually looked at: true by luck, which the
     # answer must not present as researched.
     from legal_ai.graph.build import build_research_graph
 
+    monkeypatch.setattr(
+        "legal_ai.graph.nodes.analyst",
+        lambda state: {"claims": [Claim("promoter must refund", (REAL,))]},
+    )
     result = build_research_graph().invoke({
         "question": "what is the punishment for murder",
-        "claims": [Claim("promoter must refund", (REAL,))],
     })
     assert result["unsupported_claims"] == ["promoter must refund"]
