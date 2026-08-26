@@ -89,3 +89,58 @@ def test_a_question_still_costs_one_model_call(monkeypatch):
     nodes.analyst({"question": "q", "findings": EVIDENCE})
     nodes.draft({"question": "q", "findings": EVIDENCE, "unsupported_claims": []})
     assert len(calls) == 1
+
+
+def test_an_ungrounded_claim_reaches_the_final_answer_labelled(monkeypatch):
+    """The whole reason the draft step exists, proven through the real graph.
+
+    Research, analyst, verification and draft all run. A claim citing a
+    document that does not exist must survive to the answer *marked*, not
+    silently deleted and not presented like the grounded ones.
+    """
+    from legal_ai.graph.build import build_research_graph
+
+    monkeypatch.setattr(
+        "legal_ai.graph.nodes.analyst",
+        lambda state: {
+            "claims": [Claim("a fabricated holding", ("act:9999:sec-nope",))],
+            "analysis": AnalysisResult(
+                lede="Short answer.",
+                claims=(Claim("a fabricated holding", ("act:9999:sec-nope",)),),
+            ),
+        },
+    )
+    result = build_research_graph().invoke({"question": "what is the punishment for murder"})
+
+    assert result["unsupported_claims"] == ["a fabricated holding"]
+    # Labelled in the text a reader actually sees.
+    assert "Could not be verified" in result["answer"]
+    assert "a fabricated holding" in result["answer"]
+    # And it must not be dressed up with a citation.
+    assert "act:9999:sec-nope" not in result["answer"]
+    assert result["draft_answer"].is_complete is False
+
+
+def test_a_grounded_run_produces_no_warning_section(monkeypatch):
+    """The control: without this, a test asserting the warning appears would
+    pass on a graph that printed the warning unconditionally."""
+    from legal_ai.graph.build import build_research_graph
+
+    grounded = Claim("promoter must refund", ("act:2158:sec-18",))
+    monkeypatch.setattr(
+        "legal_ai.graph.nodes.analyst",
+        lambda state: {
+            "claims": [grounded],
+            "analysis": AnalysisResult(lede="Short answer.", claims=(grounded,)),
+        },
+    )
+    # Deliberately not a builder/possession question: those trip the
+    # clarification gate without a state, which halts the run before
+    # verification and would make this pass for the wrong reason.
+    result = build_research_graph().invoke({
+        "question": "what is the punishment for murder",
+        "findings": EVIDENCE,
+    })
+    assert result["unsupported_claims"] == []
+    assert "Could not be verified" not in result["answer"]
+    assert result["draft_answer"].is_complete is True
