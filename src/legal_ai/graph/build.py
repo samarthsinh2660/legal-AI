@@ -82,4 +82,39 @@ def build_research_graph(
     return graph.compile(checkpointer=checkpointer)
 
 
+def _after_load(state) -> str:
+    """Stop on an unknown case rather than analysing an empty container.
+
+    An empty CaseAnalysis and a real one look alike from outside, and a
+    workspace showing "no issues" for a case that does not exist is worse
+    than an error.
+    """
+    return END if state.get("error") else "extract"
+
+
+def build_case_graph(checkpointer: MemorySaver | None = None):
+    """Compile the case graph.
+
+    Separate from the research graph because the two run on different
+    occasions. Research runs once per question; a case is opened, added to,
+    and opened again, and its analysis is a view of what is already known
+    rather than a new question. Nothing here researches -- evidence arrives
+    on the channel from the sessions the case has already run.
+    """
+    from legal_ai.graph import case_nodes
+    from legal_ai.graph.case_state import CaseState
+
+    graph = StateGraph(CaseState)
+    graph.add_node("load_case", case_nodes.load_case)
+    graph.add_node("extract", case_nodes.extract)
+    graph.add_node("analyse", case_nodes.analyse)
+
+    graph.add_edge(START, "load_case")
+    graph.add_conditional_edges("load_case", _after_load, {"extract": "extract", END: END})
+    graph.add_edge("extract", "analyse")
+    graph.add_edge("analyse", END)
+    return graph.compile(checkpointer=checkpointer)
+
+
 research_graph = build_research_graph()
+case_graph = build_case_graph()

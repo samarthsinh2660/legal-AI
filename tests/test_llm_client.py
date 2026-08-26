@@ -178,3 +178,31 @@ def test_a_response_without_candidates_is_not_treated_as_truncated():
     # read as "fine", never raise inside the success path.
     assert llm._was_truncated(type("R", (), {"text": "hi"})()) is False
     assert llm._was_truncated(type("R", (), {"text": "hi", "candidates": []})()) is False
+
+
+def test_requests_carry_a_timeout():
+    # A run was found stuck for 36 hours inside one call, having ignored
+    # the `timeout 2400` wrapped around it, because the request itself had
+    # no ceiling. A hung connection has to look like a failed model so the
+    # chain moves on -- which is the whole point of having a chain.
+    assert llm.REQUEST_TIMEOUT_MS > 0
+    # Long enough for a slow model on a long prompt: gemma-4-31b-it was
+    # measured at 44s for a trivial one.
+    assert llm.REQUEST_TIMEOUT_MS >= 60_000
+
+
+def test_the_timeout_is_passed_to_the_sdk(monkeypatch):
+    captured = {}
+
+    class _FakeGenai:
+        @staticmethod
+        def Client(**kwargs):
+            captured.update(kwargs)
+            return object()
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    import google.genai as real
+
+    monkeypatch.setattr(real, "Client", _FakeGenai.Client)
+    llm._client()
+    assert captured["http_options"].timeout == llm.REQUEST_TIMEOUT_MS

@@ -40,6 +40,11 @@ MAX_RETRIES_PER_MODEL = DEFAULT_CONFIG.max_retries_per_model
 # costs little to discover.
 RATE_LIMIT_BACKOFF_SECONDS = 8
 
+# Per-request ceiling, in milliseconds. Generous enough for a slow model on
+# a long prompt -- gemma-4-31b-it was measured at 44s for a trivial one --
+# and far below the point where a caller should still be waiting.
+REQUEST_TIMEOUT_MS = 120_000
+
 
 # Counts of chain-wide failures, for evals to distinguish "the system found
 # nothing" from "the API was unreachable". The two look identical in a score
@@ -69,11 +74,22 @@ class AllModelsUnavailable(RuntimeError):
 
 def _client():
     from google import genai
+    from google.genai import types
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set")
-    return genai.Client(api_key=api_key)
+    return genai.Client(
+        api_key=api_key,
+        # Without this a request can block indefinitely, and no outer
+        # timeout reliably clears it: a benchmark run was found stuck for
+        # 36 hours inside a single call, having ignored the `timeout 2400`
+        # wrapped around it. Several runs blamed on quota were this.
+        #
+        # A hung connection has to look like a failed model so the chain
+        # moves on -- that is what the chain is for.
+        http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS),
+    )
 
 
 class TruncatedResponse(Exception):

@@ -16,6 +16,7 @@ upload the file again. Nothing embeds it and nothing chunks it into
 from __future__ import annotations
 
 import io
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,6 +53,11 @@ def ensure_case_file_schema(conn: psycopg.Connection) -> None:
         )
         """
     )
+    # Extracted structure, stored so opening a case does not re-run the
+    # Document Agent over every file. Extraction costs a model call per
+    # 12,000-character window; re-doing it on each view would make a case
+    # with ten exhibits expensive to look at.
+    conn.execute("ALTER TABLE case_files ADD COLUMN IF NOT EXISTS facts JSONB")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS case_files_case_idx ON case_files (case_id, uploaded_at)"
     )
@@ -132,6 +138,54 @@ def store_case_file(
         ),
     )
     conn.commit()
+
+
+def store_facts(conn: psycopg.Connection, document_id: str, facts) -> None:
+    """Persist what the Document Agent extracted from a stored file.
+
+    A failed extraction is not written: `extraction_failed` means nothing
+    read the document, and storing that would make a later view treat "we
+    could not read it" as "it says nothing" -- permanently, since the view
+    would then find facts on record and not retry.
+    """
+    if getattr(facts, "extraction_failed", False):
+        return
+    payload = {
+        "document_type": facts.document_type,
+        "parties": list(facts.parties),
+        "dates": list(facts.dates),
+        "cited_sections": list(facts.cited_sections),
+        "issues": list(facts.issues),
+        "clauses": list(facts.clauses),
+        "claims": list(facts.claims),
+    }
+    conn.execute(
+        "UPDATE case_files SET facts = %s WHERE document_id = %s",
+        (json.dumps(payload), document_id),
+    )
+    conn.commit()
+
+
+def get_facts(conn: psycopg.Connection, document_id: str):
+    """Stored DocumentFacts, or None if this file has not been read yet."""
+    from legal_ai.context.models import DocumentFacts
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT facts FROM case_files WHERE document_id = %s", (document_id,))
+        row = cur.fetchone()
+    if row is None or row[0] is None:
+        return None
+    stored = row[0]
+    return DocumentFacts(
+        document_id=document_id,
+        document_type=stored.get("document_type"),
+        parties=tuple(stored.get("parties", ())),
+        dates=tuple(stored.get("dates", ())),
+        cited_sections=tuple(stored.get("cited_sections", ())),
+        issues=tuple(stored.get("issues", ())),
+        clauses=tuple(stored.get("clauses", ())),
+        claims=tuple(stored.get("claims", ())),
+    )
 
 
 def get_case_file_text(conn: psycopg.Connection, document_id: str) -> str | None:

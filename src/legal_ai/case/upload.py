@@ -29,6 +29,7 @@ from legal_ai.case.files import (
     ensure_case_file_schema,
     extract_text,
     store_case_file,
+    store_facts,
 )
 from legal_ai.case.store import attach_document
 from legal_ai.context.models import DocumentFacts
@@ -78,7 +79,11 @@ def upload_document(
         # should be reported as an extraction that broke.
         return DocumentFacts(document_id=document_id)
 
-    return extract_document_facts(document_id, text)
+    facts = extract_document_facts(document_id, text)
+    # Kept so opening the case later reads structure instead of paying for
+    # extraction again. A failed extraction is not stored -- see store_facts.
+    store_facts(conn, document_id, facts)
+    return facts
 
 
 def upload_path(
