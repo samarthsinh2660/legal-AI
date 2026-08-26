@@ -521,7 +521,7 @@ PHASE 4   Document + Case Intelligence
     |
 PHASE 5   Legal Analysis + Drafting
     |
-PHASE 6   Verification + Active Learning
+PHASE 6   Verification + Currency
     |
 PHASE 7   Advanced GraphRAG & Intelligence
 ```
@@ -533,7 +533,7 @@ PHASE 7   Advanced GraphRAG & Intelligence
 | 3. Research Agents | `PHASE_3_RESEARCH_AGENTS.md` | Can AI research intelligently? | AI performs legal research, not just search |
 | 4. Case Intelligence | `PHASE_4_CASE_DOCUMENT_INTELLIGENCE.md` | Can AI understand *this user's case*? | AI understands both Indian law and the user's particular case |
 | 5. Analysis/Drafting | `PHASE_5_ANALYSIS_DRAFTING.md` | Can AI reason over the evidence? | Evidence + case facts become structured legal analysis |
-| 6. Verification/Active | `PHASE_6_VERIFICATION_ACTIVE_LEARNING.md` | Can we make it trustworthy, and let it improve? | Every claim checked before shipping; usage never becomes law on its own |
+| 6. Verification/Currency | `PHASE_6_VERIFICATION_ACTIVE_LEARNING.md` | Can we make it trustworthy, and keep it trustworthy as the law changes? | Claims checked against what the cited section says, not just that it exists; amendments surfaced against what cites them |
 | 7. GraphRAG/Advanced | `PHASE_7_ADVANCED_GRAPHRAG.md` | Can we make the whole system significantly smarter? | A measurably smarter, benchmarked system, on a foundation already proven trustworthy |
 
 Team assignment falls out of this cleanly: Phase 1 is data engineering, not
