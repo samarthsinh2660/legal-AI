@@ -86,6 +86,11 @@ async def ingest_court(court: str, per_year: int) -> dict:
     by_year: dict[int, int] = {}
     async with bc.ArchiveClient() as client:
         for year in range(YEARS[0], YEARS[1] + 1):
+            # Reported per year, not only per court. A court-level line is
+            # one message after 45 minutes of downloads, which makes a
+            # stalled run and a slow one look identical.
+            year_started = time.monotonic()
+            before_stored = stats["stored"]
             async for judgment, text, problem in _fetch_court(client, court, year, per_year):
                 stats["seen"] += 1
                 if problem is not None:
@@ -104,6 +109,8 @@ async def ingest_court(court: str, per_year: int) -> dict:
                     continue
                 stats["stored" if changed else "unchanged"] += 1
                 by_year[year] = by_year.get(year, 0) + 1
+            print(f"    {court} {year}: +{stats['stored'] - before_stored} "
+                  f"({time.monotonic() - year_started:.0f}s)", flush=True)
     span = f"{min(by_year)}-{max(by_year)}" if by_year else "none"
     print(
         f"  {court:22} +{stats['stored']:4} new, {stats['unchanged']:4} known, "
@@ -182,6 +189,8 @@ async def ingest(court: str, judges: list[str], per_judge: int) -> dict:
 
 
 def main() -> None:
+    global YEARS
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--per-judge", type=int, default=40)
     parser.add_argument("--hc", default="delhi", help="High Court partition code")
@@ -190,11 +199,25 @@ def main() -> None:
         help="ingest every High Court by year instead of five judges of one",
     )
     parser.add_argument("--per-year", type=int, default=15,
-                        help="judgments per court per year (x11 years)")
+                        help="judgments per court per year")
+    parser.add_argument("--sc", action="store_true",
+                        help="ingest the Supreme Court year by year")
+    parser.add_argument("--from-year", type=int, default=2016)
+    parser.add_argument("--to-year", type=int, default=2026)
     args = parser.parse_args()
 
+    YEARS = (args.from_year, args.to_year)
     overall = {}
-    if args.all_hc:
+    if args.sc:
+        # The Supreme Court is the only citable court in the corpus: its
+        # judgments carry SCR citations, so they can be cited BY others.
+        # High Court judgments cannot (no citation column in the archive),
+        # which is why depth here, not breadth there, is what the precedent
+        # graph needs.
+        print(f"== Supreme Court, {args.per_year}/year across "
+              f"{YEARS[0]}-{YEARS[1]}", flush=True)
+        overall["sci"] = asyncio.run(ingest_court("sci", args.per_year))
+    elif args.all_hc:
         from bharat_courts import list_high_courts
 
         courts = [c.slug for c in list_high_courts()]
