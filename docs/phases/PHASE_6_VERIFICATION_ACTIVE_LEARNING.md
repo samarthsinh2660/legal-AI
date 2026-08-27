@@ -21,42 +21,47 @@ Both are failures where every id checks out and the answer is wrong.
 
 ## 1. Where we actually are
 
-Measured 2026-08-27.
+Measured 2026-08-28. **M13 is built and measured. M14 is not started.**
 
 ``` text
 act sections                 35,601
 acts                            860
-judgments                     4,658    26 courts, 2016-2026
-document_versions                 0
-judgment->judgment CITES         11    (§7)
+judgments                     5,826    26 courts; Supreme Court 1,366
+document_versions                 0    M14 has not run
 ```
 
-The verifier that exists (`src/legal_ai/verification/groundedness.py`)
-answers exactly one question, without a model, and therefore cannot itself
-hallucinate:
+M13 shipped as a funnel (§2.2): deterministic stages that always run, and a
+Verification Agent behind `verification_level`. Measured over 50 frozen
+claims, 2 runs on the model chain (§5):
 
-- Does `document_id` exist in the corpus?
-- Was it in the evidence this thread actually retrieved?
+``` text
+                    deterministic only    with the agent
+exact verdict               0.18                0.94
+catch rate                  1.00                0.97
+false alarms                0.84                0.00
+stage mismatches               0                   0
+flip rate                      -                0.06
+```
 
-That is a **reference check**. It is not a support check.
+The comparison is the result, not the 0.94. Deterministic checks alone
+"catch everything" by flagging 84% of correct claims, which is a checker a
+reader learns to ignore within a day.
 
-`document_versions` is empty. The amendment-archiving path in
-`upsert_document` is unit-tested and has never fired against real data,
-because nothing re-scrapes. Treat it as unproven.
-
-### 1.1 The gap, stated precisely
+### 1.1 What is checked, and what is not
 
 | Check | Status |
 |---|---|
-| Fabricated document id | done (id lookup) |
-| Claim cites nothing | done |
-| Cited but never retrieved | done |
-| **Cited section does not support the claim** | **missing** |
-| **Cited text has since been amended** | **missing** |
-| Judgment overruled / negative treatment | missing |
-| Wrong jurisdiction / court hierarchy | missing |
+| Fabricated document id | built, stage 1 |
+| Claim cites nothing | built, stage 1 |
+| Cited but never retrieved | built, stage 2 |
+| Quoted words absent from the cited text | built, stage 3 |
+| Cited text does not support the claim | built, stage 6 (agent) |
+| Cited text has since been amended | **M14, not started** |
+| Judgment overruled / negative treatment | Phase 7 |
+| Wrong jurisdiction / court hierarchy | Phase 7 |
 
-The two bolded rows are Phase 6.
+`document_versions` is still 0: nothing re-scrapes, so the amendment path
+has never run against real data. Treat it as unproven.
 
 ------------------------------------------------------------------------
 
@@ -556,96 +561,141 @@ result as a normal one. A verification badge that can appear without
 verification having happened would be the worst instance of the pattern,
 not the least.
 
-### 4.4 Settings
+### 4.4 Settings, as built
 
 ``` python
-verification_level: str = "quick"   # quick | research | verified
+verification_level: str = "quick"   # quick | verified
 ```
-The user's mode. `quick` is the default; stages 1--4 still run.
+
+On the graph state as well as in config, so one thread can be checked
+harder than another without changing a global.
+
+The default is `quick` **because of §5.3**, not to save money: the agent
+still approves about one claim in fifty that it should not. Spending on a
+check that reduces rather than removes false certainty is the reader's call
+to make.
 
 ``` python
-verification_scope: str = "statute"    # statute | all
+max_verification_passes: int = 2
 ```
-Stage 6 checks only claims citing Act sections. Section text is short,
-self-contained and states rules directly, so entailment is tractable.
-Judgment entailment needs the ratio separated from obiter --- Phase 7's
-IRAC work.
+
+The loop-back must terminate; an answer that ships with a labelled gap
+beats one that never ships.
 
 ``` python
-verification_strictness: str = "strict"   # strict | lenient
+MIN_QUOTE_CHARS = 40          # verification/quotes.py
 ```
-`strict` treats `PARTIALLY_SUPPORTED` as not established; `lenient` accepts
-it. A research query tolerates an overbroad claim flagged for follow-up; a
-document headed for filing does not.
+
+Below this a "quotation" is a common phrase that matches by coincidence,
+which would turn a free decisive check into a free wrong one.
+
+Currency (M14) is a separate job, not part of query serving, and is not
+built:
 
 ``` python
-verification_max_passes: int = 2
+currency_sync_statutes    weekly
+currency_sync_judgments   daily
+currency_reconcile_full   monthly
 ```
-Unchanged from Phase 3. The loop-back must terminate.
 
-``` python
-verification_quote_min_chars: int = 40
+### 4.5 Where the code lives
+
+``` text
+schemas/verification.py       Claim, Verdict, ClaimVerdict, VerificationReport
+verification/groundedness.py  stages 1-2   SQL, no model
+verification/quotes.py        stage 3      string compare, no model
+agents/verifier.py            stage 6      the only part that reasons
+verification/pipeline.py      stage order and routing
+graph/nodes/__init__.py       verification() -- wires it into the graph
 ```
-Stage 3 threshold. Below this a "quotation" is a common phrase that will
-string-match by coincidence, converting a free decisive check into a free
-wrong one.
 
-Currency is a separate job, not part of query serving:
-
-``` python
-currency_sync_statutes: str = "weekly"
-currency_sync_judgments: str = "daily"
-currency_reconcile_full: str = "monthly"
-currency_diff_min_ratio: float = 0.02   # below this, treat as formatting
-```
+The agent sits in `agents/` with the other roles that call a model; the
+lookups stay in `verification/`. That split is the boundary between
+checking by looking something up and checking by reading it.
 
 ------------------------------------------------------------------------
 
-## 5. Evaluation --- required before M13 ships
+## 5. Evaluation --- what was measured
 
-M13 without a labelled set is the citation guard's situation again: built,
-plausible, never proven to fire correctly. `evals/datasets/` gains a
-support set of ~30 claim/section pairs:
+`evals/datasets/verification.json`, `evals/run_verification.py`.
 
-- ~10 genuinely supported
-- ~10 **misgrounded** --- right Act, wrong section; or the section is real
-  and relevant but the claim overstates it (the RegLab failure mode, and
-  the only rows that actually discriminate)
-- ~10 unsupported --- section does not address the proposition
+### 5.1 Why the answers are frozen
 
-Metrics:
+The 50 claims are fixtures written against the **real stored text** of the
+sections they cite. Answers are not generated at eval time, so the verifier
+is the only variable: the inputs are deterministic, the run is cheap to
+repeat across the model chain, and the number is attributable to the
+checker rather than to whichever model happened to write the answer.
 
-- **precision and recall on UNSUPPORTED** --- does the checker catch
-  misgrounding without rejecting good claims?
-- **flip rate** --- how often the same pair changes verdict across three
-  runs of the same model. This is the direct measurement of the
-  self-inconsistency in §2.4, and it decides whether
-  `verification_mode = "full"` can be defaulted on.
-- **residue rate** --- what fraction of claims survive stages 1--5 and
-  reach the model. §2.2.2 assumes this is small; if legal claims are
-  mostly paraphrase it will not be, and the funnel's cost saving
-  evaporates. Measure it before claiming it.
-- **stage attribution** --- which stage caught each rejection. If stage 3
-  catches nothing on the misgrounded rows, quotation matching is not
-  earning its place and should be cut.
-- **INSUFFICIENT vs UNSUPPORTED confusion** --- how often a claim whose
-  evidence was never retrieved is reported as `UNSUPPORTED`. Per §2.0.2
-  this should be structurally impossible; the metric exists to prove the
-  guard holds rather than to trust that it does.
+``` text
+SUPPORTED             17
+UNSUPPORTED           17
+PARTIALLY_SUPPORTED   14
+INSUFFICIENT_EVIDENCE  2
+```
 
-Two invariants get tests rather than metrics, because they are properties
-that either hold or do not:
+Nine carry an `expected_stage`: a claim a string comparison can settle must
+not cost a model call, and that is checkable rather than assumed.
 
-- **Answer stability across modes** (§4.2). Same question, same evidence,
-  Quick and Verified -> identical answer body. A diff is a failure.
-- **No silent downgrade** (§4.3). With stage 6 forced to fail, a `verified`
-  request must report that verification did not run. Returning a Quick
-  answer labelled Verified is a failure.
+### 5.2 Results --- 50 cases, 2 runs, model chain
 
-Run across the model chain, as with the contradictions benchmark. Reference:
-contradiction detection moved 0.20 -> 0.95 recall between models on the same
-28-case set, so the model choice, not the design, may dominate the result
-here too.
+``` text
+                    deterministic only    with the agent
+exact verdict               0.18                0.94
+catch rate                  1.00                0.97
+false alarms                0.84                0.00
+residue rate                0.00                0.82
+stage mismatches               0                   0
+flip rate                      -                0.06
+```
+
+- **False alarms 0.84 -> 0.00.** Every flag the agent raises is deserved.
+  This is what the model stage buys, and without the baseline column it
+  would look like an unearned 0.94.
+- **Stage mismatches 0.** All nine quote and reference cases settled before
+  the model, including the Delhi HC failure shape (`quote-04`: real
+  section, invented words) caught by string comparison at zero cost.
+- **Flip rate 0.06.** Low enough to default `verified` on. The
+  LLM-as-judge literature (§2.4) predicted this might not hold; it did.
+
+### 5.3 The failure that remains
+
+Roughly **one claim in fifty is approved that should not be, and which one
+varies between runs**:
+
+``` text
+run 1   uns-09    "the Centre must consist of at least seven members"
+                  -> SUPPORTED, from a section stating no number
+run 2   part-03   an overstated claim read as SUPPORTED
+```
+
+A false statement of law presented as checked is the failure this phase
+exists to prevent, so it is recorded rather than averaged into the 0.94.
+Verified mode **reduces false certainty; it does not remove it**, and no
+product surface may claim otherwise.
+
+The direction is at least the safer one: of the misses, all but these err
+toward over-flagging, which costs a reader a second look rather than
+misleading them.
+
+### 5.4 Residue is 0.82, not small
+
+The funnel's cost argument assumed most claims would drain out before the
+model. They do not: legal claims are overwhelmingly paraphrase, so 41 of 50
+reached it. The saving is real but comes from **batching**, not from
+draining -- one call per answer rather than one per claim.
+
+### 5.5 The dataset's real limitation
+
+One author wrote both the claims and the labels. Two labels were wrong
+(`sup-06`, `sup-15` -- both dropped a condition the section imposes) and
+were found only because the agent disagreed; they are corrected and
+relabelled `part-11` and `part-12`, with the reason recorded in the file.
+
+That cuts both ways: there may be labels where the agent agreed with a
+mistake and neither party noticed. **50 statute-only cases from one author
+is a floor, not a verdict.** A set written independently, or drawn from
+judgments rather than sections, would be a materially stronger test.
 
 ------------------------------------------------------------------------
 
@@ -873,24 +923,23 @@ Research, 2026-08-26.
 
 ## 9. Milestones
 
-### Milestone 13 --- Support verification
+### Milestone 13 --- Support verification  **DONE**
 
-Build the funnel of §2.2 in stage order, cheapest first:
+Built: four-state verdicts with the retrieval-decides guard; quotation
+matching; the Verification Agent; the funnel; `verification_level`; 50-case
+labelled eval. Measured in §5. 51 tests.
 
-1. **Four-state classification** (§2.0.1) with the retrieval-decides guard
-   (§2.0.2), and coverage reported separately from confidence (§2.0.3).
-   No model involved; this is a reporting change and it should land first,
-   because it is what stops the existing verifier from mislabelling gaps.
-2. **Stage 3, quotation matching** --- deterministic, free, catches the
-   Delhi HC failure mode.
-3. **Verification levels** (§4) with the two invariants under test:
-   answer stability across modes, and no silent downgrade.
-4. **Stage 6, batched entailment** --- gated behind `verification_level`,
-   shipped only with the §5 labelled set, a measured flip rate and a
-   measured residue rate.
+Two invariants are enforced by test rather than by documentation:
 
-Stages 1--2 exist. Stage 4 arrives with M14. Stage 5 waits on citation
-normalisation (§7).
+- **Answer stability** -- the same question over the same evidence produces
+  the same answer body in both modes. Verification annotates; it never
+  rewrites, softens or removes.
+- **No silent downgrade** -- a `verified` run that cannot verify raises
+  rather than returning quick output wearing a verified label.
+
+Not built, and deferred deliberately: stage 4 (version currency) arrives
+with M14; stage 5 (authority status) needs a citation graph the corpus
+cannot yet support (§7).
 
 ### Milestone 14 --- Currency
 

@@ -154,27 +154,44 @@ def analyst(state: ResearchState) -> dict:
 
 
 def verification(state: ResearchState) -> dict:
-    """Groundedness, then coverage.
+    """Run the verification funnel over the Analyst's claims.
 
-    Groundedness runs first and uses no model, so it cannot itself
-    hallucinate. See legal_ai.verification.
+    Deterministic stages always run; the Verification Agent runs only when
+    the reader asked for it (`verification_level`). See
+    legal_ai.verification.pipeline for the stage order and why it is that
+    order.
+
+    `unsupported_claims` carries only claims we have a *finding against* --
+    never claims we merely could not check. Re-researching a claim whose
+    evidence contradicts it can help; re-researching one whose evidence we
+    do not hold cannot, and looping on it would spend passes to no purpose.
     """
+    from legal_ai.config import DEFAULT_CONFIG
     from legal_ai.knowledge.static.db import get_connection
-    from legal_ai.verification.groundedness import check_groundedness
+    from legal_ai.verification.pipeline import verify
 
     passes = state.get("verification_passes", 0) + 1
     claims = state.get("claims") or []
     if not claims:
-        # Nothing produces claims until the Analyst lands in Phase 5.
-        return {"verification_passes": passes, "unsupported_claims": []}
+        return {"verification_passes": passes, "unsupported_claims": [],
+                "verification_report": None}
 
+    level = state.get("verification_level") or DEFAULT_CONFIG.verification_level
     retrieved = {item.document_id for item in state.get("findings") or [] if item.document_id}
+
     conn = get_connection()
     try:
-        result = check_groundedness(claims, conn, available_ids=retrieved)
+        report = verify(
+            claims, conn, available_ids=retrieved, use_model=(level == "verified")
+        )
     finally:
         conn.close()
-    return {"verification_passes": passes, "unsupported_claims": result.unsupported_texts}
+
+    return {
+        "verification_passes": passes,
+        "unsupported_claims": report.unsupported_texts,
+        "verification_report": report,
+    }
 
 
 def draft(state: ResearchState) -> dict:

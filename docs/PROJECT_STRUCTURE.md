@@ -546,6 +546,31 @@ from their names:
 
 ---
 
+## 18b. Verification --- where the pieces live
+
+The split is between checking by **looking something up** and checking by
+**reading**. Only the second needs a model, and it is the only piece in
+`agents/`.
+
+``` text
+schemas/verification.py       Claim, Verdict, ClaimVerdict, VerificationReport
+verification/groundedness.py  does the citation exist, did we retrieve it   SQL
+verification/quotes.py        do the quoted words appear in the source      strcmp
+agents/verifier.py            does the text support the claim               MODEL
+verification/pipeline.py      stage order, routing, and what each mode costs
+```
+
+`verify()` in `pipeline.py` is the only entry point the graph calls. Stages
+run cheapest first and can only reject; the agent may add rejections but
+never overturn one, because a stage that can approve is a stage that can
+hallucinate an approval.
+
+`Claim` lives in `schemas/` rather than `verification/` because both sides
+need it: `agents/` may import `schemas/` but not `verification/`, so keeping
+the type in the checker would make every producer depend on its own checker.
+
+---
+
 ## 19. Build order
 
 Follows the 7-phase roadmap in `AI_PROJECT_PROPOSAL.md` §11. Each phase has
