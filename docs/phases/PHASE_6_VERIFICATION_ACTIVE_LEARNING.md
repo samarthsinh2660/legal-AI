@@ -36,9 +36,9 @@ claims, 2 runs on the model chain (§5):
 
 ``` text
                     deterministic only    with the agent
-exact verdict               0.18                0.94
+exact verdict               0.18            0.92 - 0.94
 catch rate                  1.00                0.97
-false alarms                0.84                0.00
+false alarms                0.82                0.00
 stage mismatches               0                   0
 flip rate                      -                0.06
 ```
@@ -641,13 +641,17 @@ not cost a model call, and that is checkable rather than assumed.
 
 ``` text
                     deterministic only    with the agent
-exact verdict               0.18                0.94
+exact verdict               0.18            0.92 - 0.94
 catch rate                  1.00                0.97
-false alarms                0.84                0.00
+false alarms                0.82                0.00
 residue rate                0.00                0.82
 stage mismatches               0                   0
 flip rate                      -                0.06
 ```
+
+Three runs across two sessions. `exact verdict` is given as a range because
+it moves run to run: a single number would imply a precision the flip rate
+(0.06) says is not there.
 
 - **False alarms 0.84 -> 0.00.** Every flag the agent raises is deserved.
   This is what the model stage buys, and without the baseline column it
@@ -667,7 +671,14 @@ varies between runs**:
 run 1   uns-09    "the Centre must consist of at least seven members"
                   -> SUPPORTED, from a section stating no number
 run 2   part-03   an overstated claim read as SUPPORTED
+run 3   part-03   the same claim, again read as SUPPORTED
 ```
+
+`part-03` -- "any person may apply on behalf of a minor", where the section
+says a parent or guardian -- has now failed twice, so it looks like a weak
+spot rather than noise. `uns-09` recovered to PARTIALLY_SUPPORTED in run 3,
+which is flagged and therefore safe. The count stays at roughly one false
+approval in fifty; which claim it lands on is what varies.
 
 A false statement of law presented as checked is the failure this phase
 exists to prevent, so it is recorded rather than averaged into the 0.94.

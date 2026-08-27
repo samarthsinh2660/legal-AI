@@ -41,18 +41,34 @@ class DraftAnswer:
     applicable_law: tuple[str, ...] = ()
     key_judgments: tuple[str, ...] = ()
 
-    # Claims the verifier could not ground, kept and labelled rather than
-    # dropped. Silently removing them would leave the reader unable to tell
-    # a short answer from an incomplete one.
+    # Claims the retrieved evidence does not support -- a finding against
+    # the claim. Kept and labelled rather than dropped: silently removing
+    # them would leave the reader unable to tell a short answer from an
+    # incomplete one.
     needs_verification: tuple[str, ...] = ()
+
+    # Claims we could NOT check, which is a different thing and must not
+    # read the same. Either we do not hold the material, or semantic
+    # verification was not enabled for this run. Telling a lawyer a claim
+    # is unsupported when we simply did not look is a claim we cannot make.
+    unchecked: tuple[str, ...] = ()
+
+    # Claims the evidence supports in part -- true but overstated, or
+    # narrowed by a condition the claim drops.
+    partially_supported: tuple[str, ...] = ()
 
     citations: tuple[str, ...] = ()
     disclaimer: str = DISCLAIMER
 
     @property
     def is_complete(self) -> bool:
-        """Whether every claim made was grounded."""
-        return not self.needs_verification
+        """Whether every claim made was verified and supported.
+
+        `unchecked` counts: an answer whose claims were never checked is
+        not a complete answer, however true it may turn out to be.
+        """
+        return not (self.needs_verification or self.unchecked
+                    or self.partially_supported)
 
 
 @dataclass(frozen=True)

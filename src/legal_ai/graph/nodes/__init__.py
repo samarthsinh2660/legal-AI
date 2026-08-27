@@ -213,5 +213,6 @@ def draft(state: ResearchState) -> dict:
         analysis,
         list(state.get("findings") or []),
         unsupported=tuple(state.get("unsupported_claims") or []),
+        report=state.get("verification_report"),
     )
     return {"answer": render(answer), "draft_answer": answer}
