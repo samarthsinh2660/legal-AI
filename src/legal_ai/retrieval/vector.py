@@ -29,6 +29,24 @@ from legal_ai.retrieval.metadata import MetadataFilters
 # Callers may still pass max_distance explicitly.
 DEFAULT_MAX_DISTANCE = None
 
+# HNSW is approximate, and its default ef_search of 40 stops being enough
+# as the index grows. Measured 2026-08-27 against 107k vectors, for a query
+# far from anything stored:
+#
+#     ef_search=40    0 rows        <- pgvector default
+#     ef_search=100   2 rows
+#     ef_search=400   5 rows
+#     exact scan      5 rows, nearest at distance 0.72
+#
+# Nearest neighbours existed the whole time; the graph traversal simply
+# failed to reach them, and returned empty rather than erroring. An unusual
+# query therefore looked like a query with no answer -- the exact confusion
+# this system must not make (PHASE_6 §2.0). Raising ef_search costs search
+# time and buys recall; it must be set per query, not per index, because it
+# has to scale with the number of rows asked for.
+HNSW_EF_SEARCH = 400
+
+
 
 def search_vector(
     conn: psycopg.Connection,
@@ -54,6 +72,10 @@ def search_vector(
     chunk_distance_sql, chunk_distance_params = distance_clause("c.embedding")
 
     with conn.cursor() as cur:
+        # Applies to this transaction only, so a caller's session is not
+        # left with a changed planner setting.
+        cur.execute(f"SET LOCAL hnsw.ef_search = {HNSW_EF_SEARCH}")
+
         # Whole-document vectors: short documents that were embedded intact.
         cur.execute(
             f"""

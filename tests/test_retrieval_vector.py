@@ -143,3 +143,29 @@ def test_search_vector_reports_each_document_once_not_once_per_chunk(conn):
     ids = [doc_id for doc_id, _d in results]
 
     assert ids.count("test:vec-multi") == 1
+
+
+# --- HNSW recall: added 2026-08-27 -------------------------------------
+
+def test_an_out_of_distribution_query_still_returns_nearest_neighbours(conn):
+    """Empty must mean "nothing stored", never "the index gave up".
+
+    HNSW's default ef_search of 40 returned 0 rows for this query against
+    107k vectors while nearest neighbours sat at distance 0.72, reachable
+    by exact scan. A query the corpus cannot answer well and a query the
+    corpus cannot answer at all must not look identical.
+    """
+    results = search_vector(conn, "zxcvbnm qwertyuiop asdfghjkl", limit=5)
+
+    assert len(results) == 5
+    # Genuinely far away -- this is recall, not a claim of relevance.
+    assert all(distance > 0.5 for _doc_id, distance in results)
+
+
+def test_ef_search_is_set_high_enough_for_the_limit_asked_for():
+    # ef_search below the requested limit cannot return that many rows.
+    from legal_ai.retrieval.vector import HNSW_EF_SEARCH
+
+    from legal_ai.config import DEFAULT_CONFIG
+
+    assert HNSW_EF_SEARCH >= DEFAULT_CONFIG.search_limit
