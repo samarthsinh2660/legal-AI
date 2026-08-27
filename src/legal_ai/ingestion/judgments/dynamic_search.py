@@ -67,8 +67,29 @@ class JudgmentSearchResult:
         return self.documents[0] if self.documents else None
 
 
+# Fraction of a judgment's characters that must be letters for the text to
+# be prose rather than noise. Measured over 4,070 judgments on 2026-08-27:
+# real text clusters at 0.6-0.8, while PDFs with a broken font encoding map
+# extract as mojibake (`!" #$%$ &'())`) at 0.03-0.06. At 0.15 the split is
+# clean -- 174 rejected, none of them readable, and the shortest genuine
+# procedural orders (alpha 0.22) survive.
+MIN_ALPHA_RATIO = 0.15
+
+
 def _text_check(doc: CanonicalDocument) -> bool:
-    return len(doc.full_text.strip()) >= 200
+    """Length alone was not enough.
+
+    A scanned judgment whose text layer holds only the registrar's
+    e-signature ("I attest to the accuracy and integrity of this document")
+    clears 200 characters, and so does a whole document of mojibake -- one
+    was 60,857 characters of it. Both were being embedded, chunked and made
+    retrievable as though they were judgments.
+    """
+    text = doc.full_text.strip()
+    if len(text) < 200:
+        return False
+    letters = sum(1 for ch in text if ch.isalpha())
+    return letters / len(text) >= MIN_ALPHA_RATIO
 
 
 def _verify(documents: list[CanonicalDocument]) -> tuple[bool, list[str]]:
@@ -138,7 +159,21 @@ def _archive_pdf_url(judgment) -> tuple[str, bool]:
     )
 
 
+def _strip_nuls(text: str) -> str:
+    """PostgreSQL text columns cannot hold NUL (0x00), and pypdf emits them
+    from some scanned PDFs' text layers.
+
+    Measured 2026-08-27: one judgment in ~1,500 raised
+    `DataError: PostgreSQL text fields cannot contain NUL (0x00) bytes`
+    and was dropped as a counted skip -- a real judgment lost to a byte
+    that carries no meaning. Stripped here, before content_hash is taken,
+    so the hash describes what is actually stored.
+    """
+    return text.replace("\x00", "")
+
+
 def _to_canonical(judgment, full_text: str, fallback_title: str) -> CanonicalDocument:
+    full_text = _strip_nuls(full_text)
     document_id = f"judgment:{(judgment.cnr or judgment.case_id or content_hash(judgment.title or fallback_title)[:12]).lower()}"
     court_name = judgment.court.name if judgment.court else (judgment.court_name_raw or None)
     parties = None
@@ -156,7 +191,7 @@ def _to_canonical(judgment, full_text: str, fallback_title: str) -> CanonicalDoc
     return CanonicalDocument(
         document_id=document_id,
         document_type="judgment",
-        title=judgment.title or fallback_title,
+        title=_strip_nuls(judgment.title or fallback_title),
         court=court_name,
         citation=judgment.citation,
         case_number=judgment.case_id,
