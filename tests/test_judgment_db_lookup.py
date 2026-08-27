@@ -39,12 +39,23 @@ def _judgment(doc_id: str, title: str) -> CanonicalDocument:
     )
 
 
+# _check_db searches the whole documents table, not only the rows this
+# fixture inserts, so the fixture titles must be ones no real judgment can
+# collide with. Realistic-looking names do not work: "Ramesh Kumar vs State
+# of Kerala" is the exact shape of a real cause title, and once the corpus
+# held actual High Court judgments, queries built from it matched
+# `PRAVEEN KUMAR Vs STATE OF KERALA` and three others on merit. Invented
+# tokens keep these tests about matching behaviour rather than corpus size.
+PARTY_A = "Zylorbnak Quovex"
+PARTY_B = "Threnvia Wollup"
+
+
 @pytest.fixture
 def stored():
     connection = get_connection()
     ensure_schema(connection)
-    upsert_document(connection, _judgment("test:j1", "Ramesh Kumar vs State of Kerala"))
-    upsert_document(connection, _judgment("test:j2", "Sunita Devi vs Union of India"))
+    upsert_document(connection, _judgment("test:j1", f"{PARTY_A} vs State of Nimbara"))
+    upsert_document(connection, _judgment("test:j2", f"{PARTY_B} vs Union of Kesteral"))
     yield connection
     with connection.cursor() as cur:
         cur.execute("DELETE FROM documents WHERE document_id LIKE 'test:%'")
@@ -53,14 +64,14 @@ def stored():
 
 
 def test_finds_the_matching_judgment_by_title(stored):
-    found = _check_db("Ramesh Kumar vs State of Kerala")
+    found = _check_db(f"{PARTY_A} vs State of Nimbara")
     assert [d.document_id for d in found] == ["test:j1"]
 
 
 def test_partial_title_above_the_threshold_still_matches(stored):
-    # A user rarely types the full cause title; "Sunita Devi Union India"
+    # A user rarely types the full cause title; a partial name
     # is 4 of 4 significant words, all present in j2's title.
-    found = _check_db("Sunita Devi Union India")
+    found = _check_db(f"{PARTY_B} Union Kesteral")
     assert [d.document_id for d in found] == ["test:j2"]
 
 
@@ -84,7 +95,7 @@ def test_the_threshold_is_a_fraction_of_the_query_not_the_title(stored):
     # the shared word is distinctive. Matching on the query's side keeps
     # a long stored title from being matched by a single lucky hit.
     assert DB_TITLE_WORD_OVERLAP_THRESHOLD > 0.2
-    assert _check_db("Ramesh contract breach damages arbitration") == []
+    assert _check_db("Zylorbnak contract breach damages arbitration") == []
 
 
 # --- multi-result lookup (the lazy cache grew one document per query) ---
@@ -94,20 +105,33 @@ def test_the_db_check_returns_as_many_as_asked_for(stored):
 
     # Both stored titles share "vs" only, which is below the word floor, so
     # a query covering both must name words from each.
-    found = _check_db("Ramesh Kumar State Kerala", limit=5)
+    found = _check_db(f"{PARTY_A} State Nimbara", limit=5)
     assert [d.document_id for d in found] == ["test:j1"]
 
 
 def test_the_db_check_still_honours_the_threshold(stored):
+    """Below-threshold overlap returns nothing.
+
+    _check_db searches the whole documents table, not just this module's
+    fixture rows, so the query must be one no *real* stored judgment can
+    match either. The earlier version asked for "insolvency resolution
+    professional" and passed only while the corpus was nearly empty; once
+    it held real judgments, `ANUJ JAIN INTERIM RESOLUTION PROFESSIONAL ...`
+    matched on merit and the test failed. Invented tokens keep the
+    assertion about the threshold rather than about corpus size.
+    """
     from legal_ai.ingestion.judgments.dynamic_search import _check_db
 
-    assert _check_db("insolvency resolution professional", limit=5) == []
+    # One fixture word out of four significant words = 0.25 overlap, below
+    # the 0.6 threshold. No real title can reach 0.6 against the other
+    # three.
+    assert _check_db("Zylorbnak wibbrax plorbnak grumfitz", limit=5) == []
 
 
 def test_a_lookup_stops_at_one(stored):
     from legal_ai.ingestion.judgments.dynamic_search import search_judgment
 
-    result = search_judgment("Ramesh Kumar vs State of Kerala", live=False)
+    result = search_judgment(f"{PARTY_A} vs State of Nimbara", live=False)
     assert result.found
     assert len(result.documents) == 1
     # `document` stays available for callers that want exactly one.
@@ -119,7 +143,7 @@ def test_discovery_asks_for_more_than_one(stored):
 
     # Only one stored judgment matches, so this reports a partial result
     # rather than pretending it filled the request.
-    result = search_judgments("Ramesh Kumar State Kerala", limit=5, live=False)
+    result = search_judgments(f"{PARTY_A} State Nimbara", limit=5, live=False)
     assert result.found
     assert len(result.documents) == 1
     assert "1 of 5 requested" in result.notes[0]

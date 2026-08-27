@@ -21,12 +21,14 @@ Both are failures where every id checks out and the answer is wrong.
 
 ## 1. Where we actually are
 
-Measured 2026-08-26.
+Measured 2026-08-27.
 
 ``` text
-act sections in corpus      36,461
-judgments in corpus             37  (was 18 before 2026-08-27 ingest)
-document_versions rows           0
+act sections                 35,601
+acts                            860
+judgments                     4,658    26 courts, 2016-2026
+document_versions                 0
+judgment->judgment CITES         11    (§7)
 ```
 
 The verifier that exists (`src/legal_ai/verification/groundedness.py`)
@@ -59,6 +61,106 @@ The two bolded rows are Phase 6.
 ------------------------------------------------------------------------
 
 ## 2. Milestone 13 --- Support verification
+
+### 2.0 The cardinal rule
+
+> **Never turn "we didn't find it" into "it doesn't exist."**
+
+This governs everything below, and it is written here rather than buried in
+an implementation note because every other decision in this phase follows
+from it.
+
+Verification is **not a gate that blocks answers.** It is an evidence-quality
+layer that says how strongly each claim can be made. A verifier that
+suppresses an answer whenever our corpus is thin does not produce a careful
+product; it produces a useless one, and it produces a *dishonest* one,
+because silence reads to a user as "there is nothing there."
+
+With 4,658 judgments against a live Indian corpus in the crores, absence of
+evidence is our normal condition, not an edge case. A design that treats
+"not found" as "not so" would be wrong on most queries it ever sees.
+
+So verification **rejects false certainty, not answers.**
+
+### 2.0.1 Four states, not two
+
+`SUPPORTED` / `UNSUPPORTED` is too coarse, and the coarseness is exactly
+where the dishonesty enters.
+
+| State | Meaning | Who decides |
+|---|---|---|
+| `SUPPORTED` | Retrieved evidence establishes the claim | stage 3 or stage 6 |
+| `PARTIALLY_SUPPORTED` | Evidence supports part; the claim overstates or narrows | stage 6 |
+| `INSUFFICIENT_EVIDENCE` | We did not retrieve material capable of settling this | **retrieval, mechanically** |
+| `UNSUPPORTED` | We retrieved relevant material and it does not support the claim | stage 6 |
+
+**`UNSUPPORTED` is not "no data".** One is a finding against the claim; the
+other is a gap in our shelf. Presenting a gap as a finding is the same
+category of error as presenting a guess as a citation.
+
+### 2.0.2 The guard: who is allowed to say INSUFFICIENT
+
+A four-state scheme has an obvious failure mode --- `INSUFFICIENT_EVIDENCE`
+becomes a soft landing where anything awkward gets filed to avoid the
+harder verdict, and the checker quietly stops checking.
+
+The guard is that **the model never chooses between `INSUFFICIENT_EVIDENCE`
+and `UNSUPPORTED`.** That distinction is a retrieval fact, not a judgement:
+
+``` text
+did retrieval return material on this claim's subject?
+   |
+   +-- no  -> INSUFFICIENT_EVIDENCE      (mechanical, stage 6 never runs)
+   |
+   +-- yes -> stage 6 decides only between
+              SUPPORTED / PARTIALLY_SUPPORTED / UNSUPPORTED
+```
+
+Stage 6 is handed only claims whose evidence exists. It is never offered
+"I couldn't find anything" as an available answer, so it cannot hide behind
+one.
+
+### 2.0.3 Coverage and confidence are different axes
+
+Conflating these is how a system ends up sounding certain about a corner of
+the law it never looked at.
+
+``` text
+Confidence:  how strongly the evidence we found supports the claim
+Coverage:    how much of the relevant source universe we actually searched
+```
+
+They move independently, and today they are far apart:
+
+``` text
+Confidence: HIGH      the sections and judgments we found do support this
+Coverage:   LIMITED   4,658 judgments; 25 High Courts; no district courts
+```
+
+Reporting only confidence would be a true statement that leaves a false
+impression. Both go in the answer.
+
+### 2.0.4 What the reader sees
+
+The answer ships either way. What changes is the annotation around it:
+
+``` text
+Based on the sources reviewed:
+  <the answer>
+
+Relevant authorities:
+  <citations>
+
+Coverage limitation:
+  No Gujarat High Court authority on this point was found in the
+  corpus searched. This part should be independently verified.
+```
+
+That is a stronger legal product than either hallucinated certainty or a
+refusal, because it tells the reader where the evidence stops --- which is
+the thing a lawyer actually needs in order to know what to do next.
+
+------------------------------------------------------------------------
 
 ### 2.1 The failure this targets
 
@@ -147,12 +249,11 @@ comparison says so with certainty a model could never offer.
 Every judgment we store keeps its `full_text`. We already have what stage 3
 needs.
 
-### 2.2.2 What routes a claim to stage 6 --- and a correction
+### 2.2.2 What routes a claim to stage 6
 
-The suggested routing was "8 claims verified mechanically, 2 uncertain ones
-go to the model". The batching is right and the cost saving is real. The
-word **verified** is not, and the distinction decides whether this design
-works.
+Batching the residue into one call is right, and the cost saving is real.
+But a claim that survives the mechanical stages is not thereby *verified*,
+and that distinction decides whether the design works.
 
 **Misgrounding passes every mechanical check.** Real id, genuinely
 retrieved, correct section number, current version, still good law --- and
@@ -173,10 +274,9 @@ are the confident ones. Route by the **form of the claim** instead:
 Paraphrase is the residue, and it is where misgrounding lives. Everything
 else drains out of the funnel for free.
 
-An honest consequence: the 8/2 split is a hoped-for ratio, not a measured
-one. If our answers are mostly paraphrase --- which, for legal analysis,
-they may well be --- the residue is large and the saving is small. §5 adds
-**residue rate** to the metrics so we find out rather than assume.
+The size of that residue is unmeasured. If legal answers are mostly
+paraphrase, it is large and the saving is small. §5 measures it rather than
+assuming it.
 
 ### 2.3 What stage 6 actually does
 
@@ -212,9 +312,10 @@ checker that does neither well:
 Shepard's/KeyCite-style treatment tracking answers the second. Entailment
 answers the first. In this phase they are M13 (stage 6) and M14 (stage 4)
 respectively, and stage 5 --- precedent treatment --- is deferred to Phase 7
-because it needs a citation graph we do not have at 37 judgments.
+because it needs a citation graph we do not have: 3,823 citations were
+extracted from the corpus and 2 resolved (§7).
 
-### 2.4 Known weakness, recorded up front
+### 2.4 Known weakness
 
 Stage 6 is an LLM judge, and LLM judges are measurably unreliable
 instruments. "Rating Roulette" documents low self-consistency for the same
@@ -224,7 +325,7 @@ establish factuality --- a model can be consistently wrong, and
 self-evaluation amplifies systematic bias rather than correcting it,
 because it is AI checking AI with no external ground truth.
 
-Three consequences we accept deliberately:
+Three deliberate consequences:
 
 1. Stage 6 is **advisory downward only** (§2.2). Its unreliability can cost
    us a correct claim; it cannot buy a false one past stages 1--5.
@@ -378,49 +479,116 @@ than shipped confident.
 
 ------------------------------------------------------------------------
 
-## 4. Configuration
+## 4. Verification is a mode the user chooses
 
-Each setting exists because a measurement or a constraint forced it, not
-for configurability's own sake.
+Running the full funnel on every query is the wrong default. A student
+asking "explain Section 138 simply" does not need semantic claim
+verification; a lawyer filing on Monday does. Forcing the expensive path on
+both wastes tokens on one and is the right price for the other.
+
+So verification level is a **user-facing research mode**, not a hidden
+setting.
+
+``` text
+Quick       research -> analyst -> answer
+            always-on mechanical checks only
+
+Research    deeper retrieval, more sources
+            always-on mechanical checks only
+
+Verified    the above, plus stage 6 semantic verification
+            + a verification report
+```
+
+### 4.1 The line between always-on and opt-in
+
+Cheap deterministic checks are **never optional.** They cost nothing, and a
+fabricated citation reaching a user in "Quick" mode would be indefensible
+--- Quick means less verification effort, never *no* integrity.
+
+| Stage | Quick | Research | Verified |
+|---|---|---|---|
+| 1 citation exists | always | always | always |
+| 2 retrieved by this thread | always | always | always |
+| 3 quotation matches | always | always | always |
+| 4 version current | always | always | always |
+| 6 semantic support | -- | -- | **on** |
+
+Every always-on row is SQL or string comparison. The only thing the user is
+opting into is model spend.
+
+### 4.2 The mode must not change the answer
+
+A hard invariant, and a testable one:
+
+> The same question over the same evidence produces the **same answer body**
+> in Quick and in Verified. Verified adds annotation; it does not rewrite,
+> soften or truncate.
+
+If turning verification on changed the substance of the answer, the user
+would be choosing between two different opinions of the law based on
+budget, which is indefensible in a legal product. Verification is an audit
+layer over an answer, not a second author of it.
+
+``` text
+QUICK                      VERIFIED
+"Here is the answer..."    "Here is the same answer..."
+                             + citation verified
+                             + section text verified
+                             + claim 4 PARTIALLY_SUPPORTED
+                             + coverage: limited (1 High Court)
+```
+
+§5 tests this invariant directly, because it is the kind of property that
+decays silently the moment the two paths diverge in code.
+
+### 4.3 A selected mode must never silently downgrade
+
+If `Verified` is requested and stage 6 cannot run --- quota exhausted, model
+chain failing, timeout --- the answer says so. It does not quietly return
+Quick output wearing a Verified label.
+
+This is stated explicitly because silent degradation is the single most
+common defect found in this project: `.env` never loaded, token caps
+starving answers, `_check_db` scanning the corpus, extraction failure
+indistinguishable from an empty document. Every one presented a broken
+result as a normal one. A verification badge that can appear without
+verification having happened would be the worst instance of the pattern,
+not the least.
+
+### 4.4 Settings
 
 ``` python
-verification_mode: str = "mechanical"   # mechanical | full
+verification_level: str = "quick"   # quick | research | verified
 ```
-`mechanical` runs stages 1--4 only --- zero model calls, and already more
-than we ship today (stage 3 quotation matching and stage 4 currency are
-both new and both free). `full` adds the stage 6 batched semantic call.
-
-Default stays `mechanical` until §5 produces a number. Shipping an
-unmeasured checker on by default is precisely how the vendors in §2.1 came
-to make claims the RegLab study falsified.
+The user's mode. `quick` is the default; stages 1--4 still run.
 
 ``` python
 verification_scope: str = "statute"    # statute | all
 ```
-`statute` checks only claims citing Act sections. Section text is short,
+Stage 6 checks only claims citing Act sections. Section text is short,
 self-contained and states rules directly, so entailment is tractable.
 Judgment entailment needs the ratio separated from obiter --- Phase 7's
-IRAC work, not this milestone's.
+IRAC work.
 
 ``` python
 verification_strictness: str = "strict"   # strict | lenient
 ```
-`strict` treats `PARTIAL` as unsupported; `lenient` accepts it. Genuinely
-two different products: a research query tolerates an overbroad claim
-flagged for follow-up; a document headed for filing does not.
+`strict` treats `PARTIALLY_SUPPORTED` as not established; `lenient` accepts
+it. A research query tolerates an overbroad claim flagged for follow-up; a
+document headed for filing does not.
 
 ``` python
 verification_max_passes: int = 2
 ```
-Unchanged from Phase 3. The loop-back must terminate; an answer that ships
-with a labelled gap beats one that never ships.
+Unchanged from Phase 3. The loop-back must terminate.
 
 ``` python
 verification_quote_min_chars: int = 40
 ```
 Stage 3 threshold. Below this a "quotation" is a common phrase that will
-string-match by coincidence, which would convert a free decisive check into
-a free wrong one.
+string-match by coincidence, converting a free decisive check into a free
+wrong one.
 
 Currency is a separate job, not part of query serving:
 
@@ -460,6 +628,19 @@ Metrics:
 - **stage attribution** --- which stage caught each rejection. If stage 3
   catches nothing on the misgrounded rows, quotation matching is not
   earning its place and should be cut.
+- **INSUFFICIENT vs UNSUPPORTED confusion** --- how often a claim whose
+  evidence was never retrieved is reported as `UNSUPPORTED`. Per §2.0.2
+  this should be structurally impossible; the metric exists to prove the
+  guard holds rather than to trust that it does.
+
+Two invariants get tests rather than metrics, because they are properties
+that either hold or do not:
+
+- **Answer stability across modes** (§4.2). Same question, same evidence,
+  Quick and Verified -> identical answer body. A diff is a failure.
+- **No silent downgrade** (§4.3). With stage 6 forced to fail, a `verified`
+  request must report that verification did not run. Returning a Quick
+  answer labelled Verified is a failure.
 
 Run across the model chain, as with the contradictions benchmark. Reference:
 contradiction detection moved 0.20 -> 0.95 recall between models on the same
@@ -558,22 +739,99 @@ Two conclusions:
 
 ------------------------------------------------------------------------
 
-## 7. Dependency note --- corpus size
+## 7. Dependency note --- the precedent graph
 
-M13 stage 6 is scoped to statute (§4) and works today: 36,461 sections.
+Judgment-to-judgment citation resolution is the gate on every Phase 7 item
+built from citation chains. It does not work yet, and the reason is
+coverage rather than parsing.
 
-M14 currency works today for statutes.
+### 7.1 Citation resolution
 
-Everything *past* Phase 6 does not. Precedent graphs, citation-chain
-analysis, conflicting-precedent reasoning, bench-strength reasoning and the
-M15 end-to-end benchmark are all built from judgments citing judgments. At
-37 judgments there is no chain to analyse and no conflict to detect.
+`extract_citations` covers SCC, SCR, INSC, AIR and GLR, matching on a
+normalised key (`normalise_citation`) because the source PDFs print the
+same case as `S.C.R.`, `S C R` and `SCR`, sometimes within one document.
+`scripts/rebuild_citation_edges.py` recomputes edges corpus-wide, which is
+required because `write_judgment` resolves only against judgments already
+stored --- during a sequential ingest an edge can otherwise point only
+backwards.
 
-**Growing the judgment corpus is a prerequisite for Phase 7 and is not a
-Phase 6 milestone.** Phase 4's case discovery is the mechanism (one query
-moved judgments 9 -> 14 and CITES_SECTION edges 24 -> 53). Sustained
-crawl rate against the source is unmeasured; measure it on one Act before
-promising a number.
+``` text
+judgments                      4,658
+carrying a citation of their own 199
+CITES edges                       11
+unresolved references          8,276
+```
+
+### 7.2 Why corpus growth did not help
+
+The corpus grew from 415 to 4,658 judgments across 26 courts. `CITES`
+stayed at 11, and the count of citable documents stayed at 199.
+
+**High Court judgments carry no citation of their own.** The archive's High
+Court parquet has no citation column (nor petitioner/respondent columns).
+An HC judgment can therefore cite others, but nothing can ever cite *it* --
+it has no identity to be cited by. Every one of the 4,243 judgments added
+was an HC judgment, so none of them became citable.
+
+The 199 citable documents are the Supreme Court set, which carries SCR
+citations.
+
+### 7.3 What the unresolved references are
+
+``` text
+SCC        no judgment in the corpus carries an SCC identity
+SCR        cites to Supreme Court cases we do not hold
+AIR / GLR / INSC
+```
+
+Two problems, only one of which is a parsing problem:
+
+- **Cases absent from the corpus.** Acquirable. The unresolved list is a
+  ranked **target list**: the authorities our own judgments reach for most
+  often. This is what citation-guided ingest consumes.
+- **SCC references.** Cannot resolve by string matching at all. SCC and SCR
+  are different reporters with unrelated volume and page numbers and no
+  formula between them. This needs a parallel-citation table -- data
+  acquisition, not parsing.
+
+### 7.4 Consequence for Phase 7
+
+Judgment *count* is not the binding constraint; which judgments are held,
+and whether they carry a citable identity, is. Bulk High Court ingest
+cannot move the precedent graph by any amount.
+
+Phase 7's precedent work depends on:
+
+1. **Supreme Court depth before 2016** --- SC judgments are citable and are
+   what the unresolved SCR references name.
+2. **Citation-guided ingest** --- fetch the ranked targets, rebuild, repeat.
+3. **SCC/SCR parallel-citation mapping** --- for the references string
+   matching can never reach.
+
+None is a Phase 6 milestone; all three are Phase 7 prerequisites.
+
+This is also §2.0 as an engineering fact rather than a principle: absence of
+evidence is the normal condition here, and a verifier reading "not found"
+as "not so" would be wrong on nearly every citation in this corpus.
+
+### 7.5 Text quality
+
+The ingest gate (`_text_check`) requires both a length floor and a minimum
+alphabetic ratio. Length alone admitted two failure modes: PDFs with a
+broken font encoding map, which extract as mojibake rather than failing,
+and scanned judgments whose only text layer is the registrar's e-signature.
+Both were stored, embedded and chunked, and competed for slots in vector
+search against real judgments.
+
+``` text
+alphabetic ratio    real judgment prose   0.60 - 0.80
+                    mojibake              0.00 - 0.12
+threshold           MIN_ALPHA_RATIO       0.15
+```
+
+`scripts/purge_unreadable_judgments.py` selects by the same predicate the
+gate applies to new documents, so what it removes is exactly what would be
+refused today, and writes a report before deleting.
 
 ------------------------------------------------------------------------
 
@@ -605,7 +863,10 @@ Research, 2026-08-26.
 - [Lexis+ with Protege --- legal research](https://www.lexisnexis.com/en-us/products/lexis-plus-protege/legal-research.page)
 - [The Legal AI Journey: From Task-Specific Tools to Integrated Intelligence --- LexisNexis](https://www.lexisnexis.com/community/pressroom/b/news/posts/the-legal-ai-journey-from-task-specific-tools-to-integrated-intelligence)
 - [Shepard's Coverage --- LexisNexis Support](https://supportcenter.lexisnexis.com/app/answers/answer_view/a_id/1087952/~/shepards-coverage)
-- [NyayAssist](https://nyayassist.ai/)
+- [Authority Matters: Cite Checking & Verification in the AI Era --- LexisNexis](https://www.lexisnexis.com/community/infopro/b/researchtip/posts/authority-matters-cite-checking-verification-in-the-ai-era)
+- [Using Shepard's BriefCheck on Lexis](https://supportcenter.lexisnexis.com/app/answers/answer_view/a_id/1090314/~/using-shepards-briefcheck-on-lexis)
+- [AI Traceability and Verification: The New Standard --- LexisNexis](https://www.lexisnexis.com/community/insights/professional/b/industry-insights/posts/ai-traceability)
+- [NyayAssist](https://nyayassist.ai/) --- [research](https://nyayassist.ai/research), [case management](https://nyayassist.ai/case-management)
 - [India Code --- Digital Repository of All Central and State Acts](https://services.india.gov.in/service/detail/india-code-digital-repository-of-all-central-and-state-acts)
 
 ------------------------------------------------------------------------
@@ -616,13 +877,20 @@ Research, 2026-08-26.
 
 Build the funnel of §2.2 in stage order, cheapest first:
 
-1. **Stage 3, quotation matching** --- deterministic, free, catches the
-   Delhi HC failure mode. Ship this before anything involving a model.
-2. **Stage 6, batched entailment** --- gated behind `verification_mode`,
+1. **Four-state classification** (§2.0.1) with the retrieval-decides guard
+   (§2.0.2), and coverage reported separately from confidence (§2.0.3).
+   No model involved; this is a reporting change and it should land first,
+   because it is what stops the existing verifier from mislabelling gaps.
+2. **Stage 3, quotation matching** --- deterministic, free, catches the
+   Delhi HC failure mode.
+3. **Verification levels** (§4) with the two invariants under test:
+   answer stability across modes, and no silent downgrade.
+4. **Stage 6, batched entailment** --- gated behind `verification_level`,
    shipped only with the §5 labelled set, a measured flip rate and a
    measured residue rate.
 
-Stages 1--2 exist. Stage 4 arrives with M14. Stage 5 is Phase 7.
+Stages 1--2 exist. Stage 4 arrives with M14. Stage 5 waits on citation
+normalisation (§7).
 
 ### Milestone 14 --- Currency
 

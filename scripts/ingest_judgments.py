@@ -1,7 +1,12 @@
-# scripts/ingest_judgments_by_judge.py
-"""Grow the judgment corpus: pull by judge from the Bharat Courts archive.
+# scripts/ingest_judgments.py
+"""Grow the judgment corpus from the Bharat Courts archive.
 
-Run: .venv/bin/python -m scripts.ingest_judgments_by_judge
+Two modes. `--all-hc` walks every High Court partition year by year; the
+default walks a named set of Supreme Court judges. Both write through the
+same verification gate and store step.
+
+Run: .venv/bin/python -m scripts.ingest_judgments --all-hc
+     .venv/bin/python -m scripts.ingest_judgments            # Supreme Court by judge
 
 Why by judge rather than by party or subject: the archive index has no
 subject column, and party search only finds a case you can already name.
@@ -62,6 +67,80 @@ async def _fetch(client, court: str, judge: str, limit: int):
         yield judgment, text, None
 
 
+async def ingest_court(court: str, per_year: int) -> dict:
+    """`per_year` judgments from each year in YEARS, not `per_year * years`
+    taken from the top.
+
+    Measured 2026-08-27: a single search over the whole range returns
+    newest-first, so `search(court="bombay", year=(2016, 2026), limit=150)`
+    returned 150 documents *all dated 2026*. A range plus a limit is not a
+    sample of the range -- it is the most recent slice of it, and the corpus
+    it builds is a snapshot of this year wearing a decade's label.
+
+    Querying year by year is the only way the range means what it says.
+    """
+    import bharat_courts as bc
+
+    stats = {"seen": 0, "stored": 0, "unchanged": 0, "skipped": 0, "unverified": 0}
+    started = time.monotonic()
+    by_year: dict[int, int] = {}
+    async with bc.ArchiveClient() as client:
+        for year in range(YEARS[0], YEARS[1] + 1):
+            async for judgment, text, problem in _fetch_court(client, court, year, per_year):
+                stats["seen"] += 1
+                if problem is not None:
+                    stats["skipped"] += 1
+                    continue
+                doc = _to_canonical(judgment, text, judgment.title or court)
+                passed, notes = _verify([doc])
+                if not passed:
+                    stats["unverified"] += 1
+                    continue
+                try:
+                    changed = store_judgment(doc)
+                except Exception as exc:
+                    stats["skipped"] += 1
+                    print(f"    ! store failed {doc.document_id}: {type(exc).__name__}", flush=True)
+                    continue
+                stats["stored" if changed else "unchanged"] += 1
+                by_year[year] = by_year.get(year, 0) + 1
+    span = f"{min(by_year)}-{max(by_year)}" if by_year else "none"
+    print(
+        f"  {court:22} +{stats['stored']:4} new, {stats['unchanged']:4} known, "
+        f"{stats['skipped']:3} skipped, {stats['unverified']:3} rejected  "
+        f"years {span}  ({time.monotonic() - started:.0f}s)",
+        flush=True,
+    )
+    return stats
+
+
+async def _fetch_court(client, court: str, year: int, limit: int):
+    try:
+        results = await client.search(court=court, year=year, limit=limit)
+    except Exception as exc:
+        print(f"  {court:22} {year} SEARCH FAILED {type(exc).__name__}", flush=True)
+        return
+    for judgment in results:
+        try:
+            pdf_bytes = await client.fetch_pdf(judgment)
+        except Exception as exc:
+            # The index lists documents whose PDFs are not in the bucket --
+            # the current year especially, where metadata runs ahead of the
+            # scans. Not fatal, but it must be counted, not swallowed.
+            yield judgment, None, f"fetch failed: {type(exc).__name__}"
+            continue
+        try:
+            reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        except Exception as exc:
+            yield judgment, None, f"pdf parse failed: {type(exc).__name__}"
+            continue
+        if not text.strip():
+            yield judgment, None, "no text layer"
+            continue
+        yield judgment, text, None
+
+
 async def ingest(court: str, judges: list[str], per_judge: int) -> dict:
     import bharat_courts as bc
 
@@ -106,17 +185,32 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--per-judge", type=int, default=40)
     parser.add_argument("--hc", default="delhi", help="High Court partition code")
+    parser.add_argument(
+        "--all-hc", action="store_true",
+        help="ingest every High Court by year instead of five judges of one",
+    )
+    parser.add_argument("--per-year", type=int, default=15,
+                        help="judgments per court per year (x11 years)")
     args = parser.parse_args()
 
     overall = {}
-    for court, judges in (("sci", SCI_JUDGES), (args.hc, HC_JUDGES)):
-        print(f"== {court}: {len(judges)} judges, {YEARS[0]}-{YEARS[1]}, "
-              f"up to {args.per_judge} each", flush=True)
-        overall[court] = asyncio.run(ingest(court, judges, args.per_judge))
+    if args.all_hc:
+        from bharat_courts import list_high_courts
 
-    print("\n== totals")
-    for court, stats in overall.items():
-        print(f"  {court}: {stats}")
+        courts = [c.slug for c in list_high_courts()]
+        print(f"== {len(courts)} High Courts, {args.per_year}/year "
+              f"across {YEARS[0]}-{YEARS[1]}", flush=True)
+        for court in courts:
+            overall[court] = asyncio.run(ingest_court(court, args.per_year))
+    else:
+        for court, judges in (("sci", SCI_JUDGES), (args.hc, HC_JUDGES)):
+            print(f"== {court}: {len(judges)} judges, {YEARS[0]}-{YEARS[1]}, "
+                  f"up to {args.per_judge} each", flush=True)
+            overall[court] = asyncio.run(ingest(court, judges, args.per_judge))
+
+    total = {k: sum(s[k] for s in overall.values()) for k in
+             ("seen", "stored", "unchanged", "skipped", "unverified")}
+    print(f"\n== totals across {len(overall)} courts: {total}")
 
 
 if __name__ == "__main__":

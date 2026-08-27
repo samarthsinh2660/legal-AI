@@ -32,12 +32,26 @@ def test_a_thread_without_a_case_still_runs():
     assert result["answer"]
 
 
-def test_research_runs_exactly_once_when_nothing_is_unsupported():
-    # The verification loop-back is wired but must not fire while nothing
-    # produces claims; a graph that loops on an empty predicate would spin.
+def test_the_verification_loop_is_bounded_and_terminates():
+    """The loop-back must be capped, not absent.
+
+    This asserted `research_rounds == 1` on the theory that nothing
+    produced claims, which was true before Phase 5 added the Analyst.
+    The Analyst now produces claims on every run, so a claim whose
+    citation does not survive groundedness legitimately sends the graph
+    back to research -- a real run has been observed at 2 rounds and at 1.
+    Because the round count depends on what the model writes, asserting an
+    exact number tests the model, not the graph.
+
+    What the graph actually guarantees, and what this now checks: the loop
+    is capped, and the run always ships an answer.
+    """
+    config = DEFAULT_CONFIG
     result = build_research_graph().invoke({"question": "what is extortion"})
-    assert result["research_rounds"] == 1
-    assert result["verification_passes"] == 1
+
+    assert 1 <= result["verification_passes"] <= config.max_verification_passes
+    assert 1 <= result["research_rounds"] <= config.max_verification_passes
+    assert result["answer"]
 
 
 def test_clarification_halts_the_run_before_research(monkeypatch):
