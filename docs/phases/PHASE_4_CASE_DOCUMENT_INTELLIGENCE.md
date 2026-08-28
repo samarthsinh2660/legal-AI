@@ -418,7 +418,7 @@ gets believed.
 
 ### Recorded: the test suite calls the live API
 
-`test_graph_skeleton` invokes the real graph, so the suite makes real
+`test_graph_wiring` invokes the real graph, so the suite makes real
 Gemini calls -- normally ~20 minutes, and 33 during an outage. This was
 raised as a defect and deliberately kept: twice in one day a bug was pure
 silent degradation (`.env` unloaded, extraction returning empty), and a

@@ -1,0 +1,73 @@
+{
+  "_comment": [
+    "Frozen claims for measuring the VERIFIER, not the answer generator.",
+    "Every claim is written against the real stored text of the cited section,",
+    "so the label is checkable by reading that section rather than by trusting",
+    "whoever wrote the row. Answers are not generated at eval time: the only",
+    "variable is the verifier, which makes the run deterministic in its inputs",
+    "and cheap to repeat across the model chain.",
+    "",
+    "expected_verdict is what a correct verifier must return.",
+    "expected_stage, where given, is which stage must reach it -- a claim",
+    "settled by a string comparison must not cost a model call."
+  ],
+  "cases": [
+
+    {"id": "sup-01", "claim": "A promoter who fails to give possession by the agreed date is liable, on demand, to return the amount received from an allottee who wishes to withdraw.", "evidence_ids": ["act:2158:sec-18"], "expected_verdict": "SUPPORTED", "note": "restates s.18(1) directly"},
+    {"id": "sup-02", "claim": "An allottee is entitled to obtain information about sanctioned plans and layout plans approved by the competent authority.", "evidence_ids": ["act:2158:sec-19"], "expected_verdict": "SUPPORTED"},
+    {"id": "sup-03", "claim": "An allottee is entitled to know the stage-wise time schedule for completion of the project.", "evidence_ids": ["act:2158:sec-19"], "expected_verdict": "SUPPORTED"},
+    {"id": "sup-04", "claim": "A transgender person may apply to the District Magistrate for a certificate of identity.", "evidence_ids": ["act:13091:sec-5"], "expected_verdict": "SUPPORTED"},
+    {"id": "sup-05", "claim": "Where the applicant is a minor child, the application for a certificate of identity must be made by a parent or guardian.", "evidence_ids": ["act:13091:sec-5"], "expected_verdict": "SUPPORTED"},
+    {"id": "part-11", "claim": "An order for payment of money made by the Registrar of Copyrights is deemed to be a decree of a civil court and is executable in the same manner.", "evidence_ids": ["act:1367:sec-75"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "label corrected 2026-08-28: s.75 deems the order a decree only \"on a certificate issued by\" the Registrar. The claim drops that condition, so it overstates. The verifier called this consistently across both runs and was right."},
+    {"id": "sup-07", "claim": "The Central Government may, by order in writing, require a person to furnish information in his possession relating to property against which action is proposed under the Act.", "evidence_ids": ["act:13051:sec-21"], "expected_verdict": "SUPPORTED"},
+    {"id": "sup-08", "claim": "A deposit taker whose property is about to be attached may apply to the Designated Court to deposit the fair value of the property in lieu of attachment.", "evidence_ids": ["act:11641:sec-17"], "expected_verdict": "SUPPORTED"},
+    {"id": "sup-09", "claim": "An application to deposit fair value in lieu of attachment must be made before the attachment is confirmed.", "evidence_ids": ["act:11641:sec-17"], "expected_verdict": "SUPPORTED"},
+    {"id": "sup-10", "claim": "The State Government is required to cause a register of pharmacists to be prepared for the State.", "evidence_ids": ["act:1364:sec-29"], "expected_verdict": "SUPPORTED"},
+    {"id": "sup-11", "claim": "The register of pharmacists must include the full name and residential address of each registered person.", "evidence_ids": ["act:1364:sec-29"], "expected_verdict": "SUPPORTED"},
+    {"id": "sup-12", "claim": "Officers and employees of the Commission are deemed to be public servants within the meaning of section 21 of the Indian Penal Code when acting under the Act.", "evidence_ids": ["act:11820:sec-52"], "expected_verdict": "SUPPORTED"},
+    {"id": "sup-13", "claim": "The Chairperson of the Centre is appointed by the Central Government in consultation with the Chief Justice of India.", "evidence_ids": ["act:11413:sec-5"], "expected_verdict": "SUPPORTED"},
+    {"id": "sup-14", "claim": "Every copyright society must publish its tariff scheme in the prescribed manner.", "evidence_ids": ["act:1367:sec-33A"], "expected_verdict": "SUPPORTED"},
+    {"id": "part-12", "claim": "An offence under the Act is compoundable at the instance of the married Muslim woman upon whom talaq is pronounced.", "evidence_ids": ["act:11564:sec-7"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "label corrected 2026-08-28: s.7(b) makes compounding subject to the permission of the Magistrate. The claim drops that, so it overstates."},
+
+    {"id": "part-01", "claim": "A promoter who misses the possession date must refund the allottee automatically, without any demand being made.", "evidence_ids": ["act:2158:sec-18"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "s.18 says 'liable on demand'; removing the demand overstates it"},
+    {"id": "part-02", "claim": "A promoter who misses the possession date must refund every allottee in the project.", "evidence_ids": ["act:2158:sec-18"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "only an allottee who wishes to withdraw"},
+    {"id": "part-03", "claim": "Any person may apply to the District Magistrate for a transgender certificate of identity on behalf of a minor.", "evidence_ids": ["act:13091:sec-5"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "a parent or guardian, not any person"},
+    {"id": "part-04", "claim": "The Central Government may require any person to furnish any information it wants.", "evidence_ids": ["act:13051:sec-21"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "limited to property against which action is proposed"},
+    {"id": "part-05", "claim": "A deposit taker may deposit the fair value of the property in lieu of attachment at any time.", "evidence_ids": ["act:11641:sec-17"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "only before confirmation of attachment"},
+    {"id": "part-06", "claim": "An order of the Registrar of Copyrights is a decree of a civil court for every purpose under the Act.", "evidence_ids": ["act:1367:sec-75"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "orders for payment of money only"},
+    {"id": "part-07", "claim": "The Chairperson of the Centre must be a former Judge of the Supreme Court.", "evidence_ids": ["act:11413:sec-5"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "a High Court judge or an eminent person also qualify"},
+    {"id": "part-08", "claim": "Every offence under the Act is cognizable.", "evidence_ids": ["act:11564:sec-7"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "cognizable only if information is given by the woman or a relative"},
+    {"id": "part-09", "claim": "The State Council prepares the register of pharmacists for the State.", "evidence_ids": ["act:1364:sec-29"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "the State Government prepares it; the Council maintains it"},
+    {"id": "part-10", "claim": "Anyone aggrieved by a copyright society's tariff scheme may appeal without paying anything.", "evidence_ids": ["act:1367:sec-33A"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "the proviso requires fees already due to be paid"},
+
+    {"id": "uns-01", "claim": "A promoter who fails to give possession on time is liable to imprisonment for up to three years.", "evidence_ids": ["act:2158:sec-18"], "expected_verdict": "UNSUPPORTED", "note": "s.18 creates a monetary liability, not an offence"},
+    {"id": "uns-02", "claim": "An allottee may take physical possession of the project office if the promoter defaults.", "evidence_ids": ["act:2158:sec-19"], "expected_verdict": "UNSUPPORTED"},
+    {"id": "uns-03", "claim": "A transgender person is entitled to reservation in public employment.", "evidence_ids": ["act:13091:sec-5"], "expected_verdict": "UNSUPPORTED", "note": "s.5 is about applying for a certificate of identity"},
+    {"id": "uns-04", "claim": "The District Magistrate must decide a certificate of identity application within thirty days.", "evidence_ids": ["act:13091:sec-5"], "expected_verdict": "UNSUPPORTED", "note": "no time limit appears in s.5"},
+    {"id": "uns-05", "claim": "A person who fails to furnish information commits an offence punishable with fine.", "evidence_ids": ["act:13051:sec-21"], "expected_verdict": "UNSUPPORTED", "note": "s.21 confers a power; it prescribes no penalty"},
+    {"id": "uns-06", "claim": "The Designated Court must refund the deposit with interest if the attachment is later set aside.", "evidence_ids": ["act:11641:sec-17"], "expected_verdict": "UNSUPPORTED"},
+    {"id": "uns-07", "claim": "A pharmacist removed from the register may appeal to the High Court.", "evidence_ids": ["act:1364:sec-29"], "expected_verdict": "UNSUPPORTED", "note": "s.29 concerns preparation of the register"},
+    {"id": "uns-08", "claim": "Members of the Commission are immune from prosecution for acts done under the Act.", "evidence_ids": ["act:11820:sec-52"], "expected_verdict": "UNSUPPORTED", "note": "being a public servant is not immunity; it is the opposite"},
+    {"id": "uns-09", "claim": "The Centre must consist of at least seven members.", "evidence_ids": ["act:11413:sec-5"], "expected_verdict": "UNSUPPORTED"},
+    {"id": "uns-10", "claim": "A copyright society that fails to publish its tariff scheme may be wound up by the Central Government.", "evidence_ids": ["act:1367:sec-33A"], "expected_verdict": "UNSUPPORTED"},
+    {"id": "uns-11", "claim": "Talaq-e-biddat is punishable with imprisonment which may extend to seven years.", "evidence_ids": ["act:11564:sec-7"], "expected_verdict": "UNSUPPORTED", "note": "s.7 is procedural; the punishment is elsewhere in the Act"},
+    {"id": "uns-12", "claim": "An order of the Appellate Board may be appealed directly to the Supreme Court.", "evidence_ids": ["act:1367:sec-75"], "expected_verdict": "UNSUPPORTED", "note": "s.75 mentions the High Court"},
+
+    {"id": "quote-01", "claim": "Section 18 makes the promoter \"liable on demand to the allottees, in case the allottee wishes to withdraw from the project\".", "evidence_ids": ["act:2158:sec-18"], "expected_verdict": "SUPPORTED", "expected_stage": "quote", "note": "verbatim; a string comparison settles it with no model call"},
+    {"id": "quote-02", "claim": "Section 5 provides that an application may be made \"to the District Magistrate for issuing a certificate of identity as a transgender person\".", "evidence_ids": ["act:13091:sec-5"], "expected_verdict": "SUPPORTED", "expected_stage": "quote"},
+    {"id": "quote-03", "claim": "Section 52 says officers shall be \"deemed, when acting or purporting to act in pursuance of any of the provisions of this Act, to be public servants\".", "evidence_ids": ["act:11820:sec-52"], "expected_verdict": "SUPPORTED", "expected_stage": "quote"},
+    {"id": "quote-04", "claim": "Section 18 provides that the promoter \"shall forfeit the entire project and surrender every licence to the authority forthwith\".", "evidence_ids": ["act:2158:sec-18"], "expected_verdict": "UNSUPPORTED", "expected_stage": "quote", "note": "the Delhi HC failure: real section, invented words"},
+    {"id": "quote-05", "claim": "Section 5 states that \"the District Magistrate shall decide every such application within a period of thirty days\".", "evidence_ids": ["act:13091:sec-5"], "expected_verdict": "UNSUPPORTED", "expected_stage": "quote"},
+    {"id": "quote-06", "claim": "Section 21 provides that \"any person refusing to furnish information shall be punished with imprisonment for a term of one year\".", "evidence_ids": ["act:13051:sec-21"], "expected_verdict": "UNSUPPORTED", "expected_stage": "quote"},
+
+    {"id": "ref-01", "claim": "The Act requires a promoter to maintain a separate escrow account.", "evidence_ids": ["act:9999:sec-does-not-exist"], "expected_verdict": "INSUFFICIENT_EVIDENCE", "expected_stage": "reference", "note": "fabricated id: a gap in our shelf, not a finding against the claim"},
+    {"id": "ref-02", "claim": "Indian law recognises the doctrine of frustration of contract.", "evidence_ids": [], "expected_verdict": "UNSUPPORTED", "expected_stage": "reference", "note": "cites nothing: a defect in the claim itself"},
+    {"id": "ref-03", "claim": "A promoter must refund the allottee with interest.", "evidence_ids": ["act:2158:sec-18", "act:0000:sec-invented"], "expected_verdict": "INSUFFICIENT_EVIDENCE", "expected_stage": "reference", "note": "one real id and one invented; the invented one still taints it"},
+
+    {"id": "multi-01", "claim": "An allottee who withdraws is entitled both to a refund from the promoter and to information about the sanctioned plans.", "evidence_ids": ["act:2158:sec-18", "act:2158:sec-19"], "expected_verdict": "SUPPORTED", "note": "each half is supported by one of the two cited sections"},
+    {"id": "multi-02", "claim": "An allottee who withdraws is entitled to a refund and to compensation for mental agony.", "evidence_ids": ["act:2158:sec-18", "act:2158:sec-19"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "the refund is supported; mental agony is not mentioned"},
+
+    {"id": "trap-01", "claim": "A contract without consideration is void.", "evidence_ids": ["act:2158:sec-18"], "expected_verdict": "UNSUPPORTED", "note": "true in Indian law, absent from the cited text -- the check must judge the text, not recall the law"},
+    {"id": "trap-02", "claim": "The Indian Penal Code defines a public servant.", "evidence_ids": ["act:11820:sec-52"], "expected_verdict": "PARTIALLY_SUPPORTED", "note": "s.52 refers to IPC s.21 but does not itself define the term"}
+  ]
+}

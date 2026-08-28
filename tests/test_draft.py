@@ -90,7 +90,14 @@ def test_the_disclaimer_is_always_present():
     assert "not legal advice" in build_answer("q", AnalysisResult(), []).disclaimer
 
 
-def test_rendering_marks_the_unverified_section():
+def test_rendering_marks_the_unsupported_section():
+    """The heading was "Could not be verified", which conflated two states.
+
+    A claim the evidence contradicts and a claim nobody checked are
+    different things, and the second is our normal condition against an
+    Indian corpus in the crores. They now render under separate headings;
+    this covers the finding-against one.
+    """
     answer = build_answer(
         "q", AnalysisResult(lede="Short answer.", claims=(GROUNDED, Claim("shaky"))),
         EVIDENCE,
@@ -98,7 +105,7 @@ def test_rendering_marks_the_unverified_section():
     text = render(answer)
     assert "Short answer." in text
     assert "act:2158:sec-18" in text
-    assert "Could not be verified" in text
+    assert "NOT supported by the retrieved sources" in text
     assert "shaky" in text
 
 

@@ -41,18 +41,43 @@ class DraftAnswer:
     applicable_law: tuple[str, ...] = ()
     key_judgments: tuple[str, ...] = ()
 
-    # Claims the verifier could not ground, kept and labelled rather than
-    # dropped. Silently removing them would leave the reader unable to tell
-    # a short answer from an incomplete one.
+    # Claims the retrieved evidence does not support -- a finding against
+    # the claim. Kept and labelled rather than dropped: silently removing
+    # them would leave the reader unable to tell a short answer from an
+    # incomplete one.
     needs_verification: tuple[str, ...] = ()
+
+    # Claims we could NOT check, which is a different thing and must not
+    # read the same. Either we do not hold the material, or semantic
+    # verification was not enabled for this run. Telling a lawyer a claim
+    # is unsupported when we simply did not look is a claim we cannot make.
+    unchecked: tuple[str, ...] = ()
+
+    # Claims the evidence supports in part -- true but overstated, or
+    # narrowed by a condition the claim drops.
+    partially_supported: tuple[str, ...] = ()
+
+    # True when semantic verification did not run for this answer, because
+    # the reader asked for the quick mode. Reported once, at the answer
+    # level, rather than as a warning against every claim: a caveat printed
+    # on every line is one readers learn to skip, and the citations WERE
+    # checked -- only support was not.
+    support_not_checked: bool = False
 
     citations: tuple[str, ...] = ()
     disclaimer: str = DISCLAIMER
 
     @property
     def is_complete(self) -> bool:
-        """Whether every claim made was grounded."""
-        return not self.needs_verification
+        """Whether every claim made was verified and supported.
+
+        `unchecked` counts -- an answer whose claims could not be checked
+        is not complete, however true it may turn out to be. A quick-mode
+        run does NOT count: its citations were verified, and calling every
+        such answer incomplete would drain the word of meaning.
+        """
+        return not (self.needs_verification or self.unchecked
+                    or self.partially_supported)
 
 
 @dataclass(frozen=True)

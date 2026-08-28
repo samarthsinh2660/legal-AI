@@ -1,4 +1,4 @@
-"""Milestone 6.6 -- Evidence carries what the source panel renders.
+"""Evidence carries what the source panel renders.
 
 design/UX_FLOWS.md: clicking [1] opens a panel with court, case name,
 citation, the relevant paragraph extract, and Open. Every one of those has

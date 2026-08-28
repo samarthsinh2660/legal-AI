@@ -58,3 +58,12 @@ class ResearchState(TypedDict, total=False):
     # the model choosing to stop.
     research_rounds: int
     verification_passes: int
+
+    # What the reader asked for: "quick" or "verified". On the state rather
+    # than read from config inside the node so one thread can be checked
+    # harder than another without changing a global.
+    verification_level: str
+
+    # The full per-claim outcome, for the answer to annotate from. Distinct
+    # from unsupported_claims, which is only what the loop-back acts on.
+    verification_report: object

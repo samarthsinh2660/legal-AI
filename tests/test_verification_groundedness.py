@@ -1,4 +1,4 @@
-"""Milestone 8 -- groundedness and coverage.
+"""Groundedness and coverage -- the two model-free verification checks.
 
 Groundedness inspects what was said. Coverage inspects what was NOT said,
 which is the failure a user actually experiences: an answer that is entirely

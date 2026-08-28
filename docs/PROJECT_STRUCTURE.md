@@ -510,6 +510,67 @@ schema, in `tools/` and `sources/`, following the boundaries in §16.
 
 ---
 
+## 18a. `scripts/` — corpus operations
+
+Operational scripts, run by a human against a live database. Not imported
+by the runtime package.
+
+``` text
+scripts/
+├── ingest_india_code.py           # statutes: all Central Acts
+├── ingest_judgments.py            # judgments: --all-hc, or SC by judge
+├── rebuild_citation_edges.py      # judgment->judgment CITES, corpus-wide
+├── purge_unreadable_judgments.py  # remove text the ingest gate would refuse
+├── build_chunks.py                # bulk chunking for already-stored documents
+├── reembed_corpus.py              # after an EMBEDDING_MODEL change
+├── search_judgment.py             # one lookup, for checking behaviour by hand
+└── section_case_lookup.py         # judgments citing a given section
+```
+
+Three of these are recurring rather than one-time, which is not obvious
+from their names:
+
+- **`rebuild_citation_edges.py`** must run after *every* judgment ingest.
+  `write_judgment` resolves a citation only against judgments already in
+  the graph, so during a sequential ingest an edge can point only
+  backwards; a case cited before it was stored never resolves. Only a
+  corpus-wide pass gives every pair a chance.
+- **`purge_unreadable_judgments.py`** selects using `_text_check`, the same
+  predicate the ingest gate applies to new documents, so it stays correct
+  as that gate changes and never becomes a second rule that drifts from it.
+  `--dry-run` writes a report; `--apply` deletes from Postgres and Neo4j
+  together.
+- **`reembed_corpus.py`** is mandatory after changing `EMBEDDING_MODEL`:
+  stored vectors and the column dimension must agree, and vectors from
+  different models are not comparable.
+
+---
+
+## 18b. Verification --- where the pieces live
+
+The split is between checking by **looking something up** and checking by
+**reading**. Only the second needs a model, and it is the only piece in
+`agents/`.
+
+``` text
+schemas/verification.py       Claim, Verdict, ClaimVerdict, VerificationReport
+verification/groundedness.py  does the citation exist, did we retrieve it   SQL
+verification/quotes.py        do the quoted words appear in the source      strcmp
+agents/verifier.py            does the text support the claim               MODEL
+verification/pipeline.py      stage order, routing, and what each mode costs
+```
+
+`verify()` in `pipeline.py` is the only entry point the graph calls. Stages
+run cheapest first and can only reject; the agent may add rejections but
+never overturn one, because a stage that can approve is a stage that can
+hallucinate an approval.
+
+`Claim` lives in `schemas/` rather than `verification/` because both sides
+need it: `agents/` may import `schemas/` but not `verification/`, so keeping
+the type in the checker would make every producer depend on its own checker.
+
+---
+
 ## 19. Build order
 
 Follows the 7-phase roadmap in `AI_PROJECT_PROPOSAL.md` §11. Each phase has

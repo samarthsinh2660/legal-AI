@@ -131,6 +131,25 @@ class Configuration(BaseModel):
     # terminates here; on exhaustion the answer ships with the gaps flagged.
     max_verification_passes: int = 2
 
+    # How hard the reader asked us to check. "quick" runs the deterministic
+    # stages only -- citation exists, was retrieved, quoted words appear in
+    # the cited text. Those cost nothing and always run: cheaper means less
+    # checking effort, never no integrity, and a fabricated citation
+    # reaching a user in the cheap mode would be indefensible.
+    #
+    # "verified" adds the Verification Agent for claims that paraphrase,
+    # which nothing mechanical can settle. Measured over 50 frozen claims
+    # (evals/run_verification.py), 2 runs on the model chain:
+    #
+    #     deterministic only   exact 0.18   false alarms 0.84
+    #     with the agent       exact 0.94   false alarms 0.00
+    #
+    # The default is "quick" because the agent still approves roughly one
+    # claim in fifty that it should not, and which one varies between runs
+    # (flip rate 0.06). That is a reduction in false certainty, not its
+    # removal, and it is the reader's call whether to spend on it.
+    verification_level: str = "quick"   # quick | verified
+
     # ---------------------------------------------------------- retrieval
     # Results a search returns to an agent. The tool default of 5 suits a
     # person reading a list; an agent wants a wider net to work from.

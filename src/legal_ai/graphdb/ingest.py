@@ -11,7 +11,7 @@ from __future__ import annotations
 import neo4j
 import psycopg
 
-from legal_ai.ingestion.citations import extract_citations
+from legal_ai.ingestion.citations import extract_citations, normalise_citation
 from legal_ai.ingestion.schema import CanonicalDocument
 from legal_ai.ingestion.statute_citations import extract_section_references
 from legal_ai.knowledge.static.store import find_act_by_name, get_document
@@ -59,11 +59,14 @@ def write_judgment(
         session.run(
             """
             MERGE (j:Judgment {document_id: $doc_id})
-            SET j.title = $title, j.citation = $citation
+            SET j.title = $title,
+                j.citation = $citation,
+                j.citation_key = $citation_key
             """,
             doc_id=judgment.document_id,
             title=judgment.title,
             citation=own_citation,
+            citation_key=normalise_citation(own_citation) if own_citation else None,
         )
 
         if judgment.court:
@@ -81,13 +84,13 @@ def write_judgment(
             result = session.run(
                 """
                 MATCH (a:Judgment {document_id: $citing_id})
-                MATCH (b:Judgment {citation: $cited_citation})
+                MATCH (b:Judgment {citation_key: $cited_key})
                 WHERE a.document_id <> b.document_id
                 MERGE (a)-[:CITES]->(b)
                 RETURN b.document_id AS resolved
                 """,
                 citing_id=judgment.document_id,
-                cited_citation=cited_citation,
+                cited_key=normalise_citation(cited_citation),
             )
             if result.single() is None:
                 session.run(
