@@ -155,9 +155,15 @@ def test_the_cheap_mode_still_refuses_a_fabricated_citation(monkeypatch):
 def test_an_unverifiable_claim_is_not_reported_as_a_finding_against_it(monkeypatch):
     """UNSUPPORTED is a finding; INSUFFICIENT_EVIDENCE is a gap in our shelf.
 
-    unsupported_claims drives the re-research loop, and re-researching a
-    claim whose evidence we do not hold cannot help -- it would spend
-    passes to no purpose and tell the reader we checked when we did not.
+    The claim cites a real section this thread never retrieved. It DOES
+    belong in the re-research set -- another pass can fetch the document,
+    which is exactly what re-research is for -- but it must never reach the
+    reader as "not supported", which would say we checked and found
+    against them.
+
+    An earlier version of this test asserted the opposite, on the reasoning
+    that re-researching evidence we do not hold cannot help. That is false
+    for a document we simply did not retrieve.
     """
     monkeypatch.setattr(
         "legal_ai.graph.nodes.analyst",
@@ -166,6 +172,18 @@ def test_an_unverifiable_claim_is_not_reported_as_a_finding_against_it(monkeypat
     result = build_research_graph().invoke(
         {"question": QUESTION, "verification_level": "quick"}
     )
+    report = result["verification_report"]
+    answer = result["draft_answer"]
 
-    assert result["verification_report"].verdicts[0].verdict is Verdict.INSUFFICIENT_EVIDENCE
-    assert result["unsupported_claims"] == []
+    # Whether the claim ends as "never retrieved" or as a quick-mode skip
+    # depends on whether the re-research pass fetched the document, which
+    # is a research outcome, not a verification guarantee. Measured:
+    #
+    #     pass 1   INSUFFICIENT_EVIDENCE | reference   (not retrieved)
+    #     pass 2   INSUFFICIENT_EVIDENCE | skipped     (fetched, unchecked)
+    #
+    # Either way the verdict is INSUFFICIENT_EVIDENCE, and either way the
+    # reader must not be told we found against the claim.
+    assert report.verdicts[0].verdict is Verdict.INSUFFICIENT_EVIDENCE
+    assert answer.needs_verification == ()
+    assert "NOT supported by the retrieved sources" not in result["answer"]

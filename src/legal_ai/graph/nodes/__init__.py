@@ -189,7 +189,7 @@ def verification(state: ResearchState) -> dict:
 
     return {
         "verification_passes": passes,
-        "unsupported_claims": report.unsupported_texts,
+        "unsupported_claims": report.needs_research,
         "verification_report": report,
     }
 

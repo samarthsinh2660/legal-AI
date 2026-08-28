@@ -57,6 +57,13 @@ class DraftAnswer:
     # narrowed by a condition the claim drops.
     partially_supported: tuple[str, ...] = ()
 
+    # True when semantic verification did not run for this answer, because
+    # the reader asked for the quick mode. Reported once, at the answer
+    # level, rather than as a warning against every claim: a caveat printed
+    # on every line is one readers learn to skip, and the citations WERE
+    # checked -- only support was not.
+    support_not_checked: bool = False
+
     citations: tuple[str, ...] = ()
     disclaimer: str = DISCLAIMER
 
@@ -64,8 +71,10 @@ class DraftAnswer:
     def is_complete(self) -> bool:
         """Whether every claim made was verified and supported.
 
-        `unchecked` counts: an answer whose claims were never checked is
-        not a complete answer, however true it may turn out to be.
+        `unchecked` counts -- an answer whose claims could not be checked
+        is not complete, however true it may turn out to be. A quick-mode
+        run does NOT count: its citations were verified, and calling every
+        such answer incomplete would drain the word of meaning.
         """
         return not (self.needs_verification or self.unchecked
                     or self.partially_supported)

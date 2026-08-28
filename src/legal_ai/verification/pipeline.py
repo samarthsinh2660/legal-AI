@@ -78,15 +78,22 @@ def verify(
     for claim in claims:
         reason = unsupported_by_reference.get(id(claim))
         if reason is not None:
-            # "cites no evidence" is a claim standing on nothing, which is
-            # a defect in the claim. The other reasons are about documents
-            # we do not hold or did not read -- a gap in our shelf, and
-            # reporting that as a finding against the claim would tell a
-            # lawyer we checked when we did not.
+            # Two different things, and the difference decides what the
+            # reader is told.
+            #
+            # A claim that cites nothing, or cites an id that does not
+            # exist, is a defect in the CLAIM -- a fabricated citation is
+            # the worst failure this system has, and calling it "we could
+            # not check" would be the softest possible description of the
+            # thing it most needs to report.
+            #
+            # A claim citing a real document this thread never retrieved is
+            # a gap in our SHELF. We did not look; saying UNSUPPORTED would
+            # tell a lawyer we checked and found against them.
             verdict = (
-                Verdict.UNSUPPORTED
-                if reason == "cites no evidence"
-                else Verdict.INSUFFICIENT_EVIDENCE
+                Verdict.INSUFFICIENT_EVIDENCE
+                if "never retrieved" in reason
+                else Verdict.UNSUPPORTED
             )
             verdicts.append(ClaimVerdict(claim, verdict, reason, "reference"))
             continue

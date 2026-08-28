@@ -53,11 +53,38 @@ def test_a_fabricated_citation_is_refused_without_the_model(conn, model):
 
 
 def test_the_cheap_mode_still_refuses_a_fabricated_citation(conn):
-    # Cheaper means less checking effort, never no integrity.
+    """Cheaper means less checking effort, never no integrity.
+
+    UNSUPPORTED, not INSUFFICIENT_EVIDENCE: an id that does not exist is a
+    defect in the claim, not a gap in our shelf. Calling a fabricated
+    citation "we could not check" would be the softest possible
+    description of the thing this system most needs to report.
+    """
     report = verify([Claim("invented", (FAKE,))], conn, use_model=False)
 
-    assert report.verdicts[0].verdict is Verdict.INSUFFICIENT_EVIDENCE
+    assert report.verdicts[0].verdict is Verdict.UNSUPPORTED
     assert report.verdicts[0].stage == "reference"
+
+
+def test_a_real_document_this_thread_never_read_is_a_gap_not_a_fabrication(conn):
+    # The other half of the same distinction: the document is real, we
+    # simply did not retrieve it. Re-research can fix that, so it is also
+    # what needs_research exists to catch.
+    report = verify([Claim("cites a real but unread section", (REAL,))],
+                    conn, available_ids={ALSO_REAL}, use_model=False)
+
+    assert report.verdicts[0].verdict is Verdict.INSUFFICIENT_EVIDENCE
+    assert report.needs_research == ["cites a real but unread section"]
+
+
+def test_a_quick_mode_skip_does_not_trigger_re_research(conn):
+    # Researching harder cannot supply a check the reader chose not to pay
+    # for; looping on it would spend every pass to no effect.
+    report = verify([Claim("a buyer may recover money", (REAL,))],
+                    conn, available_ids={REAL}, use_model=False)
+
+    assert report.verdicts[0].stage == "skipped"
+    assert report.needs_research == []
 
 
 def test_a_claim_citing_nothing_is_a_finding_against_it(conn):

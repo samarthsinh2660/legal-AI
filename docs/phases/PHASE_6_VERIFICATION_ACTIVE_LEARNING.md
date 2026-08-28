@@ -484,43 +484,66 @@ than shipped confident.
 
 ------------------------------------------------------------------------
 
-## 4. Verification is a mode the user chooses
+## 4. Verification is a mode the reader chooses
 
-Running the full funnel on every query is the wrong default. A student
-asking "explain Section 138 simply" does not need semantic claim
-verification; a lawyer filing on Monday does. Forcing the expensive path on
-both wastes tokens on one and is the right price for the other.
+Running the model on every query is the wrong default. A student asking
+"explain Section 138 simply" does not need semantic claim verification; a
+lawyer filing on Monday does. Forcing the expensive path on both wastes
+tokens on one and is the right price for the other.
 
-So verification level is a **user-facing research mode**, not a hidden
-setting.
+**Two modes, not three.** An earlier draft of this section listed a middle
+"Research" tier, but that was about deeper *retrieval* -- more sources, more
+angles -- which is a retrieval setting and has nothing to do with how hard
+claims are checked. Putting it here made the verification story sound richer
+than it is.
+
+``` python
+verification_level: str = "quick"   # quick | verified
+```
 
 ``` text
-Quick       research -> analyst -> answer
-            always-on mechanical checks only
+quick       stages 1-3.  Citation exists, this thread retrieved it, quoted
+            words appear in the cited text. No model call.
 
-Research    deeper retrieval, more sources
-            always-on mechanical checks only
-
-Verified    the above, plus stage 6 semantic verification
-            + a verification report
+verified    the above, plus the Verification Agent for claims that
+            paraphrase -- which nothing mechanical can settle.
 ```
 
 ### 4.1 The line between always-on and opt-in
 
-Cheap deterministic checks are **never optional.** They cost nothing, and a
-fabricated citation reaching a user in "Quick" mode would be indefensible
---- Quick means less verification effort, never *no* integrity.
+The deterministic stages are **never optional**. They cost nothing, and a
+fabricated citation reaching a user in the cheap mode would be
+indefensible: cheaper means less checking effort, never no integrity.
 
-| Stage | Quick | Research | Verified |
-|---|---|---|---|
-| 1 citation exists | always | always | always |
-| 2 retrieved by this thread | always | always | always |
-| 3 quotation matches | always | always | always |
-| 4 version current | always | always | always |
-| 6 semantic support | -- | -- | **on** |
+| Stage | quick | verified |
+|---|---|---|
+| 1 citation exists | always | always |
+| 2 retrieved by this thread | always | always |
+| 3 quoted words appear in the source | always | always |
+| 6 semantic support | -- | **on** |
 
-Every always-on row is SQL or string comparison. The only thing the user is
-opting into is model spend.
+Every always-on row is SQL or a string comparison. The only thing the
+reader opts into is model spend.
+
+Stage 4 (version currency) belongs to M14 and is not built. Stage 5
+(authority status) needs a citation graph the corpus cannot yet support.
+
+### 4.1.1 What quick mode tells the reader
+
+A claim that clears stages 1-3 in quick mode has a **verified citation and
+unverified support**. Reporting that per claim would put a caveat on every
+line, which readers learn to skip, so it is said once at the end of the
+answer:
+
+``` text
+Citations above were verified against the corpus, but the statements were
+not individually checked against the source text. Re-run with verification
+enabled for that.
+```
+
+Those claims are not counted as `unchecked`, and a quick-mode answer is not
+marked incomplete. Its citations really were checked; calling every such
+answer incomplete would drain the word of meaning.
 
 ### 4.2 The mode must not change the answer
 

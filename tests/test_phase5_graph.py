@@ -31,19 +31,28 @@ def test_the_analyst_node_puts_claims_on_the_channel(monkeypatch):
 
 
 def test_verification_no_longer_returns_early(monkeypatch):
-    # The check exists since Phase 3 and had never run. With claims on the
-    # channel it does.
+    """The check exists since Phase 3 and had never run. With claims on the
+    channel it does.
+
+    Now stubs the funnel rather than groundedness alone: verification runs
+    the whole pipeline, so patching one stage of it no longer intercepts
+    the call.
+    """
     ran = {}
 
-    def fake_check(claims, conn, available_ids=None):
+    def fake_verify(claims, conn, available_ids=None, use_model=False, chain=None):
+        from legal_ai.schemas.verification import VerificationReport
+
         ran["claims"] = claims
-        from legal_ai.verification.groundedness import GroundednessResult
+        ran["use_model"] = use_model
+        return VerificationReport()
 
-        return GroundednessResult(grounded=list(claims), unsupported=[])
-
-    monkeypatch.setattr("legal_ai.verification.groundedness.check_groundedness", fake_check)
+    monkeypatch.setattr("legal_ai.verification.pipeline.verify", fake_verify)
     nodes.verification({"question": "q", "claims": [GROUNDED], "findings": EVIDENCE})
+
     assert ran["claims"] == [GROUNDED]
+    # Default is the quick mode, so the agent is not consulted.
+    assert ran["use_model"] is False
 
 
 def test_the_draft_node_produces_a_structured_answer():
@@ -75,7 +84,7 @@ def test_an_unsupported_claim_reaches_the_reader_labelled():
         "unsupported_claims": [GROUNDED.text],
     })
     assert out["draft_answer"].needs_verification == (GROUNDED.text,)
-    assert "Could not be verified" in out["answer"]
+    assert "NOT supported by the retrieved sources" in out["answer"]
 
 
 def test_a_question_still_costs_one_model_call(monkeypatch):
@@ -114,7 +123,7 @@ def test_an_ungrounded_claim_reaches_the_final_answer_labelled(monkeypatch):
 
     assert result["unsupported_claims"] == ["a fabricated holding"]
     # Labelled in the text a reader actually sees.
-    assert "Could not be verified" in result["answer"]
+    assert "NOT supported by the retrieved sources" in result["answer"]
     assert "a fabricated holding" in result["answer"]
     # And it must not be dressed up with a citation.
     assert "act:9999:sec-nope" not in result["answer"]
@@ -142,5 +151,5 @@ def test_a_grounded_run_produces_no_warning_section(monkeypatch):
         "findings": EVIDENCE,
     })
     assert result["unsupported_claims"] == []
-    assert "Could not be verified" not in result["answer"]
+    assert "NOT supported by the retrieved sources" not in result["answer"]
     assert result["draft_answer"].is_complete is True

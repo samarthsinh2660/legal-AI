@@ -96,9 +96,23 @@ class VerificationReport:
 
     @property
     def unsupported_texts(self) -> list[str]:
-        """Claims we have a finding against -- not claims we merely could
-        not check. Used where the graph decides whether re-research could
-        help, and re-researching a claim whose evidence contradicts it
-        cannot help."""
+        """Claims the evidence is against -- what the reader is warned of."""
         return [v.claim.text for v in self.verdicts
                 if v.verdict is Verdict.UNSUPPORTED]
+
+    @property
+    def needs_research(self) -> list[str]:
+        """Claims another research pass could plausibly fix.
+
+        Not the same set as `unsupported_texts`, and the difference is the
+        point. A claim citing a real document this thread never retrieved
+        is *exactly* what re-research repairs, so it belongs here even
+        though it is not a finding against the claim.
+
+        Claims skipped because semantic verification was not enabled are
+        excluded: researching harder cannot supply a check the reader chose
+        not to pay for, and looping on them would spend every pass to no
+        effect.
+        """
+        return [v.claim.text for v in self.verdicts
+                if v.verdict is not Verdict.SUPPORTED and v.stage != "skipped"]
