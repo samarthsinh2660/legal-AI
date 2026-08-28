@@ -1,4 +1,4 @@
-# tests/test_aggregate.py
+# tests/test_recon_aggregate.py
 from pathlib import Path
 
 from scripts.recon.aggregate import load_reports, main, render_markdown

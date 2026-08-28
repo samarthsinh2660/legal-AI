@@ -1,4 +1,8 @@
-"""Analyst and draft in the graph -- and the verifier finally receiving claims.
+"""The analyst -> verification -> draft path, exercised through the graph.
+
+Covers the nodes that turn retrieved law into an answer: the Analyst putting
+claims on the channel, verification receiving them, and the draft rendering
+what verification found.
 
 Before this the verification node returned early on every run: nothing in
 the codebase produced claims, so the groundedness check built in Phase 3
