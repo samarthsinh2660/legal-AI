@@ -8,11 +8,18 @@ already stored).
 
 from __future__ import annotations
 
+import json
+
 from legal_ai.graphdb.client import get_driver
 from legal_ai.graphdb.ingest import write_judgment
+from legal_ai.ingestion.bench import extract_bench
 from legal_ai.ingestion.schema import CanonicalDocument
 from legal_ai.knowledge.static.chunk_store import chunk_and_store
-from legal_ai.knowledge.static.db import ensure_chunk_schema, get_connection
+from legal_ai.knowledge.static.db import (
+    ensure_bench_schema,
+    ensure_chunk_schema,
+    get_connection,
+)
 from legal_ai.knowledge.static.embeddings import embed
 from legal_ai.knowledge.static.store import upsert_document
 
@@ -34,6 +41,17 @@ def store_judgment(document: CanonicalDocument) -> bool:
         # past what the embedder reads. Without this the tail of every
         # newly fetched judgment would be unsearchable.
         chunk_and_store(conn, document.document_id, document.full_text, document.document_type)
+
+        # Derived from the text, so it is set here rather than in the
+        # canonical upsert that statutes also pass through.
+        ensure_bench_schema(conn)
+        judges = extract_bench(document.full_text)
+        conn.execute(
+            "UPDATE documents SET judges = %s, bench_size = %s WHERE document_id = %s",
+            (json.dumps(judges) if judges else None, len(judges) or None,
+             document.document_id),
+        )
+        conn.commit()
 
         driver = get_driver()
         try:

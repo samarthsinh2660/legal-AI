@@ -170,6 +170,30 @@ def ensure_schema(conn: psycopg.Connection) -> None:
     )
     conn.commit()
     ensure_version_schema(conn)
+    ensure_bench_schema(conn)
+
+
+def ensure_bench_schema(conn: psycopg.Connection) -> None:
+    """Bench columns on `documents`, added rather than threaded through the
+    canonical upsert.
+
+    Bench is derived from the judgment's own text, not supplied by the
+    archive, so it is not a field of CanonicalDocument and does not belong
+    in the INSERT that statutes also travel through. Keeping it additive
+    means the statute path is untouched.
+
+    `bench_size` is NULL when the header could not be parsed. NULL means
+    unknown and must not be read as small -- an unparsed Constitution Bench
+    outranks everything, and defaulting it to 1 would silently invert the
+    ordering this column exists to provide.
+    """
+    conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS judges JSONB")
+    conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS bench_size INT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS documents_bench_size_idx "
+        "ON documents (bench_size DESC NULLS LAST)"
+    )
+    conn.commit()
 
 
 def ensure_version_schema(conn: psycopg.Connection) -> None:

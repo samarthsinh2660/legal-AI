@@ -65,25 +65,32 @@ def hybrid_search(
 
     `rerank` runs a cross-encoder over the top RERANK_CANDIDATES results.
     On by default because it is load-bearing, not polish: without it this
-    pipeline measures MRR 0.299 on the benchmark, with it 0.530. It costs
+    pipeline measured MRR 0.299 on the benchmark, with it 0.530 -- both at
+    18 judgments; see PHASE_7 §4 for the current, lower numbers. It costs
     roughly a second or two per query on CPU; pass rerank=False, or set
     RERANK_MODEL to the lighter L-6, where latency matters more.
 
-    `expand_graph` is OFF for now, and can be turned on later once the
-    corpus is much bigger.
+    `expand_graph` is OFF, and stays off on measurement rather than on
+    assumption.
 
-    Measured effect today is nil (identical MRR and recall) for +0.5s per
-    query, because the useful edges barely exist: ~35,600 CONTAINS edges
-    against a handful of CITES/CITES_SECTION, which come from judgments
-    and only a few are stored. Expansion therefore mostly walks Section ->
-    parent Act, and Acts are containers the reranker correctly discards.
+    It was first left off when the citation edges it traverses barely
+    existed. Re-measured 2026-08-28 at 7,200 judgments and 521 CITES
+    edges, on the 50-question set:
 
-    When the judgment corpus is large, re-measure before switching it on
-    rather than assuming it helps: more edges can mean more noise, since a
+        expand_graph=False    MRR 0.325   recall@10 56%
+        expand_graph=True     MRR 0.318   recall@10 60%
+
+    No measurable effect, for +0.5s per query. Re-measure again before
+    switching it on -- more edges can mean more noise, since a
     heavily-cited section expands into hundreds of loosely-related
     candidates. If it hurts then, the fix is edge weighting (down-weight
     hub nodes, require agreement across several seeds), not simply
-    disabling it again. Note that the explicit graph tools in
+    disabling it again.
+
+    Note that every question in that dataset expects a statute section, so
+    the benchmark can detect harm from expansion but cannot measure what a
+    judgment-citation graph would win. That needs a judgment eval set,
+    which does not exist yet. The explicit graph tools in
     legal_ai.tools.graph answer structural questions directly and need no
     such tuning.
     """
