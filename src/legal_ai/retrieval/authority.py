@@ -67,3 +67,45 @@ def rank_by_authority(items: list[Authority]) -> list[Authority]:
         items,
         key=lambda x: (-x.citation_count, -(x.bench_size or 0), x.document_id),
     )
+
+
+def authority_lookup(driver, conn, document_ids: list[str]) -> dict[str, Authority]:
+    """Authority for each of `document_ids` that is a stored judgment.
+
+    Two reads because the two signals live in two stores: CITES in-degree
+    from Neo4j, bench_size from Postgres. Ids that are not judgments, or
+    are not held, are simply absent -- callers rank a missing id as
+    uncited rather than dropping it.
+    """
+    if not document_ids:
+        return {}
+
+    with driver.session() as session:
+        rows = session.run(
+            """
+            MATCH (j:Judgment) WHERE j.document_id IN $ids
+            OPTIONAL MATCH (citing:Judgment)-[:CITES]->(j)
+            RETURN j.document_id AS document_id,
+                   count(DISTINCT citing) AS citation_count
+            """,
+            ids=list(document_ids),
+        )
+        counts = {r["document_id"]: r["citation_count"] for r in rows}
+
+    if not counts:
+        return {}
+
+    benches = dict(
+        conn.execute(
+            "SELECT document_id, bench_size FROM documents WHERE document_id = ANY(%s)",
+            (list(counts),),
+        ).fetchall()
+    )
+    return {
+        document_id: Authority(
+            document_id=document_id,
+            citation_count=count,
+            bench_size=benches.get(document_id),
+        )
+        for document_id, count in counts.items()
+    }
