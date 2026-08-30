@@ -14,6 +14,7 @@ import psycopg
 from legal_ai.ingestion.citations import extract_citations, normalise_citation
 from legal_ai.ingestion.schema import CanonicalDocument
 from legal_ai.ingestion.statute_citations import extract_section_references
+from legal_ai.ingestion.treatment_table import extract_treatment_table
 from legal_ai.knowledge.static.store import find_act_by_name, get_document
 
 
@@ -102,6 +103,27 @@ def write_judgment(
                     citation=cited_citation,
                 )
 
+        # Treatment, where the reporter states it. Free and deterministic:
+        # Supreme Court Reports print how the judgment dealt with each
+        # authority, so a newly stored judgment carries its treatments
+        # immediately instead of waiting for a backfill. Judgments without
+        # such a table are left untreated for scripts/classify_treatments.py,
+        # which spends model budget and should stay deliberate.
+        #
+        # After the CITES edges above, because it sets a property on them.
+        for citation, treatment in extract_treatment_table(judgment.full_text):
+            session.run(
+                """
+                MATCH (a:Judgment {document_id: $doc_id})
+                      -[r:CITES]->(b:Judgment {citation_key: $key})
+                SET r.treatment = $treatment,
+                    r.treatment_why = 'reporter Case Law Reference table'
+                """,
+                doc_id=judgment.document_id,
+                key=normalise_citation(citation),
+                treatment=treatment.value,
+            )
+
         if pg_conn is not None:
             for ref in extract_section_references(judgment.full_text):
                 act_id = find_act_by_name(pg_conn, ref.act_name)
@@ -113,10 +135,12 @@ def write_judgment(
                         """
                         MATCH (j:Judgment {document_id: $doc_id})
                         MATCH (s:Section {document_id: $section_id})
-                        MERGE (j)-[:CITES_SECTION]->(s)
+                        MERGE (j)-[r:CITES_SECTION]->(s)
+                        SET r.mentions = $mentions
                         """,
                         doc_id=judgment.document_id,
                         section_id=section_id,
+                        mentions=ref.mentions,
                     )
                 else:
                     session.run(

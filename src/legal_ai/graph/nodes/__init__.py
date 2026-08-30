@@ -205,6 +205,7 @@ def draft(state: ResearchState) -> dict:
     tell a short answer from an incomplete one.
     """
     from legal_ai.agents.draft import build_answer, render
+    from legal_ai.config.settings import Configuration
     from legal_ai.graphdb.client import get_driver
     from legal_ai.knowledge.static.db import get_connection
     from legal_ai.retrieval.authority import authority_lookup
@@ -214,14 +215,15 @@ def draft(state: ResearchState) -> dict:
     findings = list(state.get("findings") or [])
 
     # Judgments reach the reader strongest first rather than in id order.
-    # A graph that is down must not cost the user their answer, so a failed
-    # lookup falls back to the previous ordering.
+    # Off leaves them in id order, which is what shipped before Phase 7.
+    # A graph that is down must not cost the user their answer either, so a
+    # failed lookup falls back the same way.
     authority = {}
     judgment_ids = [
         item.document_id for item in findings
         if item.document_id and (item.document_type or "") == "judgment"
     ]
-    if judgment_ids:
+    if judgment_ids and Configuration.from_env().rank_by_authority:
         try:
             driver = get_driver()
             conn = get_connection()

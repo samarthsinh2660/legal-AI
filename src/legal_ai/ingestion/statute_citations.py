@@ -39,40 +39,53 @@ class SectionReference:
     act_year: str | None
     raw: str
 
+    # How many times the judgment invokes this section. One mention is a
+    # passing reference; a judgment that turns on a provision returns to it.
+    # Kept because it is the cheapest signal separating "mentions" from
+    # "is about", and de-duplication was throwing it away.
+    mentions: int = 1
+
 
 def extract_section_references(text: str) -> list[SectionReference]:
+    """Each distinct section referenced, once, carrying how often it appears.
+
+    De-duplicated by (section, act) as before -- one section is one edge --
+    but repeats now increment `mentions` rather than being discarded.
+    """
     found: list[SectionReference] = []
-    seen: set[tuple[str, str]] = set()
+    by_key: dict[tuple[str, str], SectionReference] = {}
+
+    def add(key: tuple[str, str], reference: SectionReference) -> None:
+        existing = by_key.get(key)
+        if existing is None:
+            by_key[key] = reference
+            found.append(reference)
+        else:
+            existing.mentions += 1
 
     for match in _SECTION_OF_ACT.finditer(text):
         section_number, act_name, act_year = match.groups()
         act_name = re.sub(r"\s+", " ", act_name).strip().rstrip(",")
-        key = (section_number.upper(), act_name.lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        found.append(
+        add(
+            (section_number.upper(), act_name.lower()),
             SectionReference(
                 section_number=section_number.upper(),
                 act_name=act_name,
                 act_year=act_year,
                 raw=match.group(0),
-            )
+            ),
         )
 
     for match in _SECTION_ABBREVIATION.finditer(text):
         section_number, abbreviation = match.groups()
-        key = (section_number.upper(), abbreviation.lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        found.append(
+        add(
+            (section_number.upper(), abbreviation.lower()),
             SectionReference(
                 section_number=section_number.upper(),
                 act_name=abbreviation,
                 act_year=None,
                 raw=match.group(0),
-            )
+            ),
         )
 
     return found

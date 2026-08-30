@@ -325,13 +325,11 @@ default**. It costs roughly 1-3s per query on CPU; `rerank=False` or
 `RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2` trade quality for
 latency where that matters.
 
-> **Superseded 2026-08-28.** These figures were measured when the corpus
-> held 18 judgments. It now holds 7,200+, and the same 50-question set
-> measures **MRR 0.325, recall@10 56%** --- 0.469 / 78% when retrieval is
-> restricted to sections. The mechanism is judgment dilution, and part of
-> the drop is the dataset rather than the system: `expected` lists only
-> statute ids, so genuinely leading judgments outranking a section score
-> as failures. See `PHASE_7_ADVANCED_GRAPHRAG.md` §4.
+> **Read the versioned figures below, not these.** This 15-query set was
+> never committed and these numbers cannot be reproduced. A note added here
+> on 2026-08-28 treated them as the baseline and reported a regression
+> against them; that was a misreading, corrected 2026-08-29. The comparable
+> baseline is the 50-question table further down.
 
 ### Re-measured 2026-08-20, on a versioned benchmark
 

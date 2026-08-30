@@ -11,7 +11,9 @@ from __future__ import annotations
 from legal_ai.graphdb.client import get_driver
 from legal_ai.knowledge.static.db import get_connection
 from legal_ai.retrieval.evidence_builder import build_evidence
+from legal_ai.config import DEFAULT_CONFIG
 from legal_ai.retrieval.graph_search import expand_via_graph
+from legal_ai.retrieval.type_floor import apply_type_floor
 from legal_ai.retrieval.keyword import search_keyword
 from legal_ai.retrieval.metadata import MetadataFilters, search_metadata
 from legal_ai.retrieval.rerank import rerank as rerank_candidates
@@ -48,6 +50,17 @@ def reciprocal_rank_fusion(
     return sorted(fused.items(), key=lambda item: (-item[1], item[0]))
 
 
+def _with_floor(conn, ranked_ids: list[str], limit: int, enabled: bool) -> list[str]:
+    """`ranked_ids` cut to `limit`, keeping one statute in view when asked."""
+    if not enabled or not ranked_ids:
+        return ranked_ids[:limit]
+    rows = conn.execute(
+        "SELECT document_id, document_type FROM documents WHERE document_id = ANY(%s)",
+        (ranked_ids,),
+    ).fetchall()
+    return apply_type_floor(ranked_ids, dict(rows), limit)
+
+
 def hybrid_search(
     query: str,
     limit: int = 10,
@@ -57,6 +70,7 @@ def hybrid_search(
     # is much bigger -- re-measure first, see the docstring below.
     expand_graph: bool = False,
     rerank: bool = True,
+    type_floor: bool | None = None,
 ) -> list[Evidence]:
     """Retrieve the most relevant stored documents for `query`.
 
@@ -65,8 +79,9 @@ def hybrid_search(
 
     `rerank` runs a cross-encoder over the top RERANK_CANDIDATES results.
     On by default because it is load-bearing, not polish: without it this
-    pipeline measured MRR 0.299 on the benchmark, with it 0.530 -- both at
-    18 judgments; see PHASE_7 §4 for the current, lower numbers. It costs
+    pipeline measures MRR 0.345 on the versioned 50-question benchmark,
+    with it 0.467. (An older 15-query set reported 0.299 to 0.530; that set
+    was never committed and is not comparable.) It costs
     roughly a second or two per query on CPU; pass rerank=False, or set
     RERANK_MODEL to the lighter L-6, where latency matters more.
 
@@ -79,6 +94,8 @@ def hybrid_search(
 
         expand_graph=False    MRR 0.325   recall@10 56%
         expand_graph=True     MRR 0.318   recall@10 60%
+
+    (Measured at 7,204 judgments, before type interleaving.)
 
     No measurable effect, for +0.5s per query. Re-measure again before
     switching it on -- more edges can mean more noise, since a
@@ -97,6 +114,11 @@ def hybrid_search(
     # With reranking on, the signals must return at least the shortlist the
     # reranker expects -- otherwise the deep candidates it exists to rescue
     # are never retrieved in the first place.
+    # None means "use the configured default", so a caller that says
+    # nothing follows Configuration and a caller that passes a value wins.
+    if type_floor is None:
+        type_floor = DEFAULT_CONFIG.interleave_result_types
+
     fetch = limit * _SIGNAL_OVERFETCH
     if rerank:
         fetch = max(fetch, RERANK_CANDIDATES)
@@ -123,13 +145,17 @@ def hybrid_search(
         if rerank and fused:
             shortlist = [document_id for document_id, _score in fused[:RERANK_CANDIDATES]]
             passages = best_passages(conn, query, shortlist)
-            reranked = rerank_candidates(query, passages, limit=limit)
+            # Rerank the whole shortlist, not the top `limit`: the statute
+            # the floor promotes is usually below the cut, and truncating
+            # first would leave nothing to promote.
+            reranked = rerank_candidates(query, passages, limit=len(shortlist))
             if reranked:
+                order = [document_id for document_id, _score in reranked]
                 return build_evidence(
-                    conn, [document_id for document_id, _score in reranked], query=query
+                    conn, _with_floor(conn, order, limit, type_floor), query=query
                 )
 
-        top_ids = [document_id for document_id, _score in fused[:limit]]
-        return build_evidence(conn, top_ids, query=query)
+        order = [document_id for document_id, _score in fused]
+        return build_evidence(conn, _with_floor(conn, order, limit, type_floor), query=query)
     finally:
         conn.close()

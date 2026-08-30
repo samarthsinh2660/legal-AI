@@ -23,7 +23,16 @@ _PATTERNS = [
     # in the corpus unextracted while CITES resolved 2 edges. Spacing and
     # stops vary in the source PDFs ("S.C.R.", "S C R", "SCR"), hence the
     # tolerant separators.
-    re.compile(r"\[\d{4}\]\s+\d+\s+S\.?\s?C\.?\s?R\.?\s+\d+"),  # [2018] 13 S.C.R. 1188
+    # Horizontal whitespace only before the page number. Every page of an
+    # SCR judgment is stamped "858 SUPREME COURT REPORTS [2023] 2 S.C.R.",
+    # and with \s+ this read across the line break onto the next paragraph
+    # number -- manufacturing "[2023] 2 S.C.R. 20", a citation the judgment
+    # never made, whose key collided with a real and unrelated case. That
+    # phantom edge was then classified OVERRULED from nearby prose about a
+    # different overruling, reporting a live authority as doubted.
+    # A citation wrapped across lines is lost; that costs one edge, where a
+    # phantom one costs a false overruling.
+    re.compile(r"\[\d{4}\][ \t]+\d+[ \t]+S\.?[ \t]?C\.?[ \t]?R\.?[ \t]+\d+"),  # [2018] 13 S.C.R. 1188
     re.compile(r"\d{4}\s+INSC\s+\d+"),                     # 2023 INSC 1043
     re.compile(r"AIR\s+\d{4}\s+SC\s+\d+"),                 # AIR 1968 SC 1165
     re.compile(r"\d{4}\s+GLR\s+\d+"),                      # 2023 GLR 1
@@ -52,3 +61,36 @@ def extract_citations(text: str) -> list[str]:
                 seen.add(key)
                 found.append(citation)
     return found
+
+
+# Characters carried either side of a citation. Wide enough to hold the
+# sentence that states the treatment ("we respectfully overrule...") and the
+# clause before it, narrow enough that several fit in one model window.
+CONTEXT_CHARS = 500
+
+
+def extract_citation_contexts(text: str) -> list[tuple[str, str]]:
+    """(citation, surrounding text) for every occurrence in `text`.
+
+    Whether a judgment followed, distinguished or overruled the case it
+    cites is never in the citation -- "(2019) 8 SCC 729" reads the same in
+    all three -- it is in the words around it. The graph records only that A
+    cites B, so classifying the treatment needs this carried alongside.
+
+    Every *occurrence*, not every distinct citation: a judgment often
+    considers a case early and disposes of it late, and keeping only the
+    first mention would systematically miss the treatment that matters.
+    """
+    if not text:
+        return []
+
+    found: list[tuple[int, str, str]] = []
+    for pattern in _PATTERNS:
+        for match in pattern.finditer(text):
+            start = max(match.start() - CONTEXT_CHARS, 0)
+            end = min(match.end() + CONTEXT_CHARS, len(text))
+            found.append((match.start(), match.group(0), text[start:end]))
+
+    # Source order, so a caller reading them sees the judgment's own
+    # sequence of dealing with an authority.
+    return [(citation, context) for _position, citation, context in sorted(found)]

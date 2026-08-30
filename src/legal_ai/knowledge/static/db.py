@@ -186,7 +186,23 @@ def ensure_bench_schema(conn: psycopg.Connection) -> None:
     unknown and must not be read as small -- an unparsed Constitution Bench
     outranks everything, and defaulting it to 1 would silently invert the
     ordering this column exists to provide.
+
+    The catalog is checked before any ALTER is issued. `ADD COLUMN IF NOT
+    EXISTS` still requests ACCESS EXCLUSIVE even when it is a no-op, and a
+    *pending* ACCESS EXCLUSIVE request blocks every reader that queues
+    behind it. Measured 2026-08-29: called once per stored judgment during
+    a bulk ingest, this took the whole database down for readers for over
+    half an hour -- every search in every other process sat waiting on an
+    ALTER that had nothing to do.
     """
+    existing = conn.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'documents' AND column_name IN ('judges', 'bench_size')"
+    ).fetchall()
+    if len({row[0] for row in existing}) == 2:
+        conn.commit()
+        return
+
     conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS judges JSONB")
     conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS bench_size INT")
     conn.execute(

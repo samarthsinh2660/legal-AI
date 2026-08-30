@@ -44,12 +44,13 @@ Measured 2026-08-29, after the deep Supreme Court ingest.
 | Feature | Data it needs | Held | Status |
 |---|---|---|---|
 | 1 Precedent strength | `CITES` edges | 3,503 | **Working** |
-| 2 Still good law | Citation context + treatment labels | none | **Blocked** on classification |
-| 3 Conflicting precedent | HC breadth, section links | 4,460 HC / 28 courts, `CITES_SECTION` | **Ready** |
+| 2 Still good law | Citation context + treatment labels | 79 edges classified | **Built**, running incrementally |
+| 3 Conflicting precedent | HC breadth, section links | 4,460 HC / 28 courts, `CITES_SECTION` | **Built** |
 | 4 Bench strength | Judges per judgment | 5,861 SC (97%) | **Done** |
 | 5 In force at date | `document_versions` | empty | **Blocked** on M14 |
-| 6 IRAC | none (prompting) | --- | Ready |
+| 6 IRAC | none (assembly) | --- | **Built** |
 | M15 benchmark | Judgment retrieval eval set | none | **Missing** |
+| Edge relevance | `mentions` on CITES_SECTION | 6,890 edges counted | **Done** |
 
 ### The citation-density problem
 
@@ -164,7 +165,114 @@ two-judge decision the profession actually follows on the question asked.
 Bench is surfaced on every result so a caller can say "and this one binds"
 --- the honest way to show it.
 
-Exposed as `tools.graph.find_leading_authorities(section_id)`.
+Exposed as `tools.graph.find_leading_authorities(section_id)`, and applied
+where the reader actually sees it: `DraftAnswer.key_judgments` was ordered by
+`document_id` -- alphabetical order over opaque ids, which put a single-judge
+order above the Constitution Bench that settled the point. The draft node now
+looks authority up over the graph and orders by it, falling back to id order
+if the lookup fails, because a graph that is down must not cost the user
+their answer.
+
+### Conflict detection --- `retrieval/conflict.py` + `agents/conflict.py`
+
+Whether two courts disagree cannot be read off the graph: the graph records
+that a judgment cites a section, never what it held about it. So this splits
+into a cheap half and an expensive one.
+
+The cheap half chooses *which* holdings to compare. One judgment per court
+--- two decisions of the same High Court are not a split, at worst that
+court's own inconsistency --- and a few courts, not all: fifty judgments is
+1,225 pairs, nearly every one of them a court agreeing with itself.
+
+The expensive half is one model call over at most four holdings, asked only
+whether they can stand together. It is not asked which side is right; which
+court binds this reader is a question about jurisdiction and bench strength
+that the graph answers better than a model does.
+
+**Three outcomes, not two.** CONSISTENT and NOT_CHECKED are different facts.
+Collapsing them would repeat exactly the defect Phase 6 fixed for
+verification: a check that could not run rendering as a check that passed.
+The direction matters both ways --- asserting a split that does not exist
+makes settled law look open, while missing one leaves the reader no worse off
+than before the feature existed.
+
+Runs on `case_model_chain`, the same shape of task as contradiction detection
+over case documents, where Gemma measured recall 1.00 against gemini-flash's
+0.20 (`evals/run_contradictions.py`, 2026-08-24).
+
+### IRAC --- `agents.draft.render_irac`
+
+Issue / Rule / Analysis / Conclusion, assembled from the verified answer
+rather than written by a model. Statutes are the Rule, judgments the
+Analysis, the question the Issue and the lede the Conclusion.
+
+The tempting version hands the claims to a model and asks for an IRAC essay.
+That would put un-verified prose in front of the reader after the whole
+pipeline spent its effort making every sentence checkable, and give the model
+a chance to drop a citation on the way. Claims that failed verification are
+kept out of Rule and Analysis and listed under their own heading: letting
+them in would make IRAC a second door into the answer for what the front door
+turned away, and dropping them would leave a short answer indistinguishable
+from an incomplete one.
+
+### Edge relevance --- `mentions` on CITES_SECTION
+
+The edge was created from a single regex hit, so it recorded that a judgment
+*named* a section, never that it was *about* one. A money-laundering
+judgment naming NI Act s.138 once produced the same edge as a cheque
+dishonour case that turns on it, and `find_leading_authorities("s.138")`
+returned the former first.
+
+The count was already in the text --- `extract_section_references` was
+discarding it during de-duplication. Recovering it and requiring two
+mentions before a judgment counts as authority on a provision:
+
+```
+edges recounted        6,890
+  substantive (2+)     2,140
+  passing (1)          4,750     69% of the edges were passing mentions
+```
+
+Before and after, leading authorities on NI Act s.138:
+
+```
+before   Vijay Madanlal Choudhary (PMLA)        <- names s.138 once
+         M/S Arif Azim Co.
+after    P. Mohanraj v. Shah Brothers Ispat     <- s.138 and the IBC moratorium
+         Rajesh Jain v. Ajay Singh              <- presumption under s.139
+         N. Harihara Krishnan v. J. Thomas      <- cognizance under s.142
+```
+
+### Treatment classification --- `agents/treatment.py`, `retrieval/good_law.py`
+
+Whether a case is still good law is not in the citation: "(2019) 8 SCC 729"
+reads the same whether the court followed it or buried it. It is in the
+sentence around it, which `ingestion.citations.extract_citation_contexts`
+now carries alongside the edge.
+
+Four treatments --- FOLLOWED, DISTINGUISHED, OVERRULED, CONSIDERED --- and a
+fifth state that is not a treatment: NOT_CHECKED. The classifier **fails to
+NOT_CHECKED, never to FOLLOWED.** Telling a reader a case is good law when
+it was overruled is worse than telling them nothing, because it stops them
+checking; the reverse leaves them where they started.
+
+DISTINGUISHED is deliberately not negative. A court distinguishing a case
+confines it to its facts and leaves it standing; treating that as a
+retirement would kill live authority --- the same failure as missing an
+overruling, pointed the other way.
+
+`assess_good_law` inverts the usual conservatism: **one unclassified citing
+judgment withholds the clean bill**, because the overruling could be hiding
+in exactly the edge we did not read. Only a positively identified overruling
+returns DOUBTED.
+
+```
+79 edges classified over 40 calls
+  CONSIDERED     55
+  FOLLOWED       20
+  DISTINGUISHED   4
+  OVERRULED       0
+```
 
 ------------------------------------------------------------------------
 
@@ -190,33 +298,106 @@ benchmark is the right instrument for detecting *harm* --- it found none
 --- and the wrong one for measuring precedent-graph value. That needs the
 judgment eval set listed as missing above.
 
-### Retrieval has regressed and the recorded figure is stale
+### Judgment dilution, and the baseline that was misread
+
+An earlier note in this document reported a serious regression, comparing
+today's numbers against **MRR 0.530 / recall@10 87%**. That comparison was
+wrong. Those figures come from the 15-query set that `PHASE_2` explicitly
+records as unreproducible and *a different question set*. The versioned
+50-question benchmark --- the one `evals.run` actually runs --- recorded:
 
 ```
                        MRR    r@1   r@5   r@10
-Phase 2 recorded      0.530   40%   87%    87%
-now, all types        0.325   22%   50%    56%
-now, sections only    0.469   32%   64%    78%
+Phase 2 recorded      0.467   32%   64%    78%
+sections only, today  0.469   32%   64%    78%
 ```
 
-recall@10 fell from 87% to 56%: for nearly half the questions the correct
-provision no longer appears in the top 10. Filtering to sections recovers
-most of it, which identifies the mechanism --- **judgment dilution**. The
-judgment corpus grew from 18 to 7,200+ and the retrieval benchmark was
-never re-run.
+**Section retrieval has not regressed.** It measures today exactly what it
+measured then.
 
-It is not simply "worse". On the RERA question the four judgments outranking
-s.18 are *Laureate Buildwell*, *Ireo Grace*, *Newtech Promoters* --- the
-actual leading authorities on builder possession. Retrieval surfaced real
-law; the benchmark scores it as failure because `expected` only ever listed
-statute ids. Part of the drop is genuine regression and part is the dataset
-measuring the wrong thing, and the two cannot be separated with this
-dataset.
+What is real is dilution. Over the whole corpus, with judgments competing
+for the same ten slots:
 
-A residual 0.469 vs 0.530 on sections alone remains unexplained.
+```
+                       MRR    r@1   r@5   r@10
+whole corpus          0.282   20%   42%    54%
++ type interleaving   0.333   20%   52%    68%
+```
 
-**The 0.530 in `PHASE_2_QUERY_RETRIEVAL.md` and in the `hybrid_search`
-docstring now overstates the system.**
+The judgments doing the crowding are not junk --- on the RERA question the
+ones outranking s.18 were *Laureate Buildwell*, *Ireo Grace* and *Newtech
+Promoters*, the leading authorities on builder possession. The defect is
+one-sidedness: a reader asking what the law says needs the provision *and*
+the cases, and was getting only cases.
+
+`retrieval/type_floor.py` interleaves the two kinds below rank 1, which the
+strongest result keeps whatever it is. That recovers +0.05 MRR and 14 points
+of recall@10 without an intent classifier on the hot path --- deliberately,
+because a misclassified intent removes a whole category from the answer, and
+most legal questions genuinely want both.
+
+A gap to 0.469 remains. Closing it further would mean ranking statutes above
+judgments, and since every question in this dataset expects a statute, that
+would be tuning to the benchmark rather than to the reader. It needs the
+judgment eval set listed as missing above.
+
+### Everything here is optional
+
+Phase 7 does not change what the system is. It is a layer over an answer
+that was already correct, so it is configurable the way verification is.
+
+Most of it needs no switch at all: `find_court_split`, `render_irac`,
+`find_leading_authorities` and `is_still_good_law` have **no automatic
+caller**. They run when something asks and cost nothing otherwise, which is
+the cheapest kind of optional.
+
+Two behaviours change every answer, so they carry a documented default:
+
+```
+LEGAL_AI_RANK_BY_AUTHORITY=false        key_judgments back to id order
+LEGAL_AI_INTERLEAVE_RESULT_TYPES=false  retrieval back to raw relevance
+```
+
+Both default **on**, on measurement rather than preference. Interleaving is
++0.05 MRR and +14 points of recall@10; authority ordering replaces
+alphabetical order over opaque identifiers, which has nothing to recommend
+it. Off restores exactly what shipped before this phase -- not an
+approximation, since a flag that leaves the system in a third state nobody
+measured is worse than no flag.
+
+### Treatment classification, scored
+
+150 cases, ground truth from the reporter's own Case Law Reference table.
+The classifier never sees it: passages come from body prose before the
+headnote block, so this measures reading law rather than reading a label.
+
+```
+exact agreement with the reporter    0.92   (138/150)
+returned NOT_CHECKED                 0.00
+reached for OVERRULED (suppressed)   0
+
+FOLLOWED        66/72   0.92
+CONSIDERED      67/72   0.93
+DISTINGUISHED    5/6    0.83
+```
+
+Every error is an adjacent-class confusion, 9 of 12 of them FOLLOWED against
+CONSIDERED -- the "adopted it or merely noted it" boundary. Nothing became
+OVERRULED.
+
+**This partly contradicts the reason OVERRULED was taken away from the
+model.** That rule came from two observed failures; across 150 clean
+passages the model reached for OVERRULED zero times. Both original failures
+came from bad inputs rather than an eager model -- a phantom edge from the
+citation collision, and a reference list where the cited case was marked
+"affirmed" while a different case on the same line was overruled. The
+suppression stays, but as cheap insurance costing nothing measurable, not as
+a correction to a model that over-reaches.
+
+**What this cannot measure:** the dataset holds no OVERRULED case, because
+the corpus contains no reporter-labelled overruling where the overruled
+judgment is also held. The label whose errors are worst is unscored. The
+classifier is shown not to invent overrulings; it is not shown to catch one.
 
 ------------------------------------------------------------------------
 
@@ -230,10 +411,14 @@ and Kings* (5 judges), which is the correct answer. Below roughly ten
 citations the ordering is still noise, so the ranking is trustworthy at
 the head of a list and not at its tail.
 
-**`CITES_SECTION` means "mentions", not "is about".** A PMLA judgment that
-cites NI Act s.138 in passing enters the candidate set for s.138 and can
-rank above cases genuinely on the point. Ranking the candidates does not
-fix a polluted candidate set; that needs a relevance filter on the edge.
+**Treatment classification covers 79 of 3,503 edges.** `is_still_good_law`
+therefore answers NOT_CHECKED for nearly everything, which is the honest
+state and not a bug. Classification runs incrementally against a free-tier
+quota; the machinery is complete and the coverage is not.
+
+No overruling has been found yet. In 79 edges that is expected --- the base
+rate is low --- but it means the DOUBTED path has been exercised only by
+tests, never by real data.
 
 **Feature 2 is the valuable one and the furthest away.** Detecting that A
 overruled B needs both a dense graph and treatment classification over the
@@ -243,7 +428,69 @@ when it can be measured.
 
 ------------------------------------------------------------------------
 
-## 6. Milestone 15
+## 6. What is left
+
+Nothing below blocks using what is built. Ordered by how much each would
+change the product.
+
+### Measurement gaps
+
+**No OVERRULED case in the treatment eval.** The corpus holds no
+reporter-labelled overruling where the overruled judgment is also stored, so
+the label whose errors are worst is unscored. The classifier is shown not to
+*invent* overrulings; it is not shown to *catch* one. Closing this needs
+either deeper Supreme Court coverage until an overruled pair lands, or a
+hand-built fixture from known overrulings (Puttaswamy over Kharak Singh,
+say). Until then the product copy must not imply the check is complete.
+
+**Authority ranking is unscored.** It returns the right cases by inspection
+-- P. Mohanraj on NI Act s.138, Vidya Drolia on arbitration -- but there is
+no judgment-retrieval eval set, so there is no precision figure. Every
+retrieval question in `evals/datasets/retrieval.json` expects a statute.
+
+**Milestone 15 is not started.** See §7.
+
+### Blind features
+
+**Conflict detection returns CONSISTENT for the wrong reason.** Run against
+MV Act s.166 (9 courts) and Arms Act s.27 (8 courts) it answered CONSISTENT
+both times, correctly reasoning that the judgments address different legal
+issues. That is the problem: `CITES_SECTION` gathers courts ruling on
+different questions that happen to cite the same provision. `MIN_MENTIONS`
+helped ranking but the candidate set still is not issue-aligned. This needs
+per-section High Court depth, and probably an issue filter on the edge.
+
+### Coverage gaps
+
+**High Court bench parsing sits at 2%.** The SCR format is one house style;
+the 28 High Courts share no common shape, so this needs per-court patterns
+and its own measurement. Bench strength is Supreme-Court-only today.
+
+**High Court judgments carry no citation of their own** in the archive, so
+nothing can cite them and they cannot enter the precedent graph. 4,400 of
+them moved the edge count by 37. This is a source limitation, not a bug.
+
+**Roughly a third of citations are unreachable** -- 14,334 SCC and 2,912 AIR
+targets whose volume and page numbers have no algorithmic mapping to SCR.
+No amount of crawling closes it; it needs a mapping table.
+
+**Treatment for judgments without a reporter table** still needs
+`scripts/classify_treatments.py` and model budget. The table covers 3,847
+Supreme Court judgments; High Court judgments have none.
+
+### Deferred by decision
+
+**In-force-at-date (feature 5)** remains blocked on Milestone 14 currency,
+which was deliberately skipped. `document_versions` is empty and nothing
+re-scrapes, so a 2023 amendment is quoted at a 2019 dispute without comment.
+
+**The API layer** lives in a worktree with dependencies in a local `.deps/`.
+Before merging: `pip install -e '.[dev]'` and delete that directory. See
+`docs/API.md`.
+
+------------------------------------------------------------------------
+
+## 7. Milestone 15
 
 End-to-end legal research benchmark, per `PROJECT_STRUCTURE.md` §14.
 
@@ -255,7 +502,7 @@ knowledge, per §29.
 
 ------------------------------------------------------------------------
 
-## 7. Reference architecture
+## 8. Reference architecture
 
 `LEGAL_DATA_SOURCES.md` §20--23 --- the IBM Knowledge Graph work, the NyOn
 ontology, and the Domain-Partitioned Hybrid RAG and Falkor-IRAC papers ---
@@ -263,7 +510,7 @@ are the closest published references to what this phase builds.
 
 ------------------------------------------------------------------------
 
-## 8. Deliverable
+## 9. Deliverable
 
 > Authority ranking and conflict surfacing on an SCR-only precedent graph,
 > with its coverage stated rather than implied --- and the currency and

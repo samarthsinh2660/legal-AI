@@ -24,6 +24,7 @@ from legal_ai.retrieval.hybrid import hybrid_search
 def run_question(
     question: EvalQuestion, limit: int, rerank: bool, rewrite: bool = False,
     expand_graph: bool = False,
+    type_floor: bool = True,
 ) -> int | None:
     text = question.question
     if rewrite:
@@ -34,7 +35,10 @@ def run_question(
         from legal_ai.agents.research_plan import plan_research
 
         text = plan_research(text, max_angles=1)[0].query
-    evidence = hybrid_search(text, limit=limit, rerank=rerank, expand_graph=expand_graph)
+    evidence = hybrid_search(
+        text, limit=limit, rerank=rerank, expand_graph=expand_graph,
+        type_floor=type_floor,
+    )
     ranked_ids = [item.document_id for item in evidence if item.document_id]
     return first_relevant_rank(ranked_ids, question.expected)
 
@@ -42,12 +46,13 @@ def run_question(
 def run_dataset(
     questions: list[EvalQuestion], limit: int, rerank: bool, rewrite: bool = False,
     expand_graph: bool = False,
+    type_floor: bool = True,
 ) -> list[int | None]:
     ranks: list[int | None] = []
     for question in questions:
         rank = run_question(
             question, limit=limit, rerank=rerank, rewrite=rewrite,
-            expand_graph=expand_graph,
+            expand_graph=expand_graph, type_floor=type_floor,
         )
         ranks.append(rank)
         print(f"  {question.id:<32} {'miss' if rank is None else f'rank {rank}'}", flush=True)
@@ -61,6 +66,10 @@ def main() -> None:
     parser.add_argument("--dataset", type=str, default=None, help="path to a dataset JSON file")
     parser.add_argument(
         "--rewrite", action="store_true", help="rewrite each question with an LLM first"
+    )
+    parser.add_argument(
+        "--no-type-floor", action="store_true",
+        help="do not guarantee a statute a place in the results",
     )
     parser.add_argument(
         "--expand-graph", action="store_true",
@@ -78,7 +87,7 @@ def main() -> None:
     )
     ranks = run_dataset(
         questions, limit=args.limit, rerank=rerank, rewrite=args.rewrite,
-        expand_graph=args.expand_graph,
+        expand_graph=args.expand_graph, type_floor=not args.no_type_floor,
     )
 
     print(

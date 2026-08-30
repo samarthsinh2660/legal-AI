@@ -128,7 +128,12 @@ def test_find_leading_authorities_ranks_the_most_cited_first(conn, driver):
     upsert_document(conn, section, embedding=_sparse_vector((2, 1.0)))
     write_act_section(driver, act, section)
 
-    on_point = "The question under Section 4 of the Test Act, 2026 arises here."
+    # Twice: CITES_SECTION now requires a judgment to be *about* a section
+    # (retrieval.conflict.MIN_MENTIONS), not merely to name it once.
+    on_point = (
+        "The question under Section 4 of the Test Act, 2026 arises here. "
+        "Section 4 of the Test Act, 2026 is therefore decisive."
+    )
     leading = _doc("test:j-leading", "judgment", "Leading Case", on_point, court="Test Court")
     leading = leading.model_copy(update={"citation": "[2015] 1 S.C.R. 100"})
     minor = _doc("test:j-minor", "judgment", "Minor Case", on_point, court="Test Court")
