@@ -1,4 +1,4 @@
-# tests/test_india_code_parser.py
+# tests/ingestion/test_india_code_parser.py
 from legal_ai.ingestion.india_code.parser import parse_act
 
 # Mirrors the real india code DSpace item page structure (confirmed against

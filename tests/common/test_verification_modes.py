@@ -1,4 +1,7 @@
 """Verification level -- what changes between quick and verified, and what
+
+Cross-domain: verification x graph x llm.
+
 must not.
 
 Two invariants, and they are the reason a reader can trust the cheaper mode:

@@ -1,4 +1,4 @@
-# tests/test_graphdb_ingest.py
+# tests/graph/test_graphdb_ingest.py
 from datetime import datetime, timezone
 
 import pytest

@@ -10,9 +10,6 @@ discipline the whole system enforces:
 
 > The AI reasons over legal evidence rather than inventing legal knowledge.
 
-Status: **design and architecture**. The specification and UI prototype are
-complete; implementation has not started.
-
 ---
 
 ## The problem
@@ -118,9 +115,42 @@ the ownership claim?"*
 
 ``` text
 legal-AI/
-├── docs/       architecture, data strategy, source catalogue, code layout
-└── design/     brand, design system, and the interactive UI prototype
+├── src/legal_ai/   the system
+│   ├── agents/     supervisor, analyst, draft, verifier, treatment, conflict
+│   ├── retrieval/  hybrid search, reranking, authority ranking, good-law
+│   ├── ingestion/  scrapers, parsers, citation and bench extraction
+│   ├── knowledge/  the canonical Postgres store, chunks, embeddings
+│   ├── graphdb/    Neo4j: CONTAINS, CITES, CITES_SECTION, DECIDED_BY
+│   ├── graph/      the LangGraph pipeline that wires the agents together
+│   └── verification/  the groundedness funnel
+├── tests/          715 tests, foldered to mirror src/legal_ai/
+│   └── common/     tests of the seams BETWEEN domains, not within one
+├── evals/          measurement harnesses and their frozen datasets
+├── scripts/        ingest, backfill and rebuild passes over the corpus
+├── docs/           architecture, data strategy, source catalogue, phase plans
+└── design/         brand, design system, and the interactive UI prototype
 ```
+
+Tests sit beside the package they cover. A test lands in `tests/common/`
+only when its assertions are about how two subsystems agree — the graph
+holding together, an answer body staying identical across verification
+modes — rather than testing one subsystem with another as scaffolding. Each
+names the domains it spans in its first lines.
+
+### What is actually in the corpus
+
+``` text
+statute sections   35,601        judgments        12,337
+acts                  860        chunks (embedded) 332,025
+
+graph edges   CONTAINS 35,603   DECIDED_BY 12,320
+              CITES_SECTION 6,349   CITES 2,705
+```
+
+`CITES` is judgment-to-judgment precedent. It is small for a structural
+reason, not a bug: only Supreme Court judgments carry a citation of their
+own in the archives, so High Court judgments cannot be cited by anything.
+See `PHASE_7_ADVANCED_GRAPHRAG.md` §2.
 
 ### `docs/` — architecture
 
@@ -133,15 +163,15 @@ legal-AI/
 
 **Phase plans** — each phase has one job, one deliverable, its own doc (see `AI_PROJECT_PROPOSAL.md` §11 for the full roadmap table):
 
-| Phase | Doc | Deliverable |
-|---|---|---|
-| 1. Data Foundation | [`PHASE_1_DATA_FOUNDATION.md`](./docs/phases/PHASE_1_DATA_FOUNDATION.md) | A clean, searchable, versioned Indian legal data foundation |
-| 2. Query & Retrieval | [`PHASE_2_QUERY_RETRIEVAL.md`](./docs/phases/PHASE_2_QUERY_RETRIEVAL.md) | Reliable retrieval of the correct documents/sections/cases |
-| 3. Research Agents | [`PHASE_3_RESEARCH_AGENTS.md`](./docs/phases/PHASE_3_RESEARCH_AGENTS.md) | AI performs legal research, not just search |
-| 4. Case Intelligence | [`PHASE_4_CASE_DOCUMENT_INTELLIGENCE.md`](./docs/phases/PHASE_4_CASE_DOCUMENT_INTELLIGENCE.md) | AI understands the user's own case, not just the law |
-| 5. Analysis/Drafting | [`PHASE_5_ANALYSIS_DRAFTING.md`](./docs/phases/PHASE_5_ANALYSIS_DRAFTING.md) | Evidence + case facts become structured legal analysis |
-| 6. Verification/Active | [`PHASE_6_VERIFICATION_ACTIVE_LEARNING.md`](./docs/phases/PHASE_6_VERIFICATION_ACTIVE_LEARNING.md) | Every claim checked; usage never becomes law on its own |
-| 7. GraphRAG/Advanced | [`PHASE_7_ADVANCED_GRAPHRAG.md`](./docs/phases/PHASE_7_ADVANCED_GRAPHRAG.md) | A measurably smarter system, on a proven-trustworthy base |
+| Phase | Doc | Deliverable | State |
+|---|---|---|---|
+| 1. Data Foundation | [`PHASE_1_DATA_FOUNDATION.md`](./docs/phases/PHASE_1_DATA_FOUNDATION.md) | A clean, searchable, versioned Indian legal data foundation | done |
+| 2. Query & Retrieval | [`PHASE_2_QUERY_RETRIEVAL.md`](./docs/phases/PHASE_2_QUERY_RETRIEVAL.md) | Reliable retrieval of the correct documents/sections/cases | done |
+| 3. Research Agents | [`PHASE_3_RESEARCH_AGENTS.md`](./docs/phases/PHASE_3_RESEARCH_AGENTS.md) | AI performs legal research, not just search | done |
+| 4. Case Intelligence | [`PHASE_4_CASE_DOCUMENT_INTELLIGENCE.md`](./docs/phases/PHASE_4_CASE_DOCUMENT_INTELLIGENCE.md) | AI understands the user's own case, not just the law | done |
+| 5. Analysis/Drafting | [`PHASE_5_ANALYSIS_DRAFTING.md`](./docs/phases/PHASE_5_ANALYSIS_DRAFTING.md) | Evidence + case facts become structured legal analysis | done |
+| 6. Verification/Active | [`PHASE_6_VERIFICATION_ACTIVE_LEARNING.md`](./docs/phases/PHASE_6_VERIFICATION_ACTIVE_LEARNING.md) | Every claim checked; usage never becomes law on its own | done, M14 currency skipped |
+| 7. GraphRAG/Advanced | [`PHASE_7_ADVANCED_GRAPHRAG.md`](./docs/phases/PHASE_7_ADVANCED_GRAPHRAG.md) | A measurably smarter system, on a proven-trustworthy base | built; M15 benchmark open |
 
 ### `design/` — product
 
@@ -197,15 +227,32 @@ or a non-commercial restriction travels with the data.
 ## Roadmap
 
 Seven phases, each with one job and one deliverable — see the table in
-`AI_PROJECT_PROPOSAL.md` §11, or the phase-doc table above. We're currently
-in **Phase 1 — Data Foundation**: Milestone 0 (data recon) is complete;
-ingestion and indexing (Milestones 1–3) are next.
+`AI_PROJECT_PROPOSAL.md` §11, or the phase-doc table above. **All seven are
+implemented and merged.**
 
-Phase 1 succeeds when India Code, Supreme Court, and Gujarat HC data has
-been ingested, passed the Source Verification Gate
-(`DATA_LAYER_ARCHITECTURE.md` §4), carries full provenance, and is stored in
-a versioned, indexed foundation — with **no agent, tool, or query interface**
-required yet. That's Phase 2 onward.
+### What is measured
+
+Numbers, not impressions. Each is reproducible from `evals/`.
+
+| What | Result | Harness |
+|---|---|---|
+| Claim verification, exact verdict | 0.92–0.94 over 50 frozen claims | `evals.run_verification` |
+| Treatment classification | 0.92 agreement with the law reporter, 150 cases | `evals.run_treatment` |
+| Retrieval | MRR 0.333, recall@10 68% over 50 questions | `evals.run` |
+| Bench extraction | 97% of Supreme Court judgments parsed | — |
+
+### What is honestly not done
+
+- **Milestone 15**, the end-to-end research benchmark, is not started.
+- **Authority ranking is unscored.** It returns the right landmarks by
+  inspection, but no judgment-retrieval eval set exists.
+- **No overruling has ever been found**, so `is_still_good_law` has never
+  returned its warning on real data. It reports *"no negative treatment
+  among the N judgments citing it that we hold"* — a statement about this
+  corpus, never a clearance.
+- **Currency (M14) was deliberately skipped.** Nothing re-scrapes, so an
+  amended section is served as current with no notice.
+- **Conflict detection is built but blind**, pending High Court depth.
 
 The goal is not the most autonomous agent. It is a trustworthy legal research
 pipeline that later phases can safely make more agentic.

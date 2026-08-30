@@ -1,4 +1,4 @@
-# tests/test_probe_supreme_court_bulk.py
+# tests/probes/test_probe_supreme_court_bulk.py
 import responses
 
 from scripts.recon.probe_supreme_court_bulk import (
