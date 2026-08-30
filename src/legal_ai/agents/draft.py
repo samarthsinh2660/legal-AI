@@ -14,11 +14,34 @@ whole payoff for having a verifier at all.
 
 from __future__ import annotations
 
+from legal_ai.retrieval.authority import Authority, rank_by_authority
 from legal_ai.schemas.answer import AnalysisResult, DraftAnswer
 from legal_ai.schemas.evidence import Evidence
 from legal_ai.schemas.verification import Claim, Verdict
 
 _STATUTE_TYPES = frozenset({"act", "section"})
+
+
+def _ordered_judgments(
+    judgment_ids: list[str], authority: dict[str, Authority] | None
+) -> tuple[str, ...]:
+    """Judgments strongest first, or by id when nothing is known.
+
+    Ordering by document_id -- the previous behaviour, and still the
+    fallback -- is alphabetical order over opaque identifiers, which puts a
+    single-judge order above the Constitution Bench that settled the point.
+
+    A judgment absent from `authority` is ranked as uncited rather than
+    dropped: the lookup runs over the graph, which need not hold every
+    retrieved judgment, and a gap there must not remove a citation from the
+    answer.
+    """
+    if not authority:
+        return tuple(sorted(judgment_ids))
+    ranked = rank_by_authority(
+        [authority.get(i, Authority(document_id=i)) for i in sorted(judgment_ids)]
+    )
+    return tuple(item.document_id for item in ranked)
 
 
 def build_answer(
@@ -27,6 +50,7 @@ def build_answer(
     evidence: list[Evidence],
     unsupported: tuple[str, ...] = (),
     report=None,
+    authority: dict[str, "Authority"] | None = None,
 ) -> DraftAnswer:
     """The DraftAnswer for this question.
 
@@ -111,7 +135,7 @@ def build_answer(
         lede=analysis.lede,
         key_elements=tuple(supported),
         applicable_law=tuple(sorted(statutes)),
-        key_judgments=tuple(sorted(judgments)),
+        key_judgments=_ordered_judgments(judgments, authority),
         needs_verification=tuple(flagged),
         unchecked=tuple(unchecked),
         partially_supported=tuple(partial),
@@ -166,3 +190,89 @@ def render(answer: DraftAnswer) -> str:
     lines.append("")
     lines.append(answer.disclaimer)
     return "\n".join(lines)
+
+
+def render_irac(answer: DraftAnswer) -> str:
+    """The same answer, arranged Issue / Rule / Analysis / Conclusion.
+
+    A regrouping, not a rewrite. No model call: `render` and this function
+    both assemble from the same verified claims, and handing those to a
+    model to re-narrate would give it an opportunity to drop a citation
+    after the whole pipeline spent its effort making every sentence
+    checkable. Assembly is the rule for this module, and IRAC is not an
+    exception to it.
+
+    The split is by what a claim cites. Statutes are the Rule -- what the
+    text provides. Judgments are the Analysis -- what courts have made of
+    it. A claim citing both appears under Rule, because the provision is
+    where a reader starts.
+
+    Claims that failed verification are kept out of Rule and Analysis and
+    listed at the end under their own heading. Letting them in would make
+    IRAC a second door into the answer for exactly what the front door
+    turned away; dropping them entirely would leave a short answer
+    indistinguishable from an incomplete one.
+    """
+    statute_ids = set(answer.applicable_law)
+    rule, analysis = [], []
+    for claim in answer.key_elements:
+        target = rule if any(i in statute_ids for i in claim.evidence_ids) else analysis
+        target.append(f"- {claim.text} [{', '.join(claim.evidence_ids)}]")
+
+    lines = [f"Issue: {answer.question}", ""]
+    lines.append("Rule:")
+    lines.extend(rule or ["- (no provision was grounded for this question)"])
+    lines.append("")
+    lines.append("Analysis:")
+    lines.extend(analysis or ["- (no judgment was grounded for this question)"])
+    lines.append("")
+    lines.append("Conclusion:")
+    lines.append(answer.lede or "- (no conclusion could be grounded)")
+
+    unresolved = (
+        list(answer.needs_verification)
+        + list(answer.partially_supported)
+        + list(answer.unchecked)
+    )
+    if unresolved:
+        lines.append("")
+        lines.append("Not established by the retrieved sources:")
+        lines.extend(f"- {text}" for text in unresolved)
+
+    lines.append("")
+    lines.append(answer.disclaimer)
+    return "\n".join(lines)
+
+
+def render_good_law(result: "GoodLawResult") -> str:
+    """One line a reader can act on, for a judgment's standing.
+
+    Deliberately never says "good law". `NO_NEGATIVE_TREATMENT` means
+    nothing in OUR corpus contradicts the case, and our corpus is a small
+    fraction of the reports. A reader who reads that as verification stops
+    checking, which is the outcome this system exists to prevent -- so the
+    line carries the denominator instead of a verdict, and lets the reader
+    judge whether it is enough.
+
+    NOT_CHECKED is stated rather than left blank. Silence reads as "nothing
+    to report", which is reassurance we have not earned.
+    """
+    from legal_ai.retrieval.good_law import GoodLaw
+
+    if result.status is GoodLaw.DOUBTED:
+        return (
+            "Later judgments overruled this: "
+            + ", ".join(result.overruled_by)
+            + ". Do not rely on it without reading them."
+        )
+    if result.status is GoodLaw.NO_NEGATIVE_TREATMENT:
+        n = len(result.checked)
+        return (
+            f"No negative treatment among the {n} judgment"
+            f"{'' if n == 1 else 's'} citing it that we hold. "
+            "That is a statement about this corpus, not about the reports."
+        )
+    return (
+        "Standing not established: we hold no classified judgment citing "
+        "this one. Check a citator before relying on it."
+    )

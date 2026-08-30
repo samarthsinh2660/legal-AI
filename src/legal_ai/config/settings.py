@@ -150,6 +150,30 @@ class Configuration(BaseModel):
     # removal, and it is the reader's call whether to spend on it.
     verification_level: str = "quick"   # quick | verified
 
+    # ------------------------------------------------------- phase 7 reads
+    # Two behaviours are on by default because they are free and measured.
+    # Everything else Phase 7 built -- conflict detection, IRAC rendering,
+    # leading-authority lookup, good-law standing -- has no automatic
+    # caller: it runs only when something asks for it, so it needs no
+    # switch. These two change output for every question, so they get one.
+
+    # Order key_judgments by citation count, bench as tie-breaker, instead
+    # of by document_id. The alternative is alphabetical order over opaque
+    # identifiers, which puts a single-judge order above the Constitution
+    # Bench that settled the point. Free: one graph read, no model call.
+    rank_by_authority: bool = True
+
+    # Interleave statutes and judgments below rank 1 in retrieval results.
+    # Measured 2026-08-29 on the versioned 50-question benchmark, whole
+    # corpus:
+    #
+    #     off   MRR 0.282   recall@5 42%   recall@10 54%
+    #     on    MRR 0.333   recall@5 52%   recall@10 68%
+    #
+    # On by default on that measurement. Turn it off to get retrieval's raw
+    # relevance order, which is what the benchmark's baseline row measures.
+    interleave_result_types: bool = True
+
     # ---------------------------------------------------------- retrieval
     # Results a search returns to an agent. The tool default of 5 suits a
     # person reading a list; an agent wants a wider net to work from.
@@ -188,7 +212,12 @@ class Configuration(BaseModel):
             raw = os.environ.get(f"LEGAL_AI_{name.upper()}")
             if raw is None:
                 continue
-            values[name] = int(raw) if field.annotation is int else raw
+            if field.annotation is int:
+                values[name] = int(raw)
+            elif field.annotation is bool:
+                values[name] = raw.strip().lower() in ("1", "true", "yes", "on")
+            else:
+                values[name] = raw
         values.update(overrides)
         return cls(**values)
 

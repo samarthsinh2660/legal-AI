@@ -325,6 +325,12 @@ default**. It costs roughly 1-3s per query on CPU; `rerank=False` or
 `RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2` trade quality for
 latency where that matters.
 
+> **Read the versioned figures below, not these.** This 15-query set was
+> never committed and these numbers cannot be reproduced. A note added here
+> on 2026-08-28 treated them as the baseline and reported a regression
+> against them; that was a misreading, corrected 2026-08-29. The comparable
+> baseline is the 50-question table further down.
+
 ### Re-measured 2026-08-20, on a versioned benchmark
 
 The 15-query set above was never committed to the repository, so those

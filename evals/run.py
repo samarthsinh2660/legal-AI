@@ -22,7 +22,9 @@ from legal_ai.retrieval.hybrid import hybrid_search
 
 
 def run_question(
-    question: EvalQuestion, limit: int, rerank: bool, rewrite: bool = False
+    question: EvalQuestion, limit: int, rerank: bool, rewrite: bool = False,
+    expand_graph: bool = False,
+    type_floor: bool = True,
 ) -> int | None:
     text = question.question
     if rewrite:
@@ -33,17 +35,25 @@ def run_question(
         from legal_ai.agents.research_plan import plan_research
 
         text = plan_research(text, max_angles=1)[0].query
-    evidence = hybrid_search(text, limit=limit, rerank=rerank)
+    evidence = hybrid_search(
+        text, limit=limit, rerank=rerank, expand_graph=expand_graph,
+        type_floor=type_floor,
+    )
     ranked_ids = [item.document_id for item in evidence if item.document_id]
     return first_relevant_rank(ranked_ids, question.expected)
 
 
 def run_dataset(
-    questions: list[EvalQuestion], limit: int, rerank: bool, rewrite: bool = False
+    questions: list[EvalQuestion], limit: int, rerank: bool, rewrite: bool = False,
+    expand_graph: bool = False,
+    type_floor: bool = True,
 ) -> list[int | None]:
     ranks: list[int | None] = []
     for question in questions:
-        rank = run_question(question, limit=limit, rerank=rerank, rewrite=rewrite)
+        rank = run_question(
+            question, limit=limit, rerank=rerank, rewrite=rewrite,
+            expand_graph=expand_graph, type_floor=type_floor,
+        )
         ranks.append(rank)
         print(f"  {question.id:<32} {'miss' if rank is None else f'rank {rank}'}", flush=True)
     return ranks
@@ -57,6 +67,14 @@ def main() -> None:
     parser.add_argument(
         "--rewrite", action="store_true", help="rewrite each question with an LLM first"
     )
+    parser.add_argument(
+        "--no-type-floor", action="store_true",
+        help="do not guarantee a statute a place in the results",
+    )
+    parser.add_argument(
+        "--expand-graph", action="store_true",
+        help="expand the fused result set over the knowledge graph before reranking",
+    )
     args = parser.parse_args()
 
     questions = load_questions(Path(args.dataset) if args.dataset else None)
@@ -64,9 +82,13 @@ def main() -> None:
 
     print(
         f"{len(questions)} questions, limit={args.limit}, "
-        f"rerank={rerank}, rewrite={args.rewrite}\n"
+        f"rerank={rerank}, rewrite={args.rewrite}, "
+        f"expand_graph={args.expand_graph}\n"
     )
-    ranks = run_dataset(questions, limit=args.limit, rerank=rerank, rewrite=args.rewrite)
+    ranks = run_dataset(
+        questions, limit=args.limit, rerank=rerank, rewrite=args.rewrite,
+        expand_graph=args.expand_graph, type_floor=not args.no_type_floor,
+    )
 
     print(
         f"\nMRR        {mean_reciprocal_rank(ranks):.3f}"
