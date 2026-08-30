@@ -1,5 +1,7 @@
 """Graph wiring -- that the pieces are connected, and the loops terminate.
 
+Cross-domain: graph x context x verification.
+
 Compilation, channel plumbing (context, case_id, findings concatenating
 rather than overwriting), the clarification halt, and the bounded
 verification loop. What each node *decides* is tested next to that node;

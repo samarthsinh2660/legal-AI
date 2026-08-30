@@ -1,4 +1,4 @@
-# tests/test_ingestion_schema.py
+# tests/ingestion/test_ingestion_schema.py
 from datetime import date, datetime, timezone
 
 from legal_ai.ingestion.schema import CanonicalDocument, content_hash

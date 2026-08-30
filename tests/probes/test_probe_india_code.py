@@ -1,4 +1,4 @@
-# tests/test_probe_india_code.py
+# tests/probes/test_probe_india_code.py
 import responses
 
 from scripts.recon.probe_india_code import (

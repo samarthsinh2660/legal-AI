@@ -1,4 +1,4 @@
-# tests/test_licensing.py
+# tests/sources/test_licensing.py
 import pytest
 
 from legal_ai.sources.licensing import KNOWN_LICENCES, get_licence

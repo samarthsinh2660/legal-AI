@@ -1,4 +1,4 @@
-# tests/test_probe_gujarat_hc_bulk.py
+# tests/probes/test_probe_gujarat_hc_bulk.py
 import responses
 
 from scripts.recon.probe_gujarat_hc_bulk import (

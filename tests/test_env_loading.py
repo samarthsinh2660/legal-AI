@@ -1,5 +1,12 @@
-"""Importing the package must make .env visible -- silently missing keys
-turn the agents into plain retrieval without any error surfacing."""
+"""Package-wide: importing legal_ai must make .env visible.
+
+Lives at the root of tests/ rather than in a domain folder because it has no
+domain -- it covers a side effect of importing the package itself, which
+every folder below depends on and none owns.
+
+Silently missing keys turn the agents into plain retrieval with no error
+surfacing, which is why this is tested at all.
+"""
 
 import os
 

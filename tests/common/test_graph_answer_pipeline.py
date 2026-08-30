@@ -1,5 +1,7 @@
 """The analyst -> verification -> draft path, exercised through the graph.
 
+Cross-domain: agents x verification x graph.
+
 Covers the nodes that turn retrieved law into an answer: the Analyst putting
 claims on the channel, verification receiving them, and the draft rendering
 what verification found.
@@ -16,7 +18,7 @@ import pytest
 from legal_ai.graph import nodes
 from legal_ai.schemas.answer import AnalysisResult
 from legal_ai.schemas.verification import Claim
-from tests.test_draft import EVIDENCE, GROUNDED
+from tests.agents.test_draft import EVIDENCE, GROUNDED
 
 
 def _analyst_returns(monkeypatch, payload):

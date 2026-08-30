@@ -1,5 +1,7 @@
 """Configuration is answerable from one file, and caps live in code.
 
+Cross-domain: config x graph x retrieval x tools x llm.
+
 Before consolidation these values were spread across graph/, agents/, llm/,
 tools/ and retrieval/, so "how many API calls can one question make" could
 only be answered by reading six files.

@@ -1,4 +1,9 @@
-# tests/test_evidence.py
+"""Evidence -- the contract every layer passes results in.
+
+Under schemas/ and not retrieval/: retrieval builds Evidence, but agents,
+tools and the draft all consume it, so it belongs with the other shared
+contracts rather than with one of its users.
+"""
 from datetime import datetime, timezone
 
 from legal_ai.schemas.evidence import Evidence, Location, Provenance, SourceRef

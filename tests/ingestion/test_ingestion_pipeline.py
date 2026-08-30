@@ -6,7 +6,7 @@ from legal_ai.knowledge.static.db import ensure_schema, get_connection
 from legal_ai.knowledge.static.store import get_document
 
 # Mirrors the real india code DSpace item page structure (see
-# tests/test_india_code_parser.py for the source of truth on this
+# tests/ingestion/test_india_code_parser.py for the source of truth on this
 # fixture's shape). The section body <p id="secpNNNN"> is deliberately
 # non-empty here (unlike the real site, which loads it via AJAX) so this
 # pipeline test can exercise the verification gate's text-extraction check
