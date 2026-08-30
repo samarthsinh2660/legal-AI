@@ -123,7 +123,34 @@ Most of Phase 7 has no automatic caller and needs no config switch. Only
 behaviour that changes every answer gets a flag, and the flag's default is
 set by measurement, with the numbers in `settings.py`.
 
-## 6. Tests
+## 6. The backend
+
+`src/api/` is the HTTP layer; `src/legal_ai/` is the AI orchestration. The
+dependency runs one way only -- the orchestration knows nothing about HTTP.
+
+Each domain has three layers and nothing else:
+
+    router.py       the only layer that speaks HTTP
+    controller.py   orchestration; returns Ok/Failure, never a response
+    repository.py   the only layer that writes SQL
+
+A file with no storage and no business logic is **not** a domain file. It
+goes in `utils/` -- password hashing, token signing, the error catalogue,
+the response envelope, paging. `databases/` holds connection config and the
+pool. A route with no rules and no table (`/health`) lives in `main.py`
+rather than getting three files of its own.
+
+**Nothing outside a router builds a response.** Expected outcomes are
+`Ok`/`Failure` values (`utils/errors.py`); `utils/response.py` holds the one
+translation to HTTP. `Failure` has no field for an exception, which is what
+keeps a DSN or a traceback out of a response body. Genuine bugs still raise
+and are caught once at the router.
+
+Every response is enveloped: `{"success": true, "data": ...}` or
+`{"success": false, "error": {"code", "message"}}`. Routes declare
+`response_model=Success[Payload]` so `/docs` shows the real shape.
+
+## 7. Tests
 
 Test files are named for what they cover, never for a phase or milestone.
 They live in `tests/<package>/` mirroring `src/legal_ai/`, except
@@ -133,13 +160,13 @@ subsystems; those name the domains they span in their first lines.
 Write the failing test first and run it. The full suite takes ~45 minutes
 and needs Postgres and Neo4j on `localhost:5433` / `7688`.
 
-## 7. Long-running work
+## 8. Long-running work
 
 Corpus jobs run for hours. Start them detached, wait on the PID, and never
 hold a database transaction open across a model call — doing so once queued
 an `ALTER TABLE` behind it and froze every reader for half an hour.
 
-## 8. Git
+## 9. Git
 
 The user handles all git operations. Do not commit unless explicitly asked,
 and never add a `Co-Authored-By` line.

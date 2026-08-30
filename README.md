@@ -115,7 +115,14 @@ the ownership claim?"*
 
 ``` text
 legal-AI/
-├── src/legal_ai/   the system
+├── src/api/        the HTTP backend (FastAPI)
+│   ├── main.py     app assembly, and /health
+│   ├── accounts/   register, login, identity      } each: router,
+│   ├── research/   the research endpoint          }  controller,
+│   ├── middleware/ rate limiting                  }  repository
+│   ├── databases/  Postgres pool, config, and 001_init.sql (whole schema)
+│   └── utils/      errors, responses, tokens, passwords, paging
+├── src/legal_ai/   the AI orchestration
 │   ├── agents/     supervisor, analyst, draft, verifier, treatment, conflict
 │   ├── retrieval/  hybrid search, reranking, authority ranking, good-law
 │   ├── ingestion/  scrapers, parsers, citation and bench extraction
@@ -123,7 +130,7 @@ legal-AI/
 │   ├── graphdb/    Neo4j: CONTAINS, CITES, CITES_SECTION, DECIDED_BY
 │   ├── graph/      the LangGraph pipeline that wires the agents together
 │   └── verification/  the groundedness funnel
-├── tests/          715 tests, foldered to mirror src/legal_ai/
+├── tests/          foldered to mirror the source
 │   └── common/     tests of the seams BETWEEN domains, not within one
 ├── evals/          measurement harnesses and their frozen datasets
 ├── scripts/        ingest, backfill and rebuild passes over the corpus
@@ -131,11 +138,52 @@ legal-AI/
 └── design/         brand, design system, and the interactive UI prototype
 ```
 
+`src/api/` depends on `src/legal_ai/`, never the reverse: the orchestration
+knows nothing about HTTP, and the backend knows nothing about how an answer
+is produced.
+
 Tests sit beside the package they cover. A test lands in `tests/common/`
 only when its assertions are about how two subsystems agree — the graph
 holding together, an answer body staying identical across verification
 modes — rather than testing one subsystem with another as scaffolding. Each
 names the domains it spans in its first lines.
+
+### Running it
+
+Everything in containers:
+
+```bash
+export LEGAL_AI_JWT_SECRET="$(openssl rand -hex 32)"
+docker compose up -d      # Postgres, Neo4j, and the API on :8000
+```
+
+The schema in `src/api/databases/001_init.sql` applies itself on a fresh
+Postgres volume.
+
+For development:
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+docker compose up -d postgres neo4j
+pytest -q
+```
+
+`pyproject.toml` is the only dependency list — `[project.dependencies]` for
+runtime, the `dev` extra for the test tools.
+
+See [`docs/API.md`](./docs/API.md) for endpoints and environment.
+
+### Two stores, and why
+
+| Store | Holds | Why not the other one |
+|---|---|---|
+| **Postgres** (pgvector) | Documents, chunks, **embeddings**, cases, users | Vectors live *inside* Postgres via the pgvector extension — there is no separate vector database |
+| **Neo4j** | The citation graph: `CITES`, `CITES_SECTION`, `CONTAINS`, `DECIDED_BY` | "Which judgments cite this one, two hops out" is a join-per-hop in SQL and a traversal in Cypher |
+
+So: **two databases, not four.** Keyword search, vector search and the
+relational data are one Postgres; only the graph is separate, and only
+because multi-hop traversal is what it is for.
 
 ### What is actually in the corpus
 
@@ -160,6 +208,7 @@ See `PHASE_7_ADVANCED_GRAPHRAG.md` §2.
 | [`DATA_LAYER_ARCHITECTURE.md`](./docs/DATA_LAYER_ARCHITECTURE.md) | Static / dynamic / active in depth — pipelines, provenance, confidence model, promotion rules |
 | [`LEGAL_DATA_SOURCES.md`](./docs/LEGAL_DATA_SOURCES.md) | Every candidate Indian legal data source, its licensing, and the tool contracts that abstract them |
 | [`PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md) | The code layout: LangGraph / LangChain / LangSmith, module boundaries, build order |
+| [`API.md`](./docs/API.md) | Every endpoint, the response envelope, authentication, rate limits, and what the API does not do |
 
 **Phase plans** — each phase has one job, one deliverable, its own doc (see `AI_PROJECT_PROPOSAL.md` §11 for the full roadmap table):
 
@@ -253,6 +302,8 @@ Numbers, not impressions. Each is reproducible from `evals/`.
 - **Currency (M14) was deliberately skipped.** Nothing re-scrapes, so an
   amended section is served as current with no notice.
 - **Conflict detection is built but blind**, pending High Court depth.
+- **The API is not multi-tenant safe.** Login works; isolation does not —
+  `cases` has no owner column, so any authenticated caller can read any case.
 
 The goal is not the most autonomous agent. It is a trustworthy legal research
 pipeline that later phases can safely make more agentic.
