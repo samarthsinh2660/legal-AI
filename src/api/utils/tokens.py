@@ -15,6 +15,7 @@ filter at all.
 from __future__ import annotations
 
 import time
+import uuid
 
 import jwt
 
@@ -53,7 +54,13 @@ def issue_access_token(
         raise ValueError(
             f"token secret must be at least {MIN_SECRET_BYTES} bytes"
         )
-    claims = {"sub": user_id, "exp": int(time.time()) + expires_in}
+    claims = {
+        "sub": user_id,
+        "exp": int(time.time()) + expires_in,
+        # Named so it can be revoked. Without it a logout could only
+        # invalidate every token a user holds, or none.
+        "jti": uuid.uuid4().hex,
+    }
     return jwt.encode(claims, secret, algorithm=_ALGORITHM)
 
 
@@ -61,7 +68,8 @@ def read_access_token(token: str, secret: str) -> str:
     """The user id in `token`, or TokenError.
 
     Never returns for an expired, forged, unsigned, malformed or
-    subject-less token, so a returned id is authenticated.
+    subject-less token, so a returned id is authenticated. Revocation is
+    checked by the caller, which has the database this does not.
     """
     if not secret:
         raise TokenError("no signing secret configured")
@@ -74,3 +82,20 @@ def read_access_token(token: str, secret: str) -> str:
     if not subject or not isinstance(subject, str):
         raise TokenError("token carries no subject")
     return subject
+
+
+def read_claims(token: str, secret: str) -> dict:
+    """Every verified claim, for a caller that needs the `jti` as well.
+
+    Same refusals as `read_access_token`; this returns the whole payload so
+    the revocation check does not have to decode the token twice.
+    """
+    if not secret:
+        raise TokenError("no signing secret configured")
+    try:
+        claims = jwt.decode(token, secret, algorithms=[_ALGORITHM])
+    except jwt.PyJWTError as exc:
+        raise TokenError(str(exc)) from exc
+    if not claims.get("sub") or not isinstance(claims["sub"], str):
+        raise TokenError("token carries no subject")
+    return claims

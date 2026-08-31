@@ -5,6 +5,7 @@ A domain package has router (the only layer that speaks HTTP), controller
 
     accounts/   register, login, identify the caller
     research/   the research graph, bounded and off the event loop
+    chat/       multi-turn threads over the same graph
 
 `/health` has no rules and no table, so it lives here rather than in three
 files of its own. Anything with no storage and no business logic is a helper
@@ -22,9 +23,13 @@ from fastapi.responses import JSONResponse
 
 from api.accounts.router import router as accounts_router
 from api.databases.postgres import connection
+from api.documents.router import router as documents_router
+from api.accounts.revocation import ensure_revocation_schema, is_revoked
+from api.middleware.auth import AuthMiddleware
 from api.middleware.rate_limit import RateLimiter, RateLimitMiddleware
-from api.research.router import router as research_router
 from api.schemas import HealthResponse, Success
+from api.threads.repository import ensure_thread_schema
+from api.threads.router import router as threads_router
 from api.utils.errors import Ok, Result, invalid_request, service_unavailable
 from api.utils.response import respond, success
 
@@ -73,6 +78,25 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
         description="Indian legal research over primary sources.",
         version="0.1.0",
     )
+    def _revoked(jti: str) -> bool:
+        """Whether this token has been logged out.
+
+        Failing open on a database error: the token is still signed and
+        unexpired, and refusing every request because the denylist is
+        unreachable turns a logout table into a single point of failure for
+        the whole service.
+        """
+        try:
+            with connection() as conn:
+                return is_revoked(conn, jti)
+        except Exception:
+            log.warning("auth: revocation check unavailable", exc_info=True)
+            return False
+
+    # Added first, so it sits INSIDE the rate limiter: an unauthenticated
+    # flood should be turned away by the cheap check, not after a token
+    # verification and a database read.
+    application.add_middleware(AuthMiddleware, is_revoked=_revoked)
     application.add_middleware(RateLimitMiddleware, limiter=limiter)
 
     @application.exception_handler(RequestValidationError)
@@ -115,8 +139,28 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
             ).model_dump()
         )
 
+    @application.on_event("startup")
+    def _schema() -> None:
+        """Create the chat and revocation tables once, not per request.
+
+        `CREATE TABLE IF NOT EXISTS` still takes a lock even when it does
+        nothing, and calling it on every request is how a bulk job once
+        queued an ALTER behind a read and froze every reader for half an
+        hour. 001_init.sql covers a fresh deployment; this covers a database
+        that predates it.
+        """
+        try:
+            with connection() as conn:
+                ensure_thread_schema(conn)
+                ensure_revocation_schema(conn)
+        except Exception:
+            # A database that is down must not stop the process starting --
+            # it has to come up to report itself unhealthy.
+            log.warning("startup: could not ensure chat schema", exc_info=True)
+
     application.include_router(accounts_router)
-    application.include_router(research_router)
+    application.include_router(threads_router)
+    application.include_router(documents_router)
     return application
 
 

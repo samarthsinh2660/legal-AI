@@ -9,9 +9,10 @@ exception's own text can reach a body.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Request
 
-from api.accounts.controller import current_user_id, login, register, user_for
+from api.accounts.controller import login, register, user_for
+from api.accounts.revocation import revoke
 from api.accounts.schemas import (
     LoginRequest,
     MeResponse,
@@ -64,19 +65,36 @@ async def login_for_token(request: LoginRequest):
     response_model=Success[MeResponse],
     responses={401: {"model": ErrorResponse}},
 )
-async def me(auth: Result = Depends(current_user_id)):
+async def me(request: Request):
     """Who the presented token belongs to.
 
     The endpoint a client uses to tell a live session from an expired one
     without spending a research call to find out.
     """
-    if isinstance(auth, Failure):
-        return respond(auth)
     with connection() as conn:
-        user = user_for(conn, auth.value)
+        user = user_for(conn, request.state.user_id)
     if user is None:
         # A validly signed token for an account that no longer exists. The
         # same answer as any other bad token: the difference is useful to
         # an attacker and to nobody else.
         return respond(unauthorized())
     return success(MeResponse(user_id=user.user_id, email=user.email).model_dump())
+
+
+@router.post("/logout", responses={401: {"model": ErrorResponse}})
+async def logout(request: Request):
+    """Invalidate the presented token.
+
+    A real revocation, not a note to the client. The token is signed and
+    unexpired, so anyone holding a copy could keep using it; writing its
+    `jti` to the denylist is what makes logging out mean something.
+
+    Idempotent -- logging out twice is not an error.
+
+    The `jti` comes from `request.state`, where AuthMiddleware put it after
+    verifying the signature. Re-decoding here would either repeat that work
+    or, worse, read an unverified token.
+    """
+    with connection() as conn:
+        revoke(conn, request.state.jti, request.state.token_expires_at)
+    return success({"logged_out": True})

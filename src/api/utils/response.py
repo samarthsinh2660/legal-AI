@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from api.utils.errors import Failure
@@ -25,10 +26,14 @@ from api.utils.errors import Failure
 def success(data: Any = None, status: int = 200) -> JSONResponse:
     """A successful response carrying `data`.
 
-    Takes an already-serialisable value: routers pass a pydantic model's
-    `model_dump()`, so the model still defines and validates the shape.
+    Encoded here rather than by each caller. `model_dump()` leaves datetimes
+    and UUIDs as objects, which `JSONResponse` cannot serialise -- fixing
+    that at one call site would leave every other one waiting to fail.
     """
-    return JSONResponse(status_code=status, content={"success": True, "data": data})
+    return JSONResponse(
+        status_code=status,
+        content={"success": True, "data": jsonable_encoder(data)},
+    )
 
 
 def respond(failure: Failure) -> JSONResponse:

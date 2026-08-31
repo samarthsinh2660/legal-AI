@@ -5,12 +5,25 @@ system in `src/legal_ai/`, which it calls and never imports the other way
 round.
 
 ```
-POST /auth/register   create an account
-POST /auth/login      exchange credentials for a bearer token
-GET  /auth/me         who the token belongs to
-POST /research        answer one legal question
-GET  /health          liveness plus store connectivity
+POST /auth/register            create an account
+POST /auth/login               exchange credentials for a bearer token
+GET  /auth/me                  who the token belongs to
+
+POST /threads                  start a research thread
+GET  /threads                  this user's threads
+POST /threads/{id}/messages    ask, or follow up
+GET  /threads/{id}/messages    the conversation
+
+POST /cases/{id}/documents     upload a file for the Document Agent
+GET  /cases/{id}/documents     what is attached
+
+GET  /health                   liveness plus store connectivity
 ```
+
+**A thread is the conversation.** `design/UX_FLOWS.md` Screen 3 is one pane
+of follow-ups; there is no one-shot research mode in the product, so there
+is no one-shot endpoint. A *case* is the container above a thread, holding
+the documents and findings that many threads share.
 
 Interactive docs are at `/docs` when the server is running.
 
@@ -154,53 +167,78 @@ whose account has since been deleted. All four answer the same.
 
 ---
 
-## 4. `POST /research`
+## 4. Threads
 
-Requires a bearer token.
+A thread is a conversation. Every message is either researched or answered
+from the thread so far, and the reply says which.
+
+### `POST /threads`
 
 ```json
-{
-  "question": "builder failed to give possession on time, can I get a refund",
-  "case_id": null,
-  "document_ids": [],
-  "verification_level": "verified"
-}
+{ "title": "Late possession refund", "case_id": null }
 ```
 
-| Field | Required | Notes |
-|---|---|---|
-| `question` | yes | 1–4000 characters, not only whitespace |
-| `case_id` | no | Scopes the thread to a case |
-| `document_ids` | no | Up to 50 |
-| `verification_level` | no | `quick` or `verified`; omitted uses the configured default |
+Attaching a `case_id` seeds every question in the thread with that matter's
+parties, documents and already-established findings.
 
-### Response
+### `POST /threads/{id}/messages`
+
+```json
+{ "message": "what about bombay" }
+```
+
+A follow-up is **rewritten into a standalone question before retrieval** --
+"what about bombay" retrieves nothing on its own. The rewrite is a retrieval
+device: what is stored and shown back is what the user typed.
 
 ```json
 {
   "success": true,
   "data": {
-    "answer": {
-      "question": "...",
-      "lede": "Yes, on demand.",
-      "key_elements": [{ "text": "...", "evidence_ids": ["act:2158:sec-18"], "paragraph": null }],
-      "applicable_law": ["act:2158:sec-18"],
-      "key_judgments": ["judgment:escr010003392021"],
-      "needs_verification": [],
-      "partially_supported": [],
-      "unchecked": [],
-      "support_not_checked": false,
-      "citations": ["act:2158:sec-18"],
-      "disclaimer": "..."
-    },
-    "clarification_needed": null,
     "text": "plain-text rendering",
-    "verification_level": "verified"
+    "answer": { "...": "the same DraftAnswer shape as before" },
+    "route": "RESEARCH",
+    "verification_level": "quick"
   }
 }
 ```
 
-**The four claim slots stay four slots.** Do not merge them in a client:
+`route` is echoed because the two carry different authority:
+
+| `route` | Meaning |
+|---|---|
+| `RESEARCH` | The corpus was searched for this |
+| `ANSWER` | Answered from earlier in the thread |
+
+A UI that renders them identically is making a claim the system did not.
+When in doubt the router researches: answering from memory when fresh law
+was wanted is a wrong answer, researching unnecessarily is only slow.
+
+**The four claim slots stay four slots** inside `answer` -- see §4.1 below.
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `invalid_request` | Malformed body |
+| 401 | `not_authenticated` | No usable token |
+| 404 | `not_found` | No such thread, or not yours |
+| 429 | `rate_limited` | Past the per-user AI budget |
+| 504 | `timeout` | The run outlived the limit |
+
+A 504 stores nothing: a half-turn in the thread would be resolved against by
+the next rewrite as though it were an answer.
+
+### 4.1 The answer shape
+
+```json
+{
+  "question": "...", "lede": "Yes, on demand.",
+  "key_elements": [{ "text": "...", "evidence_ids": ["act:2158:sec-18"] }],
+  "applicable_law": ["act:2158:sec-18"],
+  "key_judgments": ["judgment:escr010003392021"],
+  "needs_verification": [], "partially_supported": [], "unchecked": [],
+  "support_not_checked": false, "citations": [], "disclaimer": "..."
+}
+```
 
 | Slot | Meaning |
 |---|---|
@@ -212,27 +250,32 @@ Requires a bearer token.
 `unchecked` and `needs_verification` are different facts. Collapsing them
 presents an unexamined claim as a refuted one, or worse, the reverse.
 
-`key_judgments` is ordered strongest first — by how often other judgments
-cite it, with bench size as the tie-breaker.
+`key_judgments` is ordered strongest first -- citation count, with bench size
+as the tie-breaker.
 
-### Clarification
+---
 
-When a missing fact makes the question unanswerable, the graph halts and
-asks. That is a **200 with `answer: null`**, not an error — nothing went
-wrong, and the client needs the user's next sentence rather than a fixed
-request.
+## 4.2 Documents
+
+### `POST /cases/{case_id}/documents`
+
+`multipart/form-data`, field `file`. PDF, DOCX, TXT or MD, up to 25MB.
 
 ```json
-{ "success": true, "data": { "answer": null, "clarification_needed": "Which state?", "text": null, "verification_level": "quick" } }
+{ "success": true, "data": { "document_id": "case-file:...", "filename": "deed.pdf", "characters": 48210 } }
 ```
+
+Text is extracted **at upload**, not at question time: parsing a 300-page PDF
+per question puts seconds on every answer, and an unreadable file should fail
+while the user is still looking at it.
 
 | Status | `code` | When |
 |---|---|---|
-| 400 | `invalid_request` | Malformed body |
-| 401 | `not_authenticated` | No usable token |
-| 429 | `rate_limited` | Past the per-user AI budget |
-| 500 | `internal_error` | A bug. Details are in the server log only |
-| 504 | `timeout` | The run outlived `LEGAL_AI_RESEARCH_TIMEOUT` |
+| 400 | `invalid_request` | Unsupported type, empty, too large, or no text layer (an un-OCR'd scan) |
+| 404 | `not_found` | No such case |
+
+Uploads go to `case_files`, **never** the corpus. A client's pleading is
+theirs, and must never come back from a search someone else runs.
 
 ---
 
@@ -256,7 +299,7 @@ make an orchestrator restart a process that is running correctly.
 | Scope | Limit | Keyed by |
 |---|---|---|
 | Everything except `/health` | 60 / minute | Client address |
-| `/research` | 20 / minute | **User id** |
+| Sending a message | 20 / minute | **User id** |
 
 A 429 carries `Retry-After` in seconds.
 
@@ -302,7 +345,11 @@ properly needs a job queue.
 Present because they are absent, not because they are planned.
 
 - **No case ownership.** `cases` has no owner column, so any authenticated
-  caller can read any case by id. **This is not multi-tenant safe.**
+  caller can read any case by id, and upload documents to it. Threads *are*
+  owned; cases are not. **This is not multi-tenant safe.**
+- **`ANSWER` returns the previous reply verbatim.** It is honest -- that is
+  what the user is asking about -- but it is not yet a real answer over the
+  stored claims.
 - **No logout or revocation.** Expiry is the only bound on a leaked token.
 - **Open registration.** Anyone who can reach the service can create an
   account and spend model budget.

@@ -32,7 +32,12 @@ def ensure_case_schema(conn: psycopg.Connection) -> None:
             case_number TEXT,
             parties JSONB NOT NULL DEFAULT '[]'::jsonb,
             created_at TIMESTAMPTZ NOT NULL,
-            updated_at TIMESTAMPTZ NOT NULL
+            updated_at TIMESTAMPTZ NOT NULL,
+
+            -- Nullable because cases predate accounts. A case with no owner
+            -- is readable by nobody through the API; the column is what the
+            -- API filters on, and NULL matches no user.
+            user_id TEXT
         )
         """
     )
@@ -69,9 +74,21 @@ def ensure_case_schema(conn: psycopg.Connection) -> None:
         )
         """
     )
+    # The catalog is checked before any ALTER is issued. `ADD COLUMN IF NOT
+    # EXISTS` still requests ACCESS EXCLUSIVE when it has nothing to do, and
+    # a *pending* request for that lock blocks every reader queued behind
+    # it. Measured three times in this codebase: called per operation, it
+    # froze the database for readers each time.
+    has_owner = conn.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'cases' AND column_name = 'user_id'"
+    ).fetchone()
+    if has_owner is None:
+        conn.execute("ALTER TABLE cases ADD COLUMN IF NOT EXISTS user_id TEXT")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS case_sessions_case_idx ON case_sessions (case_id, asked_at)"
     )
+    conn.execute("CREATE INDEX IF NOT EXISTS cases_user_idx ON cases (user_id)")
     conn.commit()
 
     # Uploaded files, last because they reference cases. Imported here
