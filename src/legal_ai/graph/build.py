@@ -27,16 +27,15 @@ def _after_clarification(state: ResearchState) -> str:
 
 
 def _after_verification(state: ResearchState, config: GraphConfig) -> str:
-    """Re-research unsupported claims, up to the cap.
+    """Re-research claims another pass could repair, up to the cap.
 
-    The edge back to research is wired now but never taken: nothing produces
-    claims until the Analyst lands in Phase 5, so there is nothing to find
-    unsupported. Milestone 8 changes only this predicate, not the graph.
+    A pass costs 4 model calls at 45-60s, so what triggers it is a cost
+    decision -- see `VerificationReport.needs_research`. The cap is checked
+    first, so the loop cannot run away. On exhaustion the answer still ships
+    with the claims flagged rather than dropped.
 
-    The cap is checked first regardless, so the loop can never run away once
-    the predicate goes live. On exhaustion the answer still ships with the
-    unsupported claims flagged -- dropping them silently would leave a user
-    unable to tell a short answer from an incomplete one.
+    Known gap: `nodes.research()` never receives `unsupported_claims`, so a
+    second pass repeats the same searches.
     """
     if state.get("verification_passes", 0) >= config.max_verification_passes:
         return "draft"

@@ -97,6 +97,9 @@ export const AnswerSchema = z.object({
    *  Reported once at the answer level: a caveat printed against every
    *  line is one readers learn to skip, and the citations WERE checked. */
   support_not_checked: z.boolean(),
+  /** Set when the question names an Act the corpus does not hold. A
+   *  statement about our shelf, not about the law. */
+  coverage_note: z.string().default(""),
   citations: z.array(z.string()),
   disclaimer: z.string(),
 });

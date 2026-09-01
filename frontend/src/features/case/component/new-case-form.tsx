@@ -45,14 +45,30 @@ export function NewCaseForm({ onCreated }: { onCreated?: () => void }) {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="case-court">Court</Label>
+          <Label htmlFor="case-state">State</Label>
           <Input
-            id="case-court"
-            value={form.court ?? ""}
-            onChange={(event) => handleChange("court", event.target.value)}
-            placeholder="Bombay High Court"
+            id="case-state"
+            value={form.state ?? ""}
+            onChange={(event) => handleChange("state", event.target.value)}
+            placeholder="Maharashtra"
           />
+          {/* Worth the field: RERA rules, rent control and stamp duty are
+              state-made, so without this every thread in the matter stops
+              to ask before it researches. */}
+          <p className="text-xs text-ink-muted">
+            Recorded once here, so threads don&apos;t stop to ask.
+          </p>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="case-court">Court</Label>
+        <Input
+          id="case-court"
+          value={form.court ?? ""}
+          onChange={(event) => handleChange("court", event.target.value)}
+          placeholder="Bombay High Court"
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">

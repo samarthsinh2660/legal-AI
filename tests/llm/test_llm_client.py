@@ -206,3 +206,78 @@ def test_the_timeout_is_passed_to_the_sdk(monkeypatch):
     monkeypatch.setattr(real, "Client", _FakeGenai.Client)
     llm._client()
     assert captured["http_options"].timeout == llm.REQUEST_TIMEOUT_MS
+
+
+# --- the circuit breaker ---------------------------------------------------
+#
+# Measured 2026-09-01: two models at the head of the chain were returning 503,
+# and every generate() walked both -- ~40s of fallthrough per call, four calls
+# a question. Skipping a model that just failed is the standard fix.
+
+@pytest.fixture(autouse=True)
+def _clear_cooldowns():
+    llm.reset_cooldowns()
+    yield
+    llm.reset_cooldowns()
+
+
+def test_a_failed_model_is_skipped_on_the_next_call(fake, monkeypatch):
+    monkeypatch.setattr(llm.time, "sleep", lambda _s: None)
+    models = fake({"a": "503 UNAVAILABLE"})
+
+    llm.generate("first", chain=("a", "b"))
+    models.calls.clear()
+    llm.generate("second", chain=("a", "b"))
+
+    assert models.calls == ["b"], "the dead model was probed again"
+
+
+def test_the_skip_expires_so_a_recovered_model_comes_back(fake, monkeypatch):
+    monkeypatch.setattr(llm.time, "sleep", lambda _s: None)
+    now = [1000.0]
+    monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+    models = fake({"a": "503 UNAVAILABLE"})
+
+    llm.generate("first", chain=("a", "b"))
+    models.behaviour.clear()          # "a" recovers
+    now[0] += llm.COOLDOWN_SECONDS + 1
+    models.calls.clear()
+
+    assert llm.generate("later", chain=("a", "b")) == "answer from a"
+
+
+def test_a_chain_entirely_in_cooldown_is_still_tried(fake, monkeypatch):
+    """Failing fast must never become refusing to try. A cooldown is a
+    preference, not a ban."""
+    monkeypatch.setattr(llm.time, "sleep", lambda _s: None)
+    models = fake({"a": "503 UNAVAILABLE", "b": "503 UNAVAILABLE"})
+
+    with pytest.raises(llm.AllModelsUnavailable):
+        llm.generate("first", chain=("a", "b"))
+
+    models.behaviour.clear()
+    models.calls.clear()
+    assert llm.generate("second", chain=("a", "b")) == "answer from a"
+
+
+def test_a_success_clears_an_earlier_failure(fake, monkeypatch):
+    monkeypatch.setattr(llm.time, "sleep", lambda _s: None)
+    now = [1000.0]
+    monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+    models = fake({"a": "503 UNAVAILABLE"})
+
+    llm.generate("first", chain=("a", "b"))
+    models.behaviour.clear()
+    now[0] += llm.COOLDOWN_SECONDS + 1
+    llm.generate("second", chain=("a", "b"))     # "a" answers, cooldown cleared
+    models.calls.clear()
+
+    assert llm.generate("third", chain=("a", "b")) == "answer from a"
+    assert models.calls == ["a"]
+
+
+def test_a_healthy_chain_is_unaffected(fake):
+    models = fake({})
+    for _ in range(3):
+        llm.generate("q", chain=("a", "b"))
+    assert models.calls == ["a", "a", "a"]

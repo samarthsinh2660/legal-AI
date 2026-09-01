@@ -23,6 +23,11 @@ export type NewCase = {
   title: string;
   matter_type?: string;
   court?: string;
+  /** Not optional in spirit: RERA rules, rent control and stamp duty are
+   *  state-made, so a thread whose state is unknown stops and asks before
+   *  it researches. Recording it on the case answers that question once
+   *  for every thread in the matter. */
+  state?: string;
   description?: string;
 };
 

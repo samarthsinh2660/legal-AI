@@ -54,8 +54,30 @@ def start_session(
     # The description is what the New Case modal tells the user is seeding
     # the agents. Leaving it in the database would make that label a lie.
     seeded = replace(seeded, case_description=case.description)
+    seeded = _inherit_jurisdiction(seeded, case)
     record_session(conn, case_id, question)
     return seeded
+
+
+def _inherit_jurisdiction(context: ThreadContext, case) -> ThreadContext:
+    """Fill state and court from the case where the question left them unset.
+
+    The question wins: a Karnataka question inside a Maharashtra matter is a
+    Karnataka question. Nothing is inferred from the description or the
+    court name -- an unknown state stays unknown so
+    `context.clarification` can ask rather than guess.
+
+    Without this, a matter recorded as Maharashtra RERA still produced a
+    thread with no state and every state-dependent question stopped to ask.
+    """
+    jurisdiction = context.jurisdiction
+    state = jurisdiction.state or case.state
+    court = jurisdiction.court or case.court
+    if state == jurisdiction.state and court == jurisdiction.court:
+        return context
+    return replace(
+        context, jurisdiction=replace(jurisdiction, state=state, court=court)
+    )
 
 
 def save_to_case(

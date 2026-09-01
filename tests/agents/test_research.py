@@ -77,20 +77,25 @@ def test_planning_handles_a_fenced_block(monkeypatch):
 
 # ---------------------------------------------------------------- calls
 
-def test_a_question_never_costs_more_than_two_model_calls(monkeypatch):
+def test_a_question_costs_exactly_one_model_call(monkeypatch):
+    """Planning, and nothing else.
+
+    `research()` used to summarise its evidence too. Nothing read it and it
+    cost 60.3s of a 233s turn. The evidence below is long enough that a
+    summariser would have fired.
+    """
     calls = []
     import legal_ai.agents.research_plan as rp
 
     monkeypatch.setattr(rp, "generate", lambda p, **kw: calls.append("plan") or
         '[{"angle":"a","query":"q1"}]')
     monkeypatch.setattr(sup, "generate", lambda p, **kw: calls.append("summarise") or "summary")
-    # Long enough to need summarising -- the upper bound of the cost.
     monkeypatch.setattr(sup, "_search",
         lambda q, limit=None, filters=None: [_evidence(f"act:1:sec-{i}", "x" * 600) for i in range(20)])
     monkeypatch.setattr(sup, "_merge", lambda per_angle, limit: [e for a in per_angle for e in a])
 
     sup.research("q")
-    assert calls == ["plan", "summarise"]
+    assert calls == ["plan"]
 
 
 def test_three_angles_cost_no_more_than_one_angle(monkeypatch):
@@ -204,3 +209,52 @@ def test_merging_deduplicates_across_angles():
 def test_merging_respects_the_limit():
     a = [_evidence(f"d{i}") for i in range(20)]
     assert len(sup._merge([a], limit=5)) == 5
+
+
+def test_the_planner_may_decline_a_message_with_no_legal_issue(monkeypatch):
+    """An explicit empty array is a decision, not a failure.
+
+    Without this the contract forced an angle for every message, so
+    "thanks!" was planned as a search and answered with the law on
+    gratuity.
+    """
+    import legal_ai.agents.research_plan as rp
+
+    monkeypatch.setattr(rp, "generate", lambda p, **kw: "[]")
+    assert plan_research("thanks!") == []
+
+
+def test_an_unreadable_plan_still_falls_back_to_the_question(monkeypatch):
+    """A model failure must not read as "not a legal question" -- that
+    would silently drop a real question."""
+    import legal_ai.agents.research_plan as rp
+
+    monkeypatch.setattr(rp, "generate", lambda p, **kw: "I cannot help")
+    assert plan_research("what is theft")[0].query == "what is theft"
+
+
+def test_entries_missing_a_query_are_not_read_as_a_decline(monkeypatch):
+    """Malformed items are a garbled reply, not a decision."""
+    import legal_ai.agents.research_plan as rp
+
+    monkeypatch.setattr(rp, "generate", lambda p, **kw: '[{"angle":"a"}]')
+    assert plan_research("what is theft")[0].query == "what is theft"
+
+
+def test_a_declined_plan_costs_no_search_and_no_discovery(monkeypatch):
+    """Nothing downstream of planning runs. Discovery in particular reaches
+    a third party, and a greeting must not do that."""
+    import legal_ai.agents.research_plan as rp
+
+    touched = []
+    monkeypatch.setattr(rp, "generate", lambda p, **kw: "[]")
+    monkeypatch.setattr(sup, "_search", lambda *a, **kw: touched.append("search") or [])
+    monkeypatch.setattr(sup, "_discover", lambda *a, **kw: touched.append("discover") or [])
+    # Wording that would otherwise send it to Indian Kanoon.
+    monkeypatch.setattr(sup, "wants_case_law", lambda q: True)
+
+    result = sup.research("thanks, what did the Supreme Court hold?")
+
+    assert result.evidence == []
+    assert result.angles == []
+    assert touched == []

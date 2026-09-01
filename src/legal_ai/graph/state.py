@@ -35,6 +35,11 @@ class ResearchState(TypedDict, total=False):
     # sensibly start. A non-empty value halts the run for the user.
     clarification_needed: Optional[str]
 
+    # Whether any angle was planned. False means the planner found no legal
+    # issue, so nothing was searched -- which the Analyst must not report as
+    # an empty corpus.
+    searched: bool
+
     # Structured claims from the Analyst, each carrying its Evidence ids.
     # Verification is vacuous without them, which is what it was until the
     # Analyst landed.

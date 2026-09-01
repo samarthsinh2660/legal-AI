@@ -29,6 +29,20 @@ from legal_ai.schemas.evidence import Evidence, Location
 # Set in legal_ai.config.settings, which carries the reasoning.
 PASSAGE_CHARS = DEFAULT_CONFIG.passage_chars
 
+# A statute section is carried whole up to this length, rather than as the
+# chunk that best matched. 19% of the sections we hold span more than one
+# chunk, and a section's meaning is rarely in one of them: s.138 NI Act
+# states the offence first and the provisos that decide whether a complaint
+# is valid second, so a chunk-level answer described the offence and omitted
+# the thirty-day notice. Covers the 95th percentile section (3,114 chars);
+# longer ones still fall back to the passage.
+SECTION_CHARS = 4000
+
+# Document types whose text is a single provision, short and self-contained.
+# Judgments are excluded deliberately -- they run to hundreds of thousands of
+# characters, and one carried whole would spend the entire prompt.
+_WHOLE_TEXT_TYPES = frozenset({"section"})
+
 
 def to_evidence(doc: CanonicalDocument, content: str | None = None,
                 location: Location | None = None) -> Evidence:
@@ -104,6 +118,16 @@ def build_evidence(
         doc = get_document(conn, document_id)
         if doc is None:
             continue
+        # A short statute section goes in whole, provisos included. The
+        # matched chunk is discarded, and with it its location: the location
+        # of a passage is meaningless once the whole section is carried.
+        if (
+            (doc.document_type or "") in _WHOLE_TEXT_TYPES
+            and len(doc.full_text) <= SECTION_CHARS
+        ):
+            evidence.append(to_evidence(doc, content=doc.full_text))
+            continue
+
         matched = passages.get(document_id)
         if matched is None:
             # No chunk: the document was short enough to embed whole, so its

@@ -223,11 +223,45 @@ device: what is stored and shown back is what the user typed.
 | `route` | Meaning |
 |---|---|
 | `RESEARCH` | The corpus was searched for this |
-| `ANSWER` | Answered from earlier in the thread |
+| `ANSWER` | Composed from claims already established in this thread |
 
 A UI that renders them identically is making a claim the system did not.
 When in doubt the router researches: answering from memory when fresh law
 was wanted is a wrong answer, researching unnecessarily is only slow.
+
+An `ANSWER` turn is **not a replay of the previous reply**. It is a new
+answer to the question asked, built out of the claims earlier turns stored,
+in the same `answer` shape as a researched one — so §4.1 applies to it
+unchanged. Three properties hold by construction:
+
+- **Every id came from a stored claim.** The model is shown the stored
+  claims numbered and replies with numbers; it never writes an identifier
+  and never rewrites a claim, so a fabricated citation is not representable
+  on this path.
+- **A carried claim keeps its bucket.** An `unchecked` claim re-used in a
+  later turn is still `unchecked`. Nothing is promoted by being re-emitted,
+  and where a text was stored in two buckets the less reassuring one wins.
+- **`support_not_checked` carries forward** from every answer the claims
+  were drawn from.
+
+When the thread holds nothing that answers the question — or the
+composition fails — the reply says so and **`answer` is `null`**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "text": "I could not answer that from this conversation. …",
+    "answer": null,
+    "route": "ANSWER"
+  }
+}
+```
+
+`route: "ANSWER"` with `answer: null` is that outcome and is the one case a
+client should render as a dead end rather than as a result. It does not fall
+back to the previous reply, and it does not quietly research instead: a turn
+that never touched the corpus must not read like one that did.
 
 **The four claim slots stay four slots** inside `answer` -- see §4.1 below.
 
@@ -444,9 +478,9 @@ properly needs a job queue.
 
 Present because they are absent, not because they are planned.
 
-- **`ANSWER` returns the previous reply verbatim.** It is honest -- that is
-  what the user is asking about -- but it is not yet a real answer over the
-  stored claims.
+- **`ANSWER` composes only over claims stored in the same thread.** A fact
+  established in another thread on the same case is not reachable from it,
+  and the turn will report that it could not answer rather than looking.
 - **Logout does not invalidate the token.** There is no denylist, so a
   copy of a token keeps working until `exp` — up to
   `LEGAL_AI_JWT_EXPIRES_IN` seconds after the user signed out. The route

@@ -109,10 +109,14 @@ class VerificationReport:
         is *exactly* what re-research repairs, so it belongs here even
         though it is not a finding against the claim.
 
-        Claims skipped because semantic verification was not enabled are
-        excluded: researching harder cannot supply a check the reader chose
-        not to pay for, and looping on them would spend every pass to no
-        effect.
+        Only the `reference` stage: a missing document is the one defect
+        another search can close. A misgrounded paraphrase (`semantic`), an
+        invented quote (`quote`) and a quick-mode `skipped` are defects the
+        same searches would reproduce, so looping on them only costs a pass.
+
+        Narrowed 2026-09-01: fe00eee had widened this to every non-SUPPORTED
+        verdict, which made verified mode loop on almost every run and time
+        out at 300s.
         """
         return [v.claim.text for v in self.verdicts
-                if v.verdict is not Verdict.SUPPORTED and v.stage != "skipped"]
+                if v.stage == "reference" and v.verdict is not Verdict.SUPPORTED]

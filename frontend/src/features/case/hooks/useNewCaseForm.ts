@@ -9,7 +9,13 @@ import { RequestError } from "@/lib/api";
 import { useCreateCase } from "./index";
 import { TITLE_MAX_LENGTH, type NewCase } from "../types";
 
-const EMPTY: NewCase = { title: "", matter_type: "", court: "", description: "" };
+const EMPTY: NewCase = {
+  title: "",
+  matter_type: "",
+  court: "",
+  state: "",
+  description: "",
+};
 
 type Errors = Partial<Record<keyof NewCase | "form", string>>;
 
@@ -43,6 +49,7 @@ export function useNewCaseForm(onCreated?: () => void) {
         title: form.title.trim(),
         matter_type: form.matter_type?.trim() || undefined,
         court: form.court?.trim() || undefined,
+        state: form.state?.trim() || undefined,
         description: form.description?.trim() || undefined,
       });
       setForm(EMPTY);

@@ -59,6 +59,8 @@ class AnswerModel(BaseModel):
     unchecked: list[str]
     partially_supported: list[str]
     support_not_checked: bool
+    # Empty unless the question named an Act the corpus does not hold.
+    coverage_note: str = ""
     citations: list[str]
     disclaimer: str
 
@@ -81,6 +83,7 @@ class AnswerModel(BaseModel):
             unchecked=list(answer.unchecked),
             partially_supported=list(answer.partially_supported),
             support_not_checked=answer.support_not_checked,
+            coverage_note=answer.coverage_note,
             citations=list(answer.citations),
             disclaimer=answer.disclaimer,
         )

@@ -35,6 +35,30 @@ from legal_ai.config import DEFAULT_CONFIG
 MODEL_CHAIN: tuple[str, ...] = DEFAULT_CONFIG.model_chain
 MAX_RETRIES_PER_MODEL = DEFAULT_CONFIG.max_retries_per_model
 
+# How long a model that just failed is skipped for. A 503 at the head of the
+# chain is otherwise re-probed by every call: measured 2026-09-01 at ~40s of
+# fallthrough per generate(), four calls to a question.
+COOLDOWN_SECONDS = 180.0
+
+# model -> monotonic time it may be tried again.
+_COOLDOWN: dict[str, float] = {}
+
+
+def reset_cooldowns() -> None:
+    """Forget every recorded failure. For tests and for a long-lived process
+    that wants a clean probe."""
+    _COOLDOWN.clear()
+
+
+def _healthy(chain: tuple[str, ...]) -> tuple[str, ...]:
+    """`chain` without the models that failed recently.
+
+    Empty means every model is cooling down, and the caller then tries the
+    whole chain anyway -- failing fast must not become refusing to try.
+    """
+    now = time.monotonic()
+    return tuple(model for model in chain if _COOLDOWN.get(model, 0.0) <= now)
+
 # Seconds to wait after a 429 before retrying the same model once. Long
 # enough to clear a per-minute window, short enough that a genuine daily cap
 # costs little to discover.
@@ -147,13 +171,14 @@ def generate(
     client = _client()
     failures: dict[str, str] = {}
 
-    for model in chain:
+    for model in _healthy(chain) or chain:
         for attempt in range(MAX_RETRIES_PER_MODEL):
             try:
                 response = client.models.generate_content(
                     model=model, contents=prompt, config=config
                 )
                 MODEL_USAGE[model] = MODEL_USAGE.get(model, 0) + 1
+                _COOLDOWN.pop(model, None)
                 if _was_truncated(response):
                     # Not a usable answer. Gemini 3.x spends the output
                     # budget on internal reasoning first, so a cap sized for
@@ -170,6 +195,7 @@ def generate(
             except Exception as error:
                 kind = _classify(error)
                 failures[model] = f"{kind}: {str(error)[:120]}"
+                _COOLDOWN[model] = time.monotonic() + COOLDOWN_SECONDS
                 if kind == "transient" and attempt + 1 < MAX_RETRIES_PER_MODEL:
                     time.sleep(2 * (attempt + 1))
                     continue

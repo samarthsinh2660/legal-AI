@@ -44,6 +44,13 @@ export function AnswerView({ answer }: { answer: Answer }) {
         </div>
       )}
 
+      {/* Above the answer: it changes how everything below should be read. */}
+      {answer.coverage_note && (
+        <p className="rounded-md border border-warn/30 bg-warn-bg px-4 py-3 text-sm leading-[1.7] text-warn">
+          {answer.coverage_note}
+        </p>
+      )}
+
       {answer.lede && (
         <p className="text-lg leading-[1.7] text-ink">{answer.lede}</p>
       )}

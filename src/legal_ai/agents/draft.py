@@ -15,7 +15,8 @@ whole payoff for having a verifier at all.
 from __future__ import annotations
 
 from legal_ai.retrieval.authority import Authority, rank_by_authority
-from legal_ai.schemas.answer import AnalysisResult, DraftAnswer
+from legal_ai.retrieval.coverage import coverage_note
+from legal_ai.schemas.answer import DISCLAIMER, AnalysisResult, DraftAnswer
 from legal_ai.schemas.evidence import Evidence
 from legal_ai.schemas.verification import Claim, Verdict
 
@@ -130,6 +131,8 @@ def build_answer(
     statutes = [i for i in cited if (by_id.get(i) and (by_id[i].document_type or "") in _STATUTE_TYPES)]
     judgments = [i for i in cited if (by_id.get(i) and (by_id[i].document_type or "") == "judgment")]
 
+    from legal_ai.agents.analyst import OUT_OF_SCOPE
+
     return DraftAnswer(
         question=question,
         lede=analysis.lede,
@@ -141,6 +144,11 @@ def build_answer(
         partially_supported=tuple(partial),
         support_not_checked=skipped_support,
         citations=tuple(sorted(cited)),
+        coverage_note=coverage_note(question) or "",
+        # Nothing legal was said, so there is nothing to disclaim. The
+        # boilerplate under "I cannot help with that" reads as a
+        # non-sequitur.
+        disclaimer="" if analysis.lede == OUT_OF_SCOPE else DISCLAIMER,
     )
 
 
@@ -176,6 +184,10 @@ def render(answer: DraftAnswer) -> str:
                      "sources searched, so verify independently:")
         for text in answer.unchecked:
             lines.append(f"- {text}")
+
+    if answer.coverage_note:
+        lines.append("")
+        lines.append(answer.coverage_note)
 
     if answer.support_not_checked:
         lines.append("")

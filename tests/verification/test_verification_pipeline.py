@@ -10,7 +10,12 @@ import json
 import pytest
 
 from legal_ai.knowledge.static.db import get_connection
-from legal_ai.schemas.verification import Claim, Verdict
+from legal_ai.schemas.verification import (
+    Claim,
+    ClaimVerdict,
+    Verdict,
+    VerificationReport,
+)
 from legal_ai.agents import verifier as support_module
 from legal_ai.verification.pipeline import verify
 
@@ -211,3 +216,67 @@ def test_every_verdict_records_the_stage_that_reached_it(conn, model):
     report = verify(claims, conn, available_ids={REAL}, use_model=True)
 
     assert {v.stage for v in report.verdicts} == {"reference", "semantic"}
+
+
+# --- what re-research can actually repair ---------------------------------
+#
+# `needs_research` drives the graph's one cyclic edge. A pass costs 4 model
+# calls at 45-60s and repeats the same searches, so firing on a defect it
+# cannot fix just burns the budget.
+
+def _verdict(text: str, verdict: Verdict, stage: str) -> ClaimVerdict:
+    return ClaimVerdict(Claim(text, (REAL,)), verdict, "because", stage)
+
+
+def test_an_unread_document_still_asks_for_another_pass():
+    """The case the trigger exists for: the document is real and we simply
+    did not retrieve it. Looking again is exactly the repair."""
+    report = VerificationReport(verdicts=[
+        _verdict("cites a real but unread section", Verdict.INSUFFICIENT_EVIDENCE, "reference"),
+    ])
+    assert report.needs_research == ["cites a real but unread section"]
+
+
+def test_a_misgrounded_paraphrase_does_not_ask_for_another_pass():
+    """A claim the model judged overstated is a defect in the *claim*. The
+    second pass re-plans the same angles and re-runs the same searches, so
+    it can only produce the same claim again -- at the cost of the run."""
+    report = VerificationReport(verdicts=[
+        _verdict("overstates the section", Verdict.PARTIALLY_SUPPORTED, "semantic"),
+    ])
+    assert report.needs_research == []
+
+
+def test_an_invented_quote_does_not_ask_for_another_pass():
+    """Words absent from the cited text are absent however hard we search."""
+    report = VerificationReport(verdicts=[
+        _verdict("quotes words that are not there", Verdict.UNSUPPORTED, "quote"),
+    ])
+    assert report.needs_research == []
+
+
+def test_a_supported_claim_never_asks_for_another_pass():
+    report = VerificationReport(verdicts=[
+        _verdict("checked and sound", Verdict.SUPPORTED, "reference"),
+    ])
+    assert report.needs_research == []
+
+
+def test_a_retrieval_gap_still_triggers_alongside_a_claim_defect():
+    """Mixed report: the repairable one is asked for, the others are not."""
+    report = VerificationReport(verdicts=[
+        _verdict("unread but real", Verdict.INSUFFICIENT_EVIDENCE, "reference"),
+        _verdict("overstated", Verdict.PARTIALLY_SUPPORTED, "semantic"),
+        _verdict("skipped in quick mode", Verdict.INSUFFICIENT_EVIDENCE, "skipped"),
+    ])
+    assert report.needs_research == ["unread but real"]
+
+
+def test_unsupported_texts_is_unchanged_by_the_narrowing():
+    """The reader-facing set is a different question from the loop trigger
+    and must keep reporting every finding against a claim."""
+    report = VerificationReport(verdicts=[
+        _verdict("overstated", Verdict.UNSUPPORTED, "semantic"),
+        _verdict("invented quote", Verdict.UNSUPPORTED, "quote"),
+    ])
+    assert report.unsupported_texts == ["overstated", "invented quote"]

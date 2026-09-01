@@ -47,7 +47,6 @@ shown above."""
 class ResearchResult:
     question: str
     angles: list[Angle] = field(default_factory=list)
-    summary: str = ""
     evidence: list[Evidence] = field(default_factory=list)
     dropped: list[tuple[str, str]] = field(default_factory=list)
 
@@ -172,6 +171,12 @@ def research(
     user seconds for an answer they did not ask for.
     """
     angles = plan_research(question, context=context, max_angles=max_angles, chain=chain)
+    # No angles means the planner found no legal issue to research. Stop
+    # here rather than searching, and in particular before `_discover`,
+    # which reaches a third party.
+    if not angles:
+        return ResearchResult(question=question)
+
     filters = _filters_for(thread_context)
 
     per_angle: list[list[Evidence]] = []
@@ -192,9 +197,9 @@ def research(
     return ResearchResult(
         question=question,
         angles=angles,
-        # Left as-is for direct callers of research(); inside the graph the
-        # Analyst produces the answer and this is not the cost path.
-        summary=summarise(question, evidence),
+        # No summary: the Analyst writes the answer from the Evidence, and
+        # nothing read this one. It cost 60.3s of a 233s turn.
+        # `summarise()` stays for a caller that wants prose.
         evidence=evidence,
         dropped=dropped,
     )

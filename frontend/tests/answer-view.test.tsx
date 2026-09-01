@@ -29,6 +29,7 @@ function answer(overrides: Partial<Answer> = {}): Answer {
     unchecked: [],
     partially_supported: [],
     support_not_checked: false,
+    coverage_note: "",
     citations: [],
     disclaimer: "",
     ...overrides,
@@ -136,6 +137,25 @@ describe("provenance", () => {
     render(<AnswerView answer={answer({ citations: ["mystery:1"] })} />);
     expect(screen.queryByText(/static knowledge/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/your document/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("a code the corpus does not hold", () => {
+  it("is shown above the answer, because it changes how to read it", () => {
+    render(
+      <AnswerView
+        answer={answer({
+          coverage_note: "This corpus does not hold the Indian Penal Code, 1860.",
+          lede: "Cruelty is an offence.",
+        })}
+      />,
+    );
+    expect(screen.getByText(/does not hold the Indian Penal Code/i)).toBeInTheDocument();
+  });
+
+  it("is absent when the corpus holds what was asked about", () => {
+    render(<AnswerView answer={answer({ lede: "x" })} />);
+    expect(screen.queryByText(/does not hold/i)).not.toBeInTheDocument();
   });
 });
 

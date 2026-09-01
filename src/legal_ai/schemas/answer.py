@@ -65,6 +65,12 @@ class DraftAnswer:
     support_not_checked: bool = False
 
     citations: tuple[str, ...] = ()
+
+    # Set when the question names an Act the corpus does not hold. A
+    # statement about our shelf, not about the law -- see
+    # retrieval.coverage.
+    coverage_note: str = ""
+
     disclaimer: str = DISCLAIMER
 
     @property

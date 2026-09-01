@@ -96,12 +96,31 @@ async def test_the_users_own_words_are_what_gets_stored(monkeypatch):
     assert "REWRITTEN" not in stored
 
 
+STORED_ANSWER = {
+    "question": "can I get a refund for late possession",
+    "lede": "Yes, under RERA s.18.",
+    "key_elements": [
+        {"text": "Mrs Sunita Patel is the allottee of flat B-1204",
+         "evidence_ids": ["case-file:deed"]},
+    ],
+    "applicable_law": [],
+    "key_judgments": [],
+    "needs_verification": [],
+    "partially_supported": [],
+    "unchecked": ["the promoter registered the project"],
+    "support_not_checked": False,
+    "citations": ["case-file:deed"],
+}
+
+
 @pytest.mark.asyncio
 async def test_a_message_about_the_last_answer_skips_research(monkeypatch):
     research = _no_research(monkeypatch)
     research.seen = None
     monkeypatch.setattr(thread_controller, "route_message", lambda *a, **k: Route.ANSWER)
-    monkeypatch.setattr(thread_controller, "answer_from_history", lambda *a, **k: "From memory.")
+    monkeypatch.setattr(
+        thread_controller, "answer_from_thread", lambda *a, **k: None
+    )
     with connection() as conn:
         thread = create_thread(conn, USER)
         add_message(conn, thread.thread_id, "assistant", "RERA s.18 applies.")
@@ -109,7 +128,112 @@ async def test_a_message_about_the_last_answer_skips_research(monkeypatch):
             conn, USER, thread.thread_id, "which of those binds me"
         )
     assert research.seen is None, "research must not have run"
-    assert result.value["text"] == "From memory."
+
+
+@pytest.mark.asyncio
+async def test_an_answered_follow_up_is_not_the_previous_reply_replayed(monkeypatch):
+    """The defect. A new, specific question routed ANSWER used to come back
+    as the previous answer word for word, with nothing saying it was a
+    repeat."""
+    import legal_ai.conversation.recall as recall
+
+    _no_research(monkeypatch)
+    monkeypatch.setattr(thread_controller, "route_message", lambda *a, **k: Route.ANSWER)
+    monkeypatch.setattr(
+        recall, "generate",
+        lambda *a, **k: '{"claims": [1], "lede": "Mrs Sunita Patel, flat B-1204."}',
+    )
+    previous = "Yes, under RERA s.18.\n\n- lots of earlier prose"
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        add_message(conn, thread.thread_id, "user", "can I get a refund")
+        add_message(conn, thread.thread_id, "assistant", previous, answer=STORED_ANSWER)
+        result = await thread_controller.send_message(
+            conn, USER, thread.thread_id, "what is my client's name and which flat"
+        )
+
+    text = result.value["text"]
+    answer = result.value["answer"]
+    assert text != previous
+    assert "Sunita Patel" in text
+    assert answer["question"] == "what is my client's name and which flat"
+    assert [claim["text"] for claim in answer["key_elements"]] == [
+        "Mrs Sunita Patel is the allottee of flat B-1204"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_carried_claim_keeps_its_bucket_through_the_turn(monkeypatch):
+    """Re-emitting an unchecked claim as a checked one would launder "nobody
+    looked" into "we looked and it holds"."""
+    import legal_ai.conversation.recall as recall
+
+    _no_research(monkeypatch)
+    monkeypatch.setattr(thread_controller, "route_message", lambda *a, **k: Route.ANSWER)
+    monkeypatch.setattr(
+        recall, "generate", lambda *a, **k: '{"claims": [2], "lede": "Registration."}'
+    )
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        add_message(conn, thread.thread_id, "user", "can I get a refund")
+        add_message(conn, thread.thread_id, "assistant", "earlier", answer=STORED_ANSWER)
+        result = await thread_controller.send_message(
+            conn, USER, thread.thread_id, "is the project registered"
+        )
+
+    answer = result.value["answer"]
+    assert answer["key_elements"] == []
+    assert answer["unchecked"] == ["the promoter registered the project"]
+
+
+@pytest.mark.asyncio
+async def test_a_thread_that_cannot_answer_says_so(monkeypatch):
+    """"We could not answer from the thread" is a real outcome. It must not
+    replay, and `answer` stays null so no client renders it as an answer."""
+    research = _no_research(monkeypatch)
+    research.seen = None
+    monkeypatch.setattr(thread_controller, "route_message", lambda *a, **k: Route.ANSWER)
+    monkeypatch.setattr(thread_controller, "answer_from_thread", lambda *a, **k: None)
+    previous = "Yes, under RERA s.18."
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        add_message(conn, thread.thread_id, "assistant", previous, answer=STORED_ANSWER)
+        result = await thread_controller.send_message(
+            conn, USER, thread.thread_id, "what is the stamp duty in Karnataka"
+        )
+
+    assert result.value["answer"] is None
+    assert result.value["text"] == thread_controller.COULD_NOT_ANSWER
+    assert previous not in result.value["text"]
+    assert research.seen is None, "it must not silently research either"
+
+
+@pytest.mark.asyncio
+async def test_an_answered_turn_leaves_no_new_case_findings(monkeypatch):
+    """Nothing new was established, so nothing new goes in the case file."""
+    import legal_ai.conversation.recall as recall
+    from legal_ai.case.store import create_case, ensure_case_schema, get_case
+
+    _no_research(monkeypatch)
+    monkeypatch.setattr(thread_controller, "route_message", lambda *a, **k: Route.ANSWER)
+    monkeypatch.setattr(
+        recall, "generate", lambda *a, **k: '{"claims": [1], "lede": "x"}'
+    )
+    with connection() as conn:
+        ensure_case_schema(conn)
+        conn.execute("DELETE FROM cases WHERE case_id = 'test-find-case3'")
+        conn.commit()
+        create_case(conn, case_id="test-find-case3", title="Patel v. Shah")
+        thread = create_thread(conn, USER, case_id="test-find-case3")
+        add_message(conn, thread.thread_id, "assistant", "earlier", answer=STORED_ANSWER)
+        await thread_controller.send_message(
+            conn, USER, thread.thread_id, "and the flat number"
+        )
+        case = get_case(conn, "test-find-case3")
+        conn.execute("DELETE FROM cases WHERE case_id = 'test-find-case3'")
+        conn.commit()
+
+    assert case.findings == () or list(case.findings) == []
 
 
 @pytest.mark.asyncio
@@ -294,3 +418,16 @@ def test_a_thread_outside_a_case_may_read_no_files():
 
     with connection() as conn:
         assert _permitted_documents(conn, None, ["doc:anything"]) == []
+
+
+def test_the_answer_payload_carries_the_coverage_note():
+    """It reaches the UI or it does not exist. The note was rendered into
+    the text but dropped from the structured answer, so the screen a lawyer
+    actually reads never showed it."""
+    from api.schemas import AnswerModel
+    from legal_ai.schemas.answer import DraftAnswer
+
+    model = AnswerModel.of(
+        DraftAnswer(question="s.498A IPC", coverage_note="We do not hold the IPC.")
+    )
+    assert model.coverage_note == "We do not hold the IPC."
