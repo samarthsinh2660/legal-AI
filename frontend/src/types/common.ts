@@ -29,14 +29,6 @@ export type Page<T> = {
   has_more: boolean;
 };
 
-/** How hard the backend checks an answer before returning it. Mirrors
- *  `LEGAL_AI_VERIFICATION_LEVEL`; the chat composer exposes it per call. */
-export enum VerificationLevel {
-  Off = "off",
-  Quick = "quick",
-  Full = "full",
-}
-
 /** Where a claim came from -- the product's core idiom. Rendered as a
  *  badge everywhere a source appears; see design/DESIGN_SYSTEM.md. */
 export enum Provenance {

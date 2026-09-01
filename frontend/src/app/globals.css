@@ -69,6 +69,7 @@
   --color-line-strong: var(--line-strong);
 
   --color-primary-hover: var(--primary-hover);
+  --color-primary-ring: var(--primary-ring);
   --color-primary-deep: var(--primary-deep);
   --color-on-primary: var(--on-primary);
 
@@ -111,6 +112,7 @@
   /* Depth is tonal layering and hairlines, not shadow. shadow-2 is
    * reserved for things that genuinely float. */
   --shadow-1: 0 1px 2px rgba(26, 26, 26, 0.04);
+  /* Level 2 is reserved for things that genuinely float. */
   --shadow-2: 0 4px 20px rgba(26, 26, 26, 0.08);
 }
 
@@ -135,6 +137,7 @@
   --primary-hover: #1d4fd8;
   --primary-deep: #1e3a8a;
   --on-primary: #ffffff;
+  --primary-ring: rgba(37, 99, 235, 0.32);
 
   --prov-static: #1b5e3f;
   --prov-static-bg: #e8f1ec;
@@ -153,12 +156,63 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    /* 1.5 floor so dense legal terminology does not crowd. */
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
-  html {
-    @apply font-sans;
+
+  /* The serif carries the authority of the source, the sans the machine's
+   * reading of it. Every heading is the serif -- set here rather than
+   * remembered at each call site, which is where it gets forgotten. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-serif font-bold text-ink;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background: var(--primary-ring);
+  }
+
+  /* Keyboard focus is visible and consistent; a mouse click is not ringed. */
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Motion is a courtesy, never load-bearing: everything below still reads
+   * correctly with it switched off. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Metadata labels -- "Bench", "Date of judgment", "Research context".
+   * Deliberately sets no colour: an evidence heading is warn or danger,
+   * a field label is muted. The caller picks the token; baking one in
+   * here is what makes a component reach for an inline style override. */
+  .caps {
+    @apply text-caps font-semibold uppercase;
+    letter-spacing: var(--tracking-caps);
+  }
+
+  /* Tabular numerals so citation counts and dates line up in a column. */
+  .mono {
+    font-variant-numeric: tabular-nums;
   }
 }

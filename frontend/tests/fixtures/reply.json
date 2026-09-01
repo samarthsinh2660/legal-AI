@@ -1,0 +1,49 @@
+{
+  "text": "Under the Real Estate (Regulation and Development) Act, a homebuyer has an unqualified right to seek a refund of the amount paid along with interest if the promoter fails to hand over possession of the property by the date specified in the agreement for sale.\n\n- Under Section 18(1) of the Act, if a promoter fails to complete or give possession of an apartment, plot, or building by the specified date, the allottee or homebuyer holds an unqualified right to seek a refund of the amount paid with interest. [judgment:ik-149094324]\n- Section 19(4) of the Act provides that an allottee is entitled to claim a refund of the amount paid along with interest and compensation if the promoter fails or is unable to give possession in terms of the agreement for sale. [judgment:ik-174233308]\n- A promoter must return the entire amount paid along with interest and compensation if an allottee wishes to withdraw from the project due to the promoter's failure to provide possession in accordance with the agreement for sale. [judgment:escr010000722020]\n\nCitations above were verified against the corpus, but the statements were not individually checked against the source text. Re-run with verification enabled for that.\n\nSources: judgment:escr010000722020, judgment:ik-149094324, judgment:ik-174233308\n\nThis is legal information generated from primary sources, not legal advice, and no lawyer-client relationship arises from it. Verify every provision and authority before relying on it.",
+  "answer": {
+    "question": "Can a homebuyer in Maharashtra claim a refund for late possession under RERA?",
+    "lede": "Under the Real Estate (Regulation and Development) Act, a homebuyer has an unqualified right to seek a refund of the amount paid along with interest if the promoter fails to hand over possession of the property by the date specified in the agreement for sale.",
+    "key_elements": [
+      {
+        "text": "Under Section 18(1) of the Act, if a promoter fails to complete or give possession of an apartment, plot, or building by the specified date, the allottee or homebuyer holds an unqualified right to seek a refund of the amount paid with interest.",
+        "evidence_ids": [
+          "judgment:ik-149094324"
+        ],
+        "paragraph": null
+      },
+      {
+        "text": "Section 19(4) of the Act provides that an allottee is entitled to claim a refund of the amount paid along with interest and compensation if the promoter fails or is unable to give possession in terms of the agreement for sale.",
+        "evidence_ids": [
+          "judgment:ik-174233308"
+        ],
+        "paragraph": null
+      },
+      {
+        "text": "A promoter must return the entire amount paid along with interest and compensation if an allottee wishes to withdraw from the project due to the promoter's failure to provide possession in accordance with the agreement for sale.",
+        "evidence_ids": [
+          "judgment:escr010000722020"
+        ],
+        "paragraph": null
+      }
+    ],
+    "applicable_law": [],
+    "key_judgments": [
+      "judgment:escr010000722020",
+      "judgment:ik-149094324",
+      "judgment:ik-174233308"
+    ],
+    "needs_verification": [],
+    "unchecked": [],
+    "partially_supported": [],
+    "support_not_checked": true,
+    "citations": [
+      "judgment:escr010000722020",
+      "judgment:ik-149094324",
+      "judgment:ik-174233308"
+    ],
+    "disclaimer": "This is legal information generated from primary sources, not legal advice, and no lawyer-client relationship arises from it. Verify every provision and authority before relying on it."
+  },
+  "clarification_needed": null,
+  "route": "RESEARCH",
+  "verification_level": "quick"
+}
