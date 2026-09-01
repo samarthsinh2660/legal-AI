@@ -55,5 +55,10 @@ class ReplyModel(BaseModel):
 
     text: Optional[str] = None
     answer: Optional[dict[str, Any]] = None
+
+    # The graph halted to ask for a missing fact. A real outcome, not an
+    # error: the client needs the user's next sentence, not a fixed request.
+    clarification_needed: Optional[str] = None
+
     route: Literal["ANSWER", "RESEARCH"]
     verification_level: Optional[str] = None

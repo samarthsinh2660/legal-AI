@@ -16,12 +16,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from api.accounts.router import router as accounts_router
+from api.cases.router import router as cases_router
+from legal_ai.case.files import ensure_case_file_schema
+from legal_ai.case.store import ensure_case_schema
 from api.databases.postgres import connection
 from api.documents.router import router as documents_router
 from api.accounts.revocation import ensure_revocation_schema, is_revoked
@@ -99,6 +104,26 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
     application.add_middleware(AuthMiddleware, is_revoked=_revoked)
     application.add_middleware(RateLimitMiddleware, limiter=limiter)
 
+    # Outermost, so a preflight OPTIONS is answered before the rate limiter
+    # or the auth check sees it -- a browser sends preflights without
+    # credentials, and a 401 there breaks every cross-origin request.
+    #
+    # Origins come from the environment with no default. A wildcard would
+    # let any site a user visits make authenticated calls with their token.
+    origins = [
+        origin.strip()
+        for origin in os.environ.get("LEGAL_AI_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    if origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
+
     @application.exception_handler(RequestValidationError)
     async def _bad_request(request: Request, exc: RequestValidationError) -> JSONResponse:
         """400 rather than FastAPI's 422 for a malformed body.
@@ -153,6 +178,11 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
             with connection() as conn:
                 ensure_thread_schema(conn)
                 ensure_revocation_schema(conn)
+                # Cases and their files predate the API, but the API adds
+                # columns to them (owner, matter type, description), so it
+                # has to run their migration too.
+                ensure_case_schema(conn)
+                ensure_case_file_schema(conn)
         except Exception:
             # A database that is down must not stop the process starting --
             # it has to come up to report itself unhealthy.
@@ -160,6 +190,7 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
 
     application.include_router(accounts_router)
     application.include_router(threads_router)
+    application.include_router(cases_router)
     application.include_router(documents_router)
     return application
 

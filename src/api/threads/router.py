@@ -7,6 +7,8 @@ token -- see `api/middleware/auth.py`.
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Query, Request
 
 from api.databases.postgres import connection
@@ -150,3 +152,46 @@ async def post_message(request: Request, thread_id: str, body: MessageRequest):
     if isinstance(result, Failure):
         return respond(result)
     return success(ReplyModel(**result.value).model_dump())
+
+
+@router.post("/{thread_id}/messages/stream")
+async def post_message_streaming(request: Request, thread_id: str, body: MessageRequest):
+    """The same turn, as Server-Sent Events, so the wait is legible.
+
+    A researched answer takes a minute or two. Without this the client sees
+    a blank pane and assumes the page has hung -- the answer is correct and
+    the product looks broken.
+
+    Events:
+        step  {"node": "research", "label": "Searching statutes and judgments"}
+        done  the same body POST /messages returns
+        error {"code": ..., "message": ...}
+
+    SSE rather than WebSockets: the traffic is one-way, and a plain POST
+    still exists for clients that would rather wait.
+    """
+    from api.middleware.rate_limit import check_ai_quota
+    from api.threads.controller import stream_message
+    from api.utils.errors import rate_limited
+    from fastapi.responses import StreamingResponse
+
+    user_id = request.state.user_id
+    if check_ai_quota(user_id) is not None:
+        return respond(rate_limited())
+
+    async def events():
+        with connection() as conn:
+            async for name, payload in stream_message(
+                conn, user_id, thread_id, body.message,
+                document_ids=body.document_ids,
+                verification_level=body.verification_level,
+            ):
+                yield f"event: {name}\ndata: {json.dumps(payload)}\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        # Proxies buffer by default, which would hold every step until the
+        # answer is ready and defeat the point.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

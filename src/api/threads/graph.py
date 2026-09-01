@@ -38,12 +38,16 @@ def run_graph(inputs: dict) -> dict:
     It does not catch: whatever the graph raises is by definition
     unexpected, and the router's outermost boundary handles it once.
     """
+    return _compiled().invoke(inputs)
+
+
+def _compiled():
     global _graph
     if _graph is None:
         from legal_ai.graph.build import build_research_graph
 
         _graph = build_research_graph()
-    return _graph.invoke(inputs)
+    return _graph
 
 
 async def research(inputs: dict) -> Result:
@@ -69,3 +73,64 @@ def read_timeout() -> float:
         return float(raw) if raw else DEFAULT_TIMEOUT_SECONDS
     except ValueError:
         return DEFAULT_TIMEOUT_SECONDS
+
+
+# What each node is doing, in the reader's language. The keys are the graph's
+# own node names, so a renamed node shows as itself rather than silently
+# dropping out of the list.
+STEP_LABELS = {
+    "document": "Reading your documents",
+    "context_builder": "Understanding the question",
+    "clarification": "Checking what is missing",
+    "research": "Searching statutes and judgments",
+    "analyst": "Drafting the analysis",
+    "verification": "Checking every claim against its source",
+    "draft": "Assembling the answer",
+}
+
+
+async def research_with_progress(inputs: dict):
+    """Run the graph, yielding one event per completed node, then the answer.
+
+    Real steps, not a timer: each event is emitted when a node actually
+    finishes, so a slow search shows as a slow step rather than a progress
+    bar that has learned to lie. `design/UX_FLOWS.md` is explicit that this
+    pane "shows real work, never fake thinking".
+
+    A 114-second wait with no feedback reads as a hung page. This does not
+    make it faster; it makes it legible.
+    """
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    _DONE = object()
+
+    def pump() -> None:
+        # `stream` is a blocking generator, so it runs in a thread and hands
+        # each update back through the loop -- the same reason `research`
+        # uses to_thread.
+        try:
+            state = {}
+            for update in _compiled().stream(inputs):
+                for node, produced in update.items():
+                    state.update(produced or {})
+                    loop.call_soon_threadsafe(queue.put_nowait, ("step", node))
+            loop.call_soon_threadsafe(queue.put_nowait, ("done", state))
+        except Exception as exc:  # noqa: BLE001 - reported, then re-raised to the caller
+            loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, (_DONE, None))
+
+    task = loop.run_in_executor(None, pump)
+    try:
+        while True:
+            kind, payload = await asyncio.wait_for(queue.get(), timeout=read_timeout())
+            if kind is _DONE:
+                return
+            if kind == "error":
+                raise payload
+            yield kind, payload
+    except asyncio.TimeoutError:
+        log.warning("research stream timed out")
+        yield "error", TimeoutError("Research did not finish within the time limit.")
+    finally:
+        task.cancel()

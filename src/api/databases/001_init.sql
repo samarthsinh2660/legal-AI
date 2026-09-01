@@ -119,7 +119,14 @@ CREATE TABLE IF NOT EXISTS cases (
     -- Nullable because cases predate accounts. A case with no owner is
     -- reachable by nobody through the API: the API filters on this column,
     -- and NULL matches no user.
-    user_id     TEXT
+    user_id     TEXT,
+
+    -- design/UX_FLOWS.md "Creating a case". `description` is not a note
+    -- field: the New Case modal labels it as seeding the context every agent
+    -- starts from, and start_session puts it on the ThreadContext.
+    matter_type TEXT,
+    status      TEXT,
+    description TEXT
 );
 
 CREATE INDEX IF NOT EXISTS cases_user_idx ON cases (user_id);

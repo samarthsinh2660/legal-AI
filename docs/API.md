@@ -12,7 +12,15 @@ GET  /auth/me                  who the token belongs to
 POST /threads                  start a research thread
 GET  /threads                  this user's threads
 POST /threads/{id}/messages    ask, or follow up
+POST /threads/{id}/messages/stream   the same, as Server-Sent Events
 GET  /threads/{id}/messages    the conversation
+
+POST /cases                    create a matter
+GET  /cases                    this user's matters
+GET  /cases/{id}               one matter
+PATCH  /cases/{id}             rename or re-tag it
+DELETE /cases/{id}             delete it; its threads detach, not vanish
+POST /cases/{id}/threads       "Save to case" -- attach an existing thread
 
 POST /cases/{id}/documents     upload a file for the Document Agent
 GET  /cases/{id}/documents     what is attached
@@ -67,6 +75,7 @@ dying.
 | `LEGAL_AI_VERIFICATION_LEVEL` | `quick` | Default mode when a request omits one. |
 | `LEGAL_AI_TRUST_PROXY_HEADER` | `false` | Read `X-Forwarded-For` for rate limiting. Only true behind a proxy. |
 | `API_PORT` | `8000` | Host port for the API container. |
+| `LEGAL_AI_CORS_ORIGINS` | *(unset — no cross-origin access)* | Comma-separated origins a browser may call from. No wildcard: any site a user visits could otherwise call this with their token. |
 
 **No secret means no service.** An unset `LEGAL_AI_JWT_SECRET` rejects every
 authenticated request with 503. The alternative default — no secret means
@@ -227,6 +236,46 @@ was wanted is a wrong answer, researching unnecessarily is only slow.
 A 504 stores nothing: a half-turn in the thread would be resolved against by
 the next rewrite as though it were an answer.
 
+### `POST /threads/{id}/messages/stream`
+
+The same turn, as Server-Sent Events. Same body, same reply -- the
+difference is that you see the wait.
+
+A researched answer takes **one to two minutes**. Measured on a real run:
+
+```
+  0.4s  step  Reading your documents
+  0.4s  step  Understanding the question
+  0.4s  step  Checking what is missing
+ 77.7s  step  Searching statutes and judgments      <- 63% of the wall time
+123.1s  step  Drafting the analysis
+123.1s  step  Checking every claim against its source
+123.2s  step  Assembling the answer
+123.2s  done
+```
+
+Without this a client shows a blank pane for two minutes and the user
+assumes the page has hung: the answer is right and the product looks broken.
+
+| Event | Data |
+|---|---|
+| `step` | `{"node": "research", "label": "Searching statutes and judgments"}` |
+| `done` | the same body `POST /messages` returns |
+| `error` | `{"code": "...", "message": "..."}` |
+
+`node` is the graph's own node name and is the stable key -- bind UI rows to
+it, not to `label`, which is prose and may be reworded. The seven nodes are
+`document`, `context_builder`, `clarification`, `research`, `analyst`,
+`verification`, `draft`.
+
+**Steps are emitted when a node actually finishes.** There is no timer and no
+interpolation: a slow search shows as a step that sits there, which is the
+truth. `design/UX_FLOWS.md` requires this pane to "show real work, never fake
+thinking", and a progress bar that advances on a clock is exactly the thing
+it forbids.
+
+The plain `POST /messages` still exists for clients that would rather block.
+
 ### 4.1 The answer shape
 
 ```json
@@ -350,7 +399,9 @@ Present because they are absent, not because they are planned.
 - **`ANSWER` returns the previous reply verbatim.** It is honest -- that is
   what the user is asking about -- but it is not yet a real answer over the
   stored claims.
-- **No logout or revocation.** Expiry is the only bound on a leaked token.
+- **Logout revokes one token, not a whole account.** Signing out on a laptop
+  leaves a phone signed in, which is usually what is wanted; there is no
+  "sign out everywhere".
 - **Open registration.** Anyone who can reach the service can create an
   account and spend model budget.
 - **`POST /auth/register` is an enumeration surface** — 409 reveals that an
@@ -360,4 +411,5 @@ Present because they are absent, not because they are planned.
   first one that needs it.
 - **No streaming, no progress, no cancellation.**
 - **No per-user audit** of who asked what.
-- **No CORS configuration**, so a browser on another origin cannot call this.
+- **CORS is off until `LEGAL_AI_CORS_ORIGINS` is set.** Deliberate: a
+  wildcard would let any site a user visits make authenticated calls.

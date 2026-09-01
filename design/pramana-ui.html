@@ -374,6 +374,9 @@
   .ctx-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .ctx-card-head h4 { font-family: var(--sans); font-size: var(--t-sm); font-weight: 600; letter-spacing: 0; }
   .ctx-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .verify-toggle { display: flex; gap: 6px; }
+  .verify-toggle .filter-pill { flex: 1; text-align: center; }
+  .verify-hint { font-size: var(--t-2xs); color: var(--ink-muted); line-height: 1.5; margin-top: 10px; }
   .doc-row { padding: 12px var(--s2); display: flex; gap: 12px; align-items: flex-start; margin-bottom: var(--s1); }
   .doc-row:hover { border-color: var(--line-strong); }
   .doc-row .ic { color: var(--ink-muted); flex: none; margin-top: 2px; }
@@ -1144,6 +1147,18 @@
           </div>
 
           <div class="ctx-block">
+            <span class="caps">Verification level</span>
+            <div class="card ctx-card">
+              <div class="verify-toggle" role="group" aria-label="Verification level">
+                <button type="button" class="filter-pill active" id="verify-quick-btn" aria-pressed="true">Quick</button>
+                <button type="button" class="filter-pill" id="verify-verified-btn" aria-pressed="false">Verified</button>
+              </div>
+              <p class="verify-hint">Quick checks that citations exist and quotes match their source. Verified adds one model pass that judges whether the source actually supports each claim — the answer itself doesn't change, and this isn't a guarantee.</p>
+            </div>
+          </div>
+
+
+          <div class="ctx-block">
             <span class="caps">Research context</span>
             <div class="card ctx-card">
               <div class="ctx-card-head">
@@ -1197,20 +1212,26 @@
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="m8 2 1.4 3.6L13 7l-3.6 1.4L8 12l-1.4-3.6L3 7l3.6-1.4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
               </div>
               <div class="turn-body">
+                <!-- Driven by the SSE stream from
+                     POST /threads/{id}/messages/stream. Each `step` event
+                     carries the graph's own node name; data-node matches it
+                     so a client maps events to rows without a lookup table.
+                     States are done / doing / todo -- never a timer. -->
                 <div class="progress-card open" id="progress-card">
                   <button class="progress-head" id="progress-toggle">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="m3 8.4 2.6 2.6L13 3.6" stroke="var(--ok)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    Research progress — 6 steps completed
+                    <span id="progress-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m3 8.4 2.6 2.6L13 3.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                    <span id="progress-label">Research progress</span>
                     <span class="spacer"></span>
                     <span class="chev"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                   </button>
-                  <div class="progress-steps">
-                    <div class="pstep done"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m3 8.4 2.6 2.6L13 3.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Understanding the legal issue — possession, title, limitation</div>
-                    <div class="pstep done"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m3 8.4 2.6 2.6L13 3.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Searching India Code — Specific Relief Act, 1963</div>
-                    <div class="pstep done"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m3 8.4 2.6 2.6L13 3.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Searching Supreme Court judgments</div>
-                    <div class="pstep done"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m3 8.4 2.6 2.6L13 3.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Searching Gujarat High Court judgments</div>
-                    <div class="pstep done"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m3 8.4 2.6 2.6L13 3.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Comparing precedents on settled possession</div>
-                    <div class="pstep done"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m3 8.4 2.6 2.6L13 3.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Verifying citations — 7 of 7 verified</div>
+                  <div class="progress-steps" id="progress-steps">
+                    <div class="pstep todo" data-node="document"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="4" stroke="currentColor" stroke-width="1.6"/></svg></span>Reading your documents</div>
+                    <div class="pstep todo" data-node="context_builder"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="4" stroke="currentColor" stroke-width="1.6"/></svg></span>Understanding the question</div>
+                    <div class="pstep todo" data-node="clarification"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="4" stroke="currentColor" stroke-width="1.6"/></svg></span>Checking what is missing</div>
+                    <div class="pstep todo" data-node="research"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="4" stroke="currentColor" stroke-width="1.6"/></svg></span>Searching statutes and judgments</div>
+                    <div class="pstep todo" data-node="analyst"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="4" stroke="currentColor" stroke-width="1.6"/></svg></span>Drafting the analysis</div>
+                    <div class="pstep todo" data-node="verification"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="4" stroke="currentColor" stroke-width="1.6"/></svg></span>Checking every claim against its source</div>
+                    <div class="pstep todo" data-node="draft"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="4" stroke="currentColor" stroke-width="1.6"/></svg></span>Assembling the answer</div>
                   </div>
                 </div>
 
@@ -1260,7 +1281,7 @@
                     <button class="btn btn-ghost btn-sm">Share</button>
                   </div>
 
-                  <div class="ai-note">
+                  <div class="ai-note" id="ai-note-verify">
                     <span class="badge badge-verified">
                       <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="m3 8.4 2.6 2.6L13 3.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       Verified
@@ -2452,6 +2473,26 @@
     var pt = document.getElementById('progress-toggle');
     if (pt) { pt.addEventListener('click', function () { pc.classList.toggle('open'); }); }
 
+    var verifyQuickBtn = document.getElementById('verify-quick-btn');
+    var verifyVerifiedBtn = document.getElementById('verify-verified-btn');
+    var aiNoteVerify = document.getElementById('ai-note-verify');
+    var VERIFY_NOTE = {
+      quick: 'AI-generated analysis based on 12 sources · citations checked to exist, quotes matched against source · claims not model-checked · this does not replace advice from a qualified legal professional.',
+      verified: '<span class="badge">Model-checked</span> AI-generated analysis based on 12 sources · citations checked to exist, quotes matched against source · each claim checked against its cited source by model · this does not replace advice from a qualified legal professional.'
+    };
+    function setVerifyLevel(level) {
+      var isVerified = level === 'verified';
+      verifyQuickBtn.classList.toggle('active', !isVerified);
+      verifyQuickBtn.setAttribute('aria-pressed', String(!isVerified));
+      verifyVerifiedBtn.classList.toggle('active', isVerified);
+      verifyVerifiedBtn.setAttribute('aria-pressed', String(isVerified));
+      if (aiNoteVerify) { aiNoteVerify.innerHTML = isVerified ? VERIFY_NOTE.verified : VERIFY_NOTE.quick; }
+    }
+    if (verifyQuickBtn && verifyVerifiedBtn) {
+      verifyQuickBtn.addEventListener('click', function () { setVerifyLevel('quick'); });
+      verifyVerifiedBtn.addEventListener('click', function () { setVerifyLevel('verified'); });
+    }
+
     // case tabs
     document.querySelectorAll('#case-tabs .tab').forEach(function (tab) {
       tab.addEventListener('click', function () {
@@ -2537,6 +2578,39 @@
       showView('case-detail');
     });
   })();
+
+  /* Research progress -- driven by `step` events in the real app.
+     Timings below are the measured ones (research is ~77s of ~123s), so the
+     reference shows the real shape of the wait rather than an even bar. */
+  (function () {
+    var steps = document.getElementById('progress-steps');
+    if (!steps) return;
+    var TICK = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m3 8.4 2.6 2.6L13 3.6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var DOT = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3.2" fill="currentColor"/></svg>';
+    var label = document.getElementById('progress-label');
+    var rows = Array.prototype.slice.call(steps.querySelectorAll('.pstep'));
+
+    function mark(index) {
+      rows.forEach(function (row, n) {
+        row.className = 'pstep ' + (n < index ? 'done' : n === index ? 'doing' : 'todo');
+        row.querySelector('.ic').innerHTML = n < index ? TICK : n === index ? DOT : row.querySelector('.ic').innerHTML;
+      });
+      if (label) {
+        label.textContent = index >= rows.length
+          ? 'Research progress \u2014 ' + rows.length + ' steps completed'
+          : rows[index].textContent.trim();
+      }
+    }
+
+    // Cumulative seconds each step completes at, from a measured run.
+    var at = [0.4, 0.4, 0.4, 77.7, 123.1, 123.1, 123.2];
+    var scale = 0.06;  // replay compressed, so the reference is watchable
+    mark(0);
+    at.forEach(function (seconds, n) {
+      setTimeout(function () { mark(n + 1); }, seconds * 1000 * scale);
+    });
+  })();
+
 </script>
 
 </body>

@@ -185,3 +185,78 @@ async def test_a_later_message_does_not_retitle(monkeypatch):
 
         titled = get_thread(conn, thread.thread_id, USER)
     assert "first" in titled.title.lower()
+
+
+@pytest.mark.asyncio
+async def test_a_turn_in_a_case_leaves_its_findings_behind(monkeypatch):
+    """The reason a case exists: the fourth question should not re-derive
+    what the first three settled."""
+    from api.threads.repository import create_thread
+    from legal_ai.case.store import create_case, ensure_case_schema, get_case
+
+    answer = {
+        "key_elements": [
+            {"text": "a promoter must refund on demand", "evidence_ids": ["act:2158:sec-18"]}
+        ]
+    }
+    _no_research(monkeypatch, {"answer": "text", "draft_answer": object()})
+    monkeypatch.setattr(thread_controller, "route_message", lambda *a, **k: Route.RESEARCH)
+    monkeypatch.setattr(thread_controller, "_as_dict", lambda draft: answer)
+
+    with connection() as conn:
+        ensure_case_schema(conn)
+        conn.execute("DELETE FROM cases WHERE case_id = 'test-find-case'")
+        conn.commit()
+        create_case(conn, case_id="test-find-case", title="Patel v. Shah")
+        thread = create_thread(conn, USER, case_id="test-find-case")
+        await thread_controller.send_message(
+            conn, USER, thread.thread_id, "can I get a refund"
+        )
+        case = get_case(conn, "test-find-case")
+        conn.execute("DELETE FROM cases WHERE case_id = 'test-find-case'")
+        conn.commit()
+
+    assert [f.claim for f in case.findings] == ["a promoter must refund on demand"]
+
+
+@pytest.mark.asyncio
+async def test_an_unverified_claim_does_not_become_a_case_finding(monkeypatch):
+    """A claim the checker rejected must not be laundered into the case file
+    and then seeded into the next question as established fact."""
+    from api.threads.repository import create_thread
+    from legal_ai.case.store import create_case, ensure_case_schema, get_case
+
+    # needs_verification, not key_elements: evidence is against this one.
+    answer = {"key_elements": [], "needs_verification": ["a promoter faces prison"]}
+    _no_research(monkeypatch, {"answer": "text", "draft_answer": object()})
+    monkeypatch.setattr(thread_controller, "route_message", lambda *a, **k: Route.RESEARCH)
+    monkeypatch.setattr(thread_controller, "_as_dict", lambda draft: answer)
+
+    with connection() as conn:
+        ensure_case_schema(conn)
+        conn.execute("DELETE FROM cases WHERE case_id = 'test-find-case2'")
+        conn.commit()
+        create_case(conn, case_id="test-find-case2", title="Patel v. Shah")
+        thread = create_thread(conn, USER, case_id="test-find-case2")
+        await thread_controller.send_message(conn, USER, thread.thread_id, "a question")
+        case = get_case(conn, "test-find-case2")
+        conn.execute("DELETE FROM cases WHERE case_id = 'test-find-case2'")
+        conn.commit()
+
+    assert all("prison" not in f.claim for f in case.findings)
+
+
+@pytest.mark.asyncio
+async def test_a_thread_with_no_case_records_nothing(monkeypatch):
+    """A standalone thread has nowhere to leave findings, and must not
+    invent a matter to hold them."""
+    from api.threads.repository import create_thread
+
+    _no_research(monkeypatch, {"answer": "text", "draft_answer": None})
+    monkeypatch.setattr(thread_controller, "route_message", lambda *a, **k: Route.RESEARCH)
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        result = await thread_controller.send_message(
+            conn, USER, thread.thread_id, "a question"
+        )
+    assert isinstance(result, Ok)
