@@ -95,6 +95,12 @@ class ThreadContext:
     # can be attached to a case later via "Save to case".
     case_id: str | None = None
 
+    # The matter's own description, when the thread belongs to one.
+    # design/UX_FLOWS.md labels this field as seeding the context every agent
+    # starts from, so it is carried here rather than left in the database
+    # where no agent would see it.
+    case_description: str | None = None
+
     document_ids: tuple[str, ...] = ()
     documents: tuple[DocumentFacts, ...] = ()
     established_findings: tuple[EstablishedFinding, ...] = ()

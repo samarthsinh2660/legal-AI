@@ -114,11 +114,22 @@ CREATE TABLE IF NOT EXISTS cases (
     case_number TEXT,
     parties     JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at  TIMESTAMPTZ NOT NULL,
-    updated_at  TIMESTAMPTZ NOT NULL
-    -- NOTE: no owner column. Any authenticated caller can read any case.
-    -- This is the gap that makes the API not multi-tenant safe; see
-    -- docs/API.md section 9.
+    updated_at  TIMESTAMPTZ NOT NULL,
+
+    -- Nullable because cases predate accounts. A case with no owner is
+    -- reachable by nobody through the API: the API filters on this column,
+    -- and NULL matches no user.
+    user_id     TEXT,
+
+    -- design/UX_FLOWS.md "Creating a case". `description` is not a note
+    -- field: the New Case modal labels it as seeding the context every agent
+    -- starts from, and start_session puts it on the ThreadContext.
+    matter_type TEXT,
+    status      TEXT,
+    description TEXT
 );
+
+CREATE INDEX IF NOT EXISTS cases_user_idx ON cases (user_id);
 
 CREATE TABLE IF NOT EXISTS case_documents (
     case_id     TEXT NOT NULL REFERENCES cases(case_id) ON DELETE CASCADE,
@@ -169,6 +180,43 @@ CREATE TABLE IF NOT EXISTS case_files (
 
 CREATE INDEX IF NOT EXISTS case_files_case_idx
     ON case_files (case_id, uploaded_at);
+
+
+-- --------------------------------------------------------------- threads
+
+-- A research thread: a conversation, optionally inside a case. Per
+-- design/UX_FLOWS.md Screen 3 this IS the chat -- there is no one-shot mode. `user_id` is NOT NULL and every query filters on it -- this is
+-- the first table in the system with an owner, and the scoping lives in the
+-- WHERE clause rather than around it.
+CREATE TABLE IF NOT EXISTS threads (
+    thread_id       TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    case_id         TEXT REFERENCES cases(case_id) ON DELETE SET NULL,
+    title           TEXT NOT NULL DEFAULT 'New conversation',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- An assistant message keeps its structured answer as well as its text, so a
+-- later turn can cite what was established rather than re-deriving it.
+CREATE TABLE IF NOT EXISTS messages (
+    message_id      BIGSERIAL PRIMARY KEY,
+    thread_id       TEXT NOT NULL
+        REFERENCES threads(thread_id) ON DELETE CASCADE,
+    role            TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    content         TEXT NOT NULL,
+    answer          JSONB,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- The thread list: this user's threads, most recently active first.
+CREATE INDEX IF NOT EXISTS threads_user_idx
+    ON threads (user_id, updated_at DESC);
+
+-- Reading a thread is always in order; message_id breaks ties between rows
+-- written inside the same clock tick.
+CREATE INDEX IF NOT EXISTS messages_thread_idx
+    ON messages (thread_id, message_id);
 
 
 -- --------------------------------------------------------------- accounts

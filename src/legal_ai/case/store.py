@@ -32,7 +32,16 @@ def ensure_case_schema(conn: psycopg.Connection) -> None:
             case_number TEXT,
             parties JSONB NOT NULL DEFAULT '[]'::jsonb,
             created_at TIMESTAMPTZ NOT NULL,
-            updated_at TIMESTAMPTZ NOT NULL
+            updated_at TIMESTAMPTZ NOT NULL,
+
+            -- Nullable because cases predate accounts. A case with no owner
+            -- is readable by nobody through the API; the column is what the
+            -- API filters on, and NULL matches no user.
+            user_id TEXT,
+
+            matter_type TEXT,
+            status TEXT,
+            description TEXT
         )
         """
     )
@@ -69,9 +78,30 @@ def ensure_case_schema(conn: psycopg.Connection) -> None:
         )
         """
     )
+    # The catalog is checked before any ALTER is issued. `ADD COLUMN IF NOT
+    # EXISTS` still requests ACCESS EXCLUSIVE when it has nothing to do, and
+    # a *pending* request for that lock blocks every reader queued behind
+    # it. Measured three times in this codebase: called per operation, it
+    # froze the database for readers each time.
+    present = {
+        row[0]
+        for row in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'cases' AND table_schema = current_schema()"
+        ).fetchall()
+    }
+    for column, kind in (
+        ("user_id", "TEXT"),
+        ("matter_type", "TEXT"),
+        ("status", "TEXT"),
+        ("description", "TEXT"),
+    ):
+        if column not in present:
+            conn.execute(f"ALTER TABLE cases ADD COLUMN IF NOT EXISTS {column} {kind}")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS case_sessions_case_idx ON case_sessions (case_id, asked_at)"
     )
+    conn.execute("CREATE INDEX IF NOT EXISTS cases_user_idx ON cases (user_id)")
     conn.commit()
 
     # Uploaded files, last because they reference cases. Imported here
@@ -94,6 +124,9 @@ def create_case(
     state: str | None = None,
     case_number: str | None = None,
     parties: tuple[str, ...] = (),
+    matter_type: str | None = None,
+    status: str | None = None,
+    description: str | None = None,
 ) -> Case:
     """Create a case, or return the existing one unchanged.
 
@@ -105,11 +138,12 @@ def create_case(
     conn.execute(
         """
         INSERT INTO cases (case_id, title, court, state, case_number, parties,
-                           created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                           matter_type, status, description, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (case_id) DO NOTHING
         """,
-        (case_id, title, court, state, case_number, json.dumps(list(parties)), now, now),
+        (case_id, title, court, state, case_number, json.dumps(list(parties)),
+         matter_type, status, description, now, now),
     )
     conn.commit()
     stored = get_case(conn, case_id)
@@ -179,7 +213,8 @@ def get_case(conn: psycopg.Connection, case_id: str) -> Case | None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT title, court, state, case_number, parties, created_at, updated_at
+            SELECT title, court, state, case_number, parties,
+                   matter_type, status, description, created_at, updated_at
             FROM cases WHERE case_id = %s
             """,
             (case_id,),
@@ -187,7 +222,8 @@ def get_case(conn: psycopg.Connection, case_id: str) -> Case | None:
         row = cur.fetchone()
         if row is None:
             return None
-        title, court, state, case_number, parties, created_at, updated_at = row
+        (title, court, state, case_number, parties,
+         matter_type, status, description, created_at, updated_at) = row
 
         cur.execute(
             "SELECT document_id FROM case_documents WHERE case_id = %s ORDER BY attached_at, document_id",
@@ -225,6 +261,9 @@ def get_case(conn: psycopg.Connection, case_id: str) -> Case | None:
         state=state,
         case_number=case_number,
         parties=tuple(parties),
+        matter_type=matter_type,
+        status=status,
+        description=description,
         document_ids=document_ids,
         findings=findings,
         research_questions=questions,

@@ -9,9 +9,9 @@ exception's own text can reach a body.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Request
 
-from api.accounts.controller import current_user_id, login, register, user_for
+from api.accounts.controller import login, register, user_for
 from api.accounts.schemas import (
     LoginRequest,
     MeResponse,
@@ -64,19 +64,34 @@ async def login_for_token(request: LoginRequest):
     response_model=Success[MeResponse],
     responses={401: {"model": ErrorResponse}},
 )
-async def me(auth: Result = Depends(current_user_id)):
+async def me(request: Request):
     """Who the presented token belongs to.
 
     The endpoint a client uses to tell a live session from an expired one
     without spending a research call to find out.
     """
-    if isinstance(auth, Failure):
-        return respond(auth)
     with connection() as conn:
-        user = user_for(conn, auth.value)
+        user = user_for(conn, request.state.user_id)
     if user is None:
         # A validly signed token for an account that no longer exists. The
         # same answer as any other bad token: the difference is useful to
         # an attacker and to nobody else.
         return respond(unauthorized())
     return success(MeResponse(user_id=user.user_id, email=user.email).model_dump())
+
+
+@router.post("/logout", responses={401: {"model": ErrorResponse}})
+async def logout(request: Request):
+    """End the session on the client.
+
+    There is no server-side denylist, so this does not invalidate the
+    presented token -- a copy of it keeps working until `exp`. What this
+    route gives the client is a place to hang the sign-out on, and an
+    authenticated 200 telling it the token it just discarded was real.
+
+    Bounding a leaked token is therefore `LEGAL_AI_JWT_EXPIRES_IN`'s job
+    alone. Shorten it if that window matters more than staying signed in.
+
+    Idempotent, and requires a valid token like every other route.
+    """
+    return success({"logged_out": True})

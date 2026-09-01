@@ -5,12 +5,36 @@ system in `src/legal_ai/`, which it calls and never imports the other way
 round.
 
 ```
-POST /auth/register   create an account
-POST /auth/login      exchange credentials for a bearer token
-GET  /auth/me         who the token belongs to
-POST /research        answer one legal question
-GET  /health          liveness plus store connectivity
+POST /auth/register            create an account
+POST /auth/login               exchange credentials for a bearer token
+GET  /auth/me                  who the token belongs to
+
+POST /threads                  start a research thread
+GET  /threads                  this user's threads
+POST /threads/{id}/messages    ask, or follow up
+POST /threads/{id}/messages/stream   the same, as Server-Sent Events
+GET  /threads/{id}/messages    the conversation
+
+POST /cases                    create a matter
+GET  /cases                    this user's matters
+GET  /cases/{id}               one matter
+PATCH  /cases/{id}             rename or re-tag it
+DELETE /cases/{id}             delete it; its threads detach, not vanish
+POST /cases/{id}/threads       "Save to case" -- attach an existing thread
+
+POST /cases/{id}/documents     upload a file for the Document Agent
+GET  /cases/{id}/documents     what is attached
+
+GET  /search                   the corpus directly, unverified
+GET  /graph/{document_id}      the citation graph, read-only
+
+GET  /health                   liveness plus store connectivity
 ```
+
+**A thread is the conversation.** `design/UX_FLOWS.md` Screen 3 is one pane
+of follow-ups; there is no one-shot research mode in the product, so there
+is no one-shot endpoint. A *case* is the container above a thread, holding
+the documents and findings that many threads share.
 
 Interactive docs are at `/docs` when the server is running.
 
@@ -54,6 +78,7 @@ dying.
 | `LEGAL_AI_VERIFICATION_LEVEL` | `quick` | Default mode when a request omits one. |
 | `LEGAL_AI_TRUST_PROXY_HEADER` | `false` | Read `X-Forwarded-For` for rate limiting. Only true behind a proxy. |
 | `API_PORT` | `8000` | Host port for the API container. |
+| `LEGAL_AI_CORS_ORIGINS` | *(unset — no cross-origin access)* | Comma-separated origins a browser may call from. No wildcard: any site a user visits could otherwise call this with their token. |
 
 **No secret means no service.** An unset `LEGAL_AI_JWT_SECRET` rejects every
 authenticated request with 503. The alternative default — no secret means
@@ -102,9 +127,12 @@ A bearer token, obtained from `/auth/login`.
 Authorization: Bearer <access_token>
 ```
 
-Tokens are JWTs signed with HS256, valid for **one hour**. They are
-stateless, so **there is no logout that invalidates an issued token** —
-expiry is the only bound. Revocation would need a token store.
+Tokens are JWTs signed with HS256, valid for **24 hours** by default — set
+`LEGAL_AI_JWT_EXPIRES_IN` (seconds) to change it. They are stateless and
+there is no denylist: **an issued token cannot be withdrawn**, so
+`POST /auth/logout` ends the session on the client and expiry is the only
+bound on a leaked one. Shorten `LEGAL_AI_JWT_EXPIRES_IN` if that window
+matters more than staying signed in.
 
 ### `POST /auth/register`
 
@@ -154,53 +182,118 @@ whose account has since been deleted. All four answer the same.
 
 ---
 
-## 4. `POST /research`
+## 4. Threads
 
-Requires a bearer token.
+A thread is a conversation. Every message is either researched or answered
+from the thread so far, and the reply says which.
+
+### `POST /threads`
 
 ```json
-{
-  "question": "builder failed to give possession on time, can I get a refund",
-  "case_id": null,
-  "document_ids": [],
-  "verification_level": "verified"
-}
+{ "title": "Late possession refund", "case_id": null }
 ```
 
-| Field | Required | Notes |
-|---|---|---|
-| `question` | yes | 1–4000 characters, not only whitespace |
-| `case_id` | no | Scopes the thread to a case |
-| `document_ids` | no | Up to 50 |
-| `verification_level` | no | `quick` or `verified`; omitted uses the configured default |
+Attaching a `case_id` seeds every question in the thread with that matter's
+parties, documents and already-established findings.
 
-### Response
+### `POST /threads/{id}/messages`
+
+```json
+{ "message": "what about bombay" }
+```
+
+A follow-up is **rewritten into a standalone question before retrieval** --
+"what about bombay" retrieves nothing on its own. The rewrite is a retrieval
+device: what is stored and shown back is what the user typed.
 
 ```json
 {
   "success": true,
   "data": {
-    "answer": {
-      "question": "...",
-      "lede": "Yes, on demand.",
-      "key_elements": [{ "text": "...", "evidence_ids": ["act:2158:sec-18"], "paragraph": null }],
-      "applicable_law": ["act:2158:sec-18"],
-      "key_judgments": ["judgment:escr010003392021"],
-      "needs_verification": [],
-      "partially_supported": [],
-      "unchecked": [],
-      "support_not_checked": false,
-      "citations": ["act:2158:sec-18"],
-      "disclaimer": "..."
-    },
-    "clarification_needed": null,
     "text": "plain-text rendering",
-    "verification_level": "verified"
+    "answer": { "...": "the same DraftAnswer shape as before" },
+    "route": "RESEARCH",
+    "verification_level": "quick"
   }
 }
 ```
 
-**The four claim slots stay four slots.** Do not merge them in a client:
+`route` is echoed because the two carry different authority:
+
+| `route` | Meaning |
+|---|---|
+| `RESEARCH` | The corpus was searched for this |
+| `ANSWER` | Answered from earlier in the thread |
+
+A UI that renders them identically is making a claim the system did not.
+When in doubt the router researches: answering from memory when fresh law
+was wanted is a wrong answer, researching unnecessarily is only slow.
+
+**The four claim slots stay four slots** inside `answer` -- see §4.1 below.
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `invalid_request` | Malformed body |
+| 401 | `not_authenticated` | No usable token |
+| 404 | `not_found` | No such thread, or not yours |
+| 429 | `rate_limited` | Past the per-user AI budget |
+| 504 | `timeout` | The run outlived the limit |
+
+A 504 stores nothing: a half-turn in the thread would be resolved against by
+the next rewrite as though it were an answer.
+
+### `POST /threads/{id}/messages/stream`
+
+The same turn, as Server-Sent Events. Same body, same reply -- the
+difference is that you see the wait.
+
+A researched answer takes **one to two minutes**. Measured on a real run:
+
+```
+  0.4s  step  Reading your documents
+  0.4s  step  Understanding the question
+  0.4s  step  Checking what is missing
+ 77.7s  step  Searching statutes and judgments      <- 63% of the wall time
+123.1s  step  Drafting the analysis
+123.1s  step  Checking every claim against its source
+123.2s  step  Assembling the answer
+123.2s  done
+```
+
+Without this a client shows a blank pane for two minutes and the user
+assumes the page has hung: the answer is right and the product looks broken.
+
+| Event | Data |
+|---|---|
+| `step` | `{"node": "research", "label": "Searching statutes and judgments"}` |
+| `done` | the same body `POST /messages` returns |
+| `error` | `{"code": "...", "message": "..."}` |
+
+`node` is the graph's own node name and is the stable key -- bind UI rows to
+it, not to `label`, which is prose and may be reworded. The seven nodes are
+`document`, `context_builder`, `clarification`, `research`, `analyst`,
+`verification`, `draft`.
+
+**Steps are emitted when a node actually finishes.** There is no timer and no
+interpolation: a slow search shows as a step that sits there, which is the
+truth. `design/UX_FLOWS.md` requires this pane to "show real work, never fake
+thinking", and a progress bar that advances on a clock is exactly the thing
+it forbids.
+
+The plain `POST /messages` still exists for clients that would rather block.
+
+### 4.1 The answer shape
+
+```json
+{
+  "question": "...", "lede": "Yes, on demand.",
+  "key_elements": [{ "text": "...", "evidence_ids": ["act:2158:sec-18"] }],
+  "applicable_law": ["act:2158:sec-18"],
+  "key_judgments": ["judgment:escr010003392021"],
+  "needs_verification": [], "partially_supported": [], "unchecked": [],
+  "support_not_checked": false, "citations": [], "disclaimer": "..."
+}
+```
 
 | Slot | Meaning |
 |---|---|
@@ -212,27 +305,77 @@ Requires a bearer token.
 `unchecked` and `needs_verification` are different facts. Collapsing them
 presents an unexamined claim as a refuted one, or worse, the reverse.
 
-`key_judgments` is ordered strongest first — by how often other judgments
-cite it, with bench size as the tie-breaker.
+`key_judgments` is ordered strongest first -- citation count, with bench size
+as the tie-breaker.
 
-### Clarification
+---
 
-When a missing fact makes the question unanswerable, the graph halts and
-asks. That is a **200 with `answer: null`**, not an error — nothing went
-wrong, and the client needs the user's next sentence rather than a fixed
-request.
+## 4.2 Documents
+
+### `POST /cases/{case_id}/documents`
+
+`multipart/form-data`, field `file`. PDF, DOCX, TXT or MD, up to 25MB.
 
 ```json
-{ "success": true, "data": { "answer": null, "clarification_needed": "Which state?", "text": null, "verification_level": "quick" } }
+{ "success": true, "data": { "document_id": "case-file:...", "filename": "deed.pdf", "characters": 48210 } }
 ```
+
+Text is extracted **at upload**, not at question time: parsing a 300-page PDF
+per question puts seconds on every answer, and an unreadable file should fail
+while the user is still looking at it.
 
 | Status | `code` | When |
 |---|---|---|
-| 400 | `invalid_request` | Malformed body |
-| 401 | `not_authenticated` | No usable token |
-| 429 | `rate_limited` | Past the per-user AI budget |
-| 500 | `internal_error` | A bug. Details are in the server log only |
-| 504 | `timeout` | The run outlived `LEGAL_AI_RESEARCH_TIMEOUT` |
+| 400 | `invalid_request` | Unsupported type, empty, too large, or no text layer (an un-OCR'd scan) |
+| 404 | `not_found` | No such case |
+
+Uploads go to `case_files`, **never** the corpus. A client's pleading is
+theirs, and must never come back from a search someone else runs.
+
+---
+
+## 4.3 Search and the graph
+
+### `GET /search?q=&kind=&limit=`
+
+`kind` is `all`, `judgment` or `section`; `limit` caps at 50.
+
+```json
+{ "success": true, "data": [
+  { "document_id": "judgment:...", "kind": "judgment",
+    "title": "...", "citation": "...", "court": "...", "extract": "..." }
+]}
+```
+
+Hybrid retrieval -- the same path a thread takes, so anything found here is
+something the research agents could also find.
+
+**Results carry no verification.** Nothing has been claimed about a search
+hit, so there is nothing to check. A client must not render them with the
+badges an answer's citations carry.
+
+### `GET /graph/{document_id}?hops=&limit=`
+
+```json
+{ "success": true, "data": {
+  "nodes": [{ "id": "...", "kind": "Judgment", "title": "...", "hops": 0 }],
+  "edges": [{ "source": "...", "target": "...", "kind": "CITES" }],
+  "truncated": true
+}}
+```
+
+`kind` on a node is `Judgment`, `Section`, `Act` or `Court`; on an edge it is
+`CITES`, `CITES_SECTION`, `CONTAINS` or `DECIDED_BY`. The anchor is the
+first node, at `hops: 0`.
+
+`hops` caps at **2** and `limit` at **120**. The graph holds ~48,800 nodes;
+the point of this view is one document and what touches it, and a landmark
+with 88 citations drawn all at once says less than a list would.
+
+**Render `truncated` where the reader can see it.** A graph quietly missing
+half its edges is a picture that lies about how connected something is.
+
+Read-only. There is no write path, and the corpus is not a reader's to edit.
 
 ---
 
@@ -256,7 +399,7 @@ make an orchestrator restart a process that is running correctly.
 | Scope | Limit | Keyed by |
 |---|---|---|
 | Everything except `/health` | 60 / minute | Client address |
-| `/research` | 20 / minute | **User id** |
+| Sending a message | 20 / minute | **User id** |
 
 A 429 carries `Retry-After` in seconds.
 
@@ -301,16 +444,27 @@ properly needs a job queue.
 
 Present because they are absent, not because they are planned.
 
-- **No case ownership.** `cases` has no owner column, so any authenticated
-  caller can read any case by id. **This is not multi-tenant safe.**
-- **No logout or revocation.** Expiry is the only bound on a leaked token.
+- **`ANSWER` returns the previous reply verbatim.** It is honest -- that is
+  what the user is asking about -- but it is not yet a real answer over the
+  stored claims.
+- **Logout does not invalidate the token.** There is no denylist, so a
+  copy of a token keeps working until `exp` — up to
+  `LEGAL_AI_JWT_EXPIRES_IN` seconds after the user signed out. The route
+  exists for the client to discard its token against; it is not
+  revocation, and there is no "sign out everywhere".
 - **Open registration.** Anyone who can reach the service can create an
   account and spend model budget.
 - **`POST /auth/register` is an enumeration surface** — 409 reveals that an
   address exists. Registration cannot hide this the way login does; rate
   limiting is the only mitigation.
-- **No pagination or list endpoints.** `utils/pagination.py` exists for the
-  first one that needs it.
-- **No streaming, no progress, no cancellation.**
+- **No cancellation.** `/messages/stream` reports progress, but a client
+  that disconnects leaves the run going. See §8.
 - **No per-user audit** of who asked what.
-- **No CORS configuration**, so a browser on another origin cannot call this.
+- **No password change, reset, or email verification.** An account is an
+  address and a hash; a forgotten password needs a DBA.
+- **No refresh token.** One token, one lifetime — so
+  `LEGAL_AI_JWT_EXPIRES_IN` trades staying signed in against the window a
+  leaked token works. A short access token plus a refresh flow would
+  separate the two.
+- **CORS is off until `LEGAL_AI_CORS_ORIGINS` is set.** Deliberate: a
+  wildcard would let any site a user visits make authenticated calls.

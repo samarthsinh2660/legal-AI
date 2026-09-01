@@ -5,6 +5,7 @@ A domain package has router (the only layer that speaks HTTP), controller
 
     accounts/   register, login, identify the caller
     research/   the research graph, bounded and off the event loop
+    chat/       multi-turn threads over the same graph
 
 `/health` has no rules and no table, so it lives here rather than in three
 files of its own. Anything with no storage and no business logic is a helper
@@ -15,16 +16,26 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from api.accounts.router import router as accounts_router
+from api.cases.router import router as cases_router
+from legal_ai.case.files import ensure_case_file_schema
+from legal_ai.case.store import ensure_case_schema
 from api.databases.postgres import connection
+from api.graph.router import router as graph_router
+from api.search.router import router as search_router
+from api.documents.router import router as documents_router
+from api.middleware.auth import AuthMiddleware
 from api.middleware.rate_limit import RateLimiter, RateLimitMiddleware
-from api.research.router import router as research_router
 from api.schemas import HealthResponse, Success
+from api.threads.repository import ensure_thread_schema
+from api.threads.router import router as threads_router
 from api.utils.errors import Ok, Result, invalid_request, service_unavailable
 from api.utils.response import respond, success
 
@@ -73,7 +84,31 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
         description="Indian legal research over primary sources.",
         version="0.1.0",
     )
+    # Added first, so it sits INSIDE the rate limiter: an unauthenticated
+    # flood should be turned away by the cheap check, not after a token
+    # verification and a database read.
+    application.add_middleware(AuthMiddleware)
     application.add_middleware(RateLimitMiddleware, limiter=limiter)
+
+    # Outermost, so a preflight OPTIONS is answered before the rate limiter
+    # or the auth check sees it -- a browser sends preflights without
+    # credentials, and a 401 there breaks every cross-origin request.
+    #
+    # Origins come from the environment with no default. A wildcard would
+    # let any site a user visits make authenticated calls with their token.
+    origins = [
+        origin.strip()
+        for origin in os.environ.get("LEGAL_AI_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    if origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
 
     @application.exception_handler(RequestValidationError)
     async def _bad_request(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -115,8 +150,37 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
             ).model_dump()
         )
 
+    @application.on_event("startup")
+    def _schema() -> None:
+        """Create the chat tables once, not per request.
+
+        `CREATE TABLE IF NOT EXISTS` still takes a lock even when it does
+        nothing, and calling it on every request is how a bulk job once
+        queued an ALTER behind a read and froze every reader for half an
+        hour. 001_init.sql covers a fresh deployment; this covers a database
+        that predates it.
+        """
+        try:
+            with connection() as conn:
+                # Cases first: `threads.case_id` is a foreign key to it, so
+                # creating threads on a database without `cases` raises,
+                # the except below swallows it, and nothing after this line
+                # gets created -- leaving every /cases route to 500 on a
+                # column that was never added.
+                ensure_case_schema(conn)
+                ensure_case_file_schema(conn)
+                ensure_thread_schema(conn)
+        except Exception:
+            # A database that is down must not stop the process starting --
+            # it has to come up to report itself unhealthy.
+            log.warning("startup: could not ensure chat schema", exc_info=True)
+
     application.include_router(accounts_router)
-    application.include_router(research_router)
+    application.include_router(threads_router)
+    application.include_router(cases_router)
+    application.include_router(documents_router)
+    application.include_router(search_router)
+    application.include_router(graph_router)
     return application
 
 

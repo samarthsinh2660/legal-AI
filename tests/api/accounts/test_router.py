@@ -84,32 +84,28 @@ def test_an_unknown_email_and_a_wrong_password_answer_identically(client):
     assert unknown.json() == wrong.json()
 
 
-def test_research_without_a_token_is_refused(client):
-    response = client.post("/research", json={"question": "anything"})
+def test_a_protected_route_without_a_token_is_refused(client):
+    response = client.post("/threads", json={})
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "not_authenticated"
 
 
-def test_research_with_a_forged_token_is_refused(client):
+def test_a_forged_token_is_refused(client):
     from api.utils.tokens import issue_access_token
 
     forged = issue_access_token("someone", secret="a-different-secret-of-sufficient-length")
     response = client.post(
-        "/research",
-        json={"question": "anything"},
-        headers={"Authorization": f"Bearer {forged}"},
+        "/threads", json={}, headers={"Authorization": f"Bearer {forged}"}
     )
     assert response.status_code == 401
 
 
-def test_research_with_an_expired_token_is_refused(client):
+def test_an_expired_token_is_refused(client):
     from api.utils.tokens import issue_access_token
 
     expired = issue_access_token("someone", secret=SECRET, expires_in=-1)
     response = client.post(
-        "/research",
-        json={"question": "anything"},
-        headers={"Authorization": f"Bearer {expired}"},
+        "/threads", json={}, headers={"Authorization": f"Bearer {expired}"}
     )
     assert response.status_code == 401
 
@@ -143,9 +139,9 @@ def test_no_configured_secret_closes_the_service(monkeypatch):
     monkeypatch.delenv("LEGAL_AI_JWT_SECRET", raising=False)
     unconfigured = TestClient(create_app(limiter=RateLimiter(limit=10_000)))
 
-    research = unconfigured.post("/research", json={"question": "anything"})
-    assert research.status_code == 503
-    assert research.json()["error"]["code"] == "auth_unavailable"
+    threads = unconfigured.post("/threads", json={})
+    assert threads.status_code == 503
+    assert threads.json()["error"]["code"] == "auth_unavailable"
 
     login = unconfigured.post(
         "/auth/login", json={"email": "test-x@example.com", "password": PASSWORD}

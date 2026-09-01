@@ -50,6 +50,17 @@ class Case:
     case_number: str | None = None
     parties: tuple[str, ...] = ()
 
+    # design/UX_FLOWS.md "Creating a case": what kind of matter this is and
+    # where it has got to. Shown in the case workspace header.
+    matter_type: str | None = None
+    status: str | None = None
+
+    # One or two sentences on the dispute. Not decoration -- the New Case
+    # modal labels this as seeding the context every agent starts from, and
+    # `session.start_session` puts it on the ThreadContext for exactly that
+    # reason. A case with a good description gives better first answers.
+    description: str | None = None
+
     document_ids: tuple[str, ...] = ()
 
     # Findings promoted from research sessions. These seed the ThreadContext

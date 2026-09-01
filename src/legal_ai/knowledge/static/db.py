@@ -197,7 +197,7 @@ def ensure_bench_schema(conn: psycopg.Connection) -> None:
     """
     existing = conn.execute(
         "SELECT column_name FROM information_schema.columns "
-        "WHERE table_name = 'documents' AND column_name IN ('judges', 'bench_size')"
+        "WHERE table_name = 'documents' AND column_name IN ('judges', 'bench_size') AND table_schema = current_schema()"
     ).fetchall()
     if len({row[0] for row in existing}) == 2:
         conn.commit()

@@ -57,7 +57,15 @@ def ensure_case_file_schema(conn: psycopg.Connection) -> None:
     # Document Agent over every file. Extraction costs a model call per
     # 12,000-character window; re-doing it on each view would make a case
     # with ten exhibits expensive to look at.
-    conn.execute("ALTER TABLE case_files ADD COLUMN IF NOT EXISTS facts JSONB")
+    # Catalog first: `ADD COLUMN IF NOT EXISTS` takes ACCESS EXCLUSIVE even
+    # when it does nothing, and a pending request for it blocks every reader
+    # behind it. See knowledge/static/db.py::ensure_bench_schema.
+    has_facts = conn.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'case_files' AND column_name = 'facts' AND table_schema = current_schema()"
+    ).fetchone()
+    if has_facts is None:
+        conn.execute("ALTER TABLE case_files ADD COLUMN IF NOT EXISTS facts JSONB")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS case_files_case_idx ON case_files (case_id, uploaded_at)"
     )

@@ -1,0 +1,269 @@
+[
+ {
+  "id": "rera-bombay",
+  "history": [
+   [
+    "user",
+    "can a builder be made to refund money for late possession"
+   ],
+   [
+    "assistant",
+    "Yes. Under section 18 of the Real Estate (Regulation and Development) Act, 2016 an allottee may withdraw from the project and claim a refund with interest."
+   ]
+  ],
+  "message": "what about bombay",
+  "must_contain": [
+   "bombay"
+  ],
+  "must_resolve": [
+   "18",
+   "real estate",
+   "rera"
+  ],
+  "expects_research": true
+ },
+ {
+  "id": "rera-that-section",
+  "history": [
+   [
+    "user",
+    "what does RERA say about delayed possession"
+   ],
+   [
+    "assistant",
+    "Section 18 of the Real Estate (Regulation and Development) Act, 2016 gives the allottee a refund with interest."
+   ]
+  ],
+  "message": "does that section apply to plots too",
+  "must_contain": [
+   "plot"
+  ],
+  "must_resolve": [
+   "18",
+   "real estate",
+   "rera"
+  ],
+  "expects_research": true
+ },
+ {
+  "id": "cheque-limitation",
+  "history": [
+   [
+    "user",
+    "what is the punishment for cheque bounce"
+   ],
+   [
+    "assistant",
+    "Section 138 of the Negotiable Instruments Act, 1881 provides imprisonment up to two years or fine up to twice the cheque amount."
+   ]
+  ],
+  "message": "and the time limit to file",
+  "must_contain": [
+   "limit"
+  ],
+  "must_resolve": [
+   "138",
+   "negotiable instruments"
+  ],
+  "expects_research": true
+ },
+ {
+  "id": "arbitration-appointment",
+  "history": [
+   [
+    "user",
+    "who appoints an arbitrator if the parties cannot agree"
+   ],
+   [
+    "assistant",
+    "Section 11 of the Arbitration and Conciliation Act, 1996 lets the Supreme Court or High Court appoint one."
+   ]
+  ],
+  "message": "can that order be appealed",
+  "must_contain": [
+   "appeal"
+  ],
+  "must_resolve": [
+   "11",
+   "arbitration"
+  ],
+  "expects_research": true
+ },
+ {
+  "id": "bail-anticipatory",
+  "history": [
+   [
+    "user",
+    "what are the conditions for anticipatory bail"
+   ],
+   [
+    "assistant",
+    "Anticipatory bail is governed by section 438 of the Code of Criminal Procedure, and Sushila Aggarwal held it need not be time-limited."
+   ]
+  ],
+  "message": "was that a constitution bench",
+  "must_contain": [
+   "bench"
+  ],
+  "must_resolve": [
+   "sushila aggarwal"
+  ],
+  "expects_research": false
+ },
+ {
+  "id": "mv-compensation",
+  "history": [
+   [
+    "user",
+    "how is compensation calculated in a motor accident claim"
+   ],
+   [
+    "assistant",
+    "Section 166 of the Motor Vehicles Act, 1988 applies, and Pranay Sethi settled the multiplier and future prospects."
+   ]
+  ],
+  "message": "what about a self employed victim",
+  "must_contain": [
+   "self employed",
+   "self-employed"
+  ],
+  "must_resolve": [
+   "pranay sethi",
+   "166"
+  ],
+  "expects_research": true
+ },
+ {
+  "id": "already-standalone",
+  "history": [
+   [
+    "user",
+    "what is section 138 of the negotiable instruments act"
+   ],
+   [
+    "assistant",
+    "It makes dishonour of a cheque for insufficiency of funds an offence."
+   ]
+  ],
+  "message": "what is the limitation period under the Limitation Act for a suit on a promissory note",
+  "must_contain": [
+   "limitation",
+   "promissory"
+  ],
+  "must_resolve": [],
+  "expects_research": true
+ },
+ {
+  "id": "ipc-followup",
+  "history": [
+   [
+    "user",
+    "what is criminal breach of trust"
+   ],
+   [
+    "assistant",
+    "Section 405 of the Indian Penal Code defines it; section 406 provides the punishment."
+   ]
+  ],
+  "message": "how is it different from cheating",
+  "must_contain": [
+   "cheat"
+  ],
+  "must_resolve": [
+   "405",
+   "406",
+   "penal"
+  ],
+  "expects_research": true
+ },
+ {
+  "id": "specific-relief",
+  "history": [
+   [
+    "user",
+    "can I force the seller to complete a property sale"
+   ],
+   [
+    "assistant",
+    "Specific performance under the Specific Relief Act, 1963 may be available."
+   ]
+  ],
+  "message": "what if the agreement was not registered",
+  "must_contain": [
+   "registered",
+   "registration"
+  ],
+  "must_resolve": [
+   "specific relief",
+   "specific performance"
+  ],
+  "expects_research": true
+ },
+ {
+  "id": "consumer-forum",
+  "history": [
+   [
+    "user",
+    "where do I complain about a defective product"
+   ],
+   [
+    "assistant",
+    "Under the Consumer Protection Act, 2019 a complaint lies to the District Commission."
+   ]
+  ],
+  "message": "what is the pecuniary limit there",
+  "must_contain": [
+   "pecuniary",
+   "limit"
+  ],
+  "must_resolve": [
+   "consumer protection",
+   "district"
+  ],
+  "expects_research": true
+ },
+ {
+  "id": "gratuity",
+  "history": [
+   [
+    "user",
+    "when is gratuity payable to an employee"
+   ],
+   [
+    "assistant",
+    "The Payment of Gratuity Act, 1972 makes it payable after five years of continuous service."
+   ]
+  ],
+  "message": "is it taxable",
+  "must_contain": [
+   "tax"
+  ],
+  "must_resolve": [
+   "gratuity"
+  ],
+  "expects_research": true
+ },
+ {
+  "id": "writ-remedy",
+  "history": [
+   [
+    "user",
+    "can I challenge a government order directly in the High Court"
+   ],
+   [
+    "assistant",
+    "Yes, by a writ petition under Article 226 of the Constitution."
+   ]
+  ],
+  "message": "what if there is an alternative remedy",
+  "must_contain": [
+   "alternative",
+   "remedy"
+  ],
+  "must_resolve": [
+   "226",
+   "writ"
+  ],
+  "expects_research": true
+ }
+]

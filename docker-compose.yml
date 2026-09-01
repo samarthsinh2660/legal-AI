@@ -2,6 +2,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: legal-ai-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-legal_ai}
       POSTGRES_USER: ${POSTGRES_USER:-legal_ai}
@@ -23,6 +24,7 @@ services:
   neo4j:
     image: neo4j:5
     container_name: legal-ai-neo4j
+    restart: unless-stopped
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-legal_ai_dev}
     ports:
@@ -39,6 +41,7 @@ services:
   api:
     build: .
     container_name: legal-ai-api
+    restart: unless-stopped
     environment:
       # Inside the compose network the stores answer on their own names and
       # their internal ports, not the host ports mapped above.
@@ -50,6 +53,7 @@ services:
       # which is the safe failure; a default here would ship a signing key
       # that every deployment shares.
       LEGAL_AI_JWT_SECRET: ${LEGAL_AI_JWT_SECRET}
+      LEGAL_AI_JWT_EXPIRES_IN: ${LEGAL_AI_JWT_EXPIRES_IN:-86400}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       LEGAL_AI_VERIFICATION_LEVEL: ${LEGAL_AI_VERIFICATION_LEVEL:-quick}
     ports:

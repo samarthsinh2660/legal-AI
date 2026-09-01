@@ -36,6 +36,11 @@ def render(context: ThreadContext) -> str:
         lines.append("Needs the law as it stands now, not as cached.")
     if context.case_id:
         lines.append(f"Part of case: {context.case_id}")
+    if context.case_description:
+        # The one line the user wrote about their own matter. It goes in
+        # ahead of documents and findings because it is the cheapest context
+        # an agent can have and the only one written by a human.
+        lines.append(f"The matter: {context.case_description[:600]}")
 
     if context.documents:
         shown_docs = context.documents[:MAX_RENDERED_DOCUMENTS]

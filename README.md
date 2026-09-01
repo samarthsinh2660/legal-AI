@@ -118,8 +118,9 @@ legal-AI/
 ├── src/api/        the HTTP backend (FastAPI)
 │   ├── main.py     app assembly, and /health
 │   ├── accounts/   register, login, identity      } each: router,
-│   ├── research/   the research endpoint          }  controller,
-│   ├── middleware/ rate limiting                  }  repository
+│   ├── threads/    research threads = the chat    }  controller,
+│   ├── documents/  case file uploads              }  repository
+│   ├── middleware/ rate limiting
 │   ├── databases/  Postgres pool, config, and 001_init.sql (whole schema)
 │   └── utils/      errors, responses, tokens, passwords, paging
 ├── src/legal_ai/   the AI orchestration
@@ -221,6 +222,7 @@ See `PHASE_7_ADVANCED_GRAPHRAG.md` §2.
 | 5. Analysis/Drafting | [`PHASE_5_ANALYSIS_DRAFTING.md`](./docs/phases/PHASE_5_ANALYSIS_DRAFTING.md) | Evidence + case facts become structured legal analysis | done |
 | 6. Verification/Active | [`PHASE_6_VERIFICATION_ACTIVE_LEARNING.md`](./docs/phases/PHASE_6_VERIFICATION_ACTIVE_LEARNING.md) | Every claim checked; usage never becomes law on its own | done, M14 currency skipped |
 | 7. GraphRAG/Advanced | [`PHASE_7_ADVANCED_GRAPHRAG.md`](./docs/phases/PHASE_7_ADVANCED_GRAPHRAG.md) | A measurably smarter system, on a proven-trustworthy base | built; M15 benchmark open |
+| 8. Conversation | [`PHASE_8_CONVERSATION.md`](./docs/phases/PHASE_8_CONVERSATION.md) | A thread a user can hold, where the follow-up resolves | threads + documents built |
 
 ### `design/` — product
 
@@ -236,9 +238,11 @@ xdg-open design/pramana-ui.html   # Linux
 open design/pramana-ui.html       # macOS
 ```
 
-Eleven screens: landing, dashboard, research workspace, document analysis,
-cases index, case workspace, judgment search, legislation browser, knowledge
-graph, saved, history — plus a live design-system reference.
+Eight screens, each with an API behind it: dashboard, research workspace,
+cases index, case workspace, search, citation graph, history — plus a live
+design-system reference. Screens with nothing behind them (document
+analysis, legislation browser, saved) were removed rather than left as
+aspiration.
 
 ---
 

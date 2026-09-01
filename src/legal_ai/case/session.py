@@ -12,6 +12,8 @@ being reimplemented at each entry point.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import psycopg
 
 from legal_ai.case.store import get_case, record_finding, record_session
@@ -49,6 +51,9 @@ def start_session(
         return context
 
     seeded = attach_case(context, case_id, case_findings=case.findings)
+    # The description is what the New Case modal tells the user is seeding
+    # the agents. Leaving it in the database would make that label a lie.
+    seeded = replace(seeded, case_description=case.description)
     record_session(conn, case_id, question)
     return seeded
 
