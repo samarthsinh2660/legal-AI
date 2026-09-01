@@ -119,3 +119,15 @@ export async function* streamMessage(
     }
   }
 }
+
+export async function renameThread(
+  threadId: string,
+  title: string,
+): Promise<Thread> {
+  const data = await apiClient.patch<unknown>(`/threads/${threadId}`, { title });
+  return ThreadSchema.parse(data);
+}
+
+export async function deleteThread(threadId: string): Promise<void> {
+  await apiClient.delete(`/threads/${threadId}`);
+}

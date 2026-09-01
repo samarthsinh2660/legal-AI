@@ -1,10 +1,15 @@
+import Link from "next/link";
+
 import { relativeDate } from "@/lib/utils";
 import type { Case } from "../types";
 
 /** Molecule: one matter, from a prop. */
 export function CaseTile({ item }: { item: Case }) {
   return (
-    <article className="flex flex-col gap-3 rounded-md border border-line bg-surface-card p-6 transition-colors duration-[120ms] ease-out hover:border-line-strong">
+    <Link
+      href={`/cases/${item.case_id}`}
+      className="flex flex-col gap-3 rounded-md border border-line bg-surface-card p-6 transition-colors duration-[120ms] ease-out hover:border-primary"
+    >
       <div>
         {item.matter_type && <span className="caps text-ink-muted">{item.matter_type}</span>}
         <h3 className="mt-1 text-statute leading-snug">{item.title}</h3>
@@ -24,6 +29,6 @@ export function CaseTile({ item }: { item: Case }) {
         )}
         <span>{relativeDate(item.updated_at)}</span>
       </div>
-    </article>
+    </Link>
   );
 }

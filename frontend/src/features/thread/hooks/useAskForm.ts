@@ -19,7 +19,7 @@ import { RequestError } from "@/lib/api";
 import { useCreateThread } from "./index";
 import { QUESTION_MAX_LENGTH } from "../types";
 
-export function useAskForm() {
+export function useAskForm(caseId?: string) {
   const [question, setQuestion] = useState("");
   const [error, setError] = useState<string | null>(null);
   const { threadCreate, isCreating } = useCreateThread();
@@ -45,7 +45,10 @@ export function useAskForm() {
       // The question doubles as the title: the backend renames the thread
       // from the first exchange anyway, and an untitled row in the sidebar
       // is useless until it does.
-      const thread = await threadCreate({ title: asked.slice(0, 200) });
+      const thread = await threadCreate({
+        title: asked.slice(0, 200),
+        caseId,
+      });
       router.push(
         `/research/${thread.thread_id}?ask=${encodeURIComponent(asked)}`,
       );
@@ -56,7 +59,7 @@ export function useAskForm() {
           : "Could not start the research. Try again.",
       );
     }
-  }, [question, threadCreate, router]);
+  }, [question, threadCreate, caseId, router]);
 
   return { question, error, isCreating, handleChange, handleSubmit };
 }

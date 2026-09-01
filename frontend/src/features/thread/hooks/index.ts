@@ -7,9 +7,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Page } from "@/types/common";
 import {
   createThread,
+  deleteThread,
   fetchMessages,
   fetchThread,
   fetchThreads,
+  renameThread,
 } from "../services";
 import type { Thread } from "../types";
 
@@ -77,4 +79,53 @@ export function useMessages(threadId: string) {
     enabled: Boolean(threadId),
   });
   return { messages: data ?? [], error, isLoading };
+}
+
+export function useRenameThread() {
+  const queryClient = useQueryClient();
+
+  const { mutateAsync, isPending } = useMutation({
+    mutationFn: ({ threadId, title }: { threadId: string; title: string }) =>
+      renameThread(threadId, title),
+    onSuccess: (updated) => {
+      queryClient.setQueriesData<Page<Thread>>(
+        { queryKey: threadKeys.all },
+        (old) =>
+          old
+            ? {
+                ...old,
+                items: old.items.map((thread) =>
+                  thread.thread_id === updated.thread_id ? updated : thread,
+                ),
+              }
+            : old,
+      );
+      queryClient.setQueryData([...threadKeys.all, updated.thread_id], updated);
+    },
+  });
+
+  return { threadRename: mutateAsync, isRenaming: isPending };
+}
+
+export function useDeleteThread() {
+  const queryClient = useQueryClient();
+
+  const { mutateAsync, isPending } = useMutation({
+    mutationFn: (threadId: string) => deleteThread(threadId),
+    onSuccess: (_result, threadId) => {
+      queryClient.setQueriesData<Page<Thread>>(
+        { queryKey: threadKeys.all },
+        (old) =>
+          old
+            ? {
+                ...old,
+                items: old.items.filter((t) => t.thread_id !== threadId),
+                total: Math.max(0, old.total - 1),
+              }
+            : old,
+      );
+    },
+  });
+
+  return { threadDelete: mutateAsync, isDeleting: isPending };
 }

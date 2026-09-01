@@ -15,9 +15,9 @@ const EXAMPLES = [
 ] as const;
 
 /** Organism: uses `useAskForm`, so it owns the submitting and error state. */
-export function AskBox() {
+export function AskBox({ caseId }: { caseId?: string }) {
   const { question, error, isCreating, handleChange, handleSubmit } =
-    useAskForm();
+    useAskForm(caseId);
 
   return (
     <Card className="gap-0 p-6 shadow-1 transition-colors duration-[120ms] ease-out focus-within:border-primary">
@@ -42,17 +42,24 @@ export function AskBox() {
       {error && <p className="mt-2 text-sm text-danger">{error}</p>}
 
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
-        <span className="text-sm text-ink-muted">Examples:</span>
-        {EXAMPLES.map((example) => (
-          <button
-            key={example}
-            type="button"
-            onClick={() => handleChange(example)}
-            className="rounded-sm border border-line bg-surface-card px-2.5 py-1 text-xs font-medium text-ink-variant transition-colors duration-[120ms] ease-out hover:border-line-strong hover:bg-surface-sunken"
-          >
-            {example}
-          </button>
-        ))}
+        {caseId ? (
+          <span className="text-sm text-ink-muted">
+            This thread will be attached to the case.
+          </span>
+        ) : (
+          <span className="text-sm text-ink-muted">Examples:</span>
+        )}
+        {!caseId &&
+          EXAMPLES.map((example) => (
+            <button
+              key={example}
+              type="button"
+              onClick={() => handleChange(example)}
+              className="rounded-sm border border-line bg-surface-card px-2.5 py-1 text-xs font-medium text-ink-variant transition-colors duration-[120ms] ease-out hover:border-line-strong hover:bg-surface-sunken"
+            >
+              {example}
+            </button>
+          ))}
 
         <Button
           className="ml-auto"
