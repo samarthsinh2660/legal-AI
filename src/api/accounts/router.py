@@ -12,7 +12,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from api.accounts.controller import login, register, user_for
-from api.accounts.revocation import revoke
 from api.accounts.schemas import (
     LoginRequest,
     MeResponse,
@@ -22,7 +21,7 @@ from api.accounts.schemas import (
 )
 from api.databases.postgres import connection
 from api.schemas import ErrorResponse, Success
-from api.utils.errors import Failure, Result, service_unavailable, unauthorized
+from api.utils.errors import Failure, Result, unauthorized
 from api.utils.response import respond, success
 
 router = APIRouter(prefix="/auth", tags=["accounts"])
@@ -83,27 +82,16 @@ async def me(request: Request):
 
 @router.post("/logout", responses={401: {"model": ErrorResponse}})
 async def logout(request: Request):
-    """Invalidate the presented token.
+    """End the session on the client.
 
-    A real revocation, not a note to the client. The token is signed and
-    unexpired, so anyone holding a copy could keep using it; writing its
-    `jti` to the denylist is what makes logging out mean something.
+    There is no server-side denylist, so this does not invalidate the
+    presented token -- a copy of it keeps working until `exp`. What this
+    route gives the client is a place to hang the sign-out on, and an
+    authenticated 200 telling it the token it just discarded was real.
 
-    Idempotent -- logging out twice is not an error.
+    Bounding a leaked token is therefore `LEGAL_AI_JWT_EXPIRES_IN`'s job
+    alone. Shorten it if that window matters more than staying signed in.
 
-    The `jti` comes from `request.state`, where AuthMiddleware put it after
-    verifying the signature. Re-decoding here would either repeat that work
-    or, worse, read an unverified token.
+    Idempotent, and requires a valid token like every other route.
     """
-    with connection() as conn:
-        revoked = revoke(conn, request.state.jti, request.state.token_expires_at)
-    if not revoked:
-        # Issued before tokens carried an id. It stays valid until it
-        # expires, and saying otherwise would be the lie.
-        return respond(
-            service_unavailable(
-                "logout_unavailable",
-                "This session cannot be ended early; it expires on its own.",
-            )
-        )
     return success({"logged_out": True})

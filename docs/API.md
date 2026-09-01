@@ -127,9 +127,12 @@ A bearer token, obtained from `/auth/login`.
 Authorization: Bearer <access_token>
 ```
 
-Tokens are JWTs signed with HS256, valid for **one hour**. They are
-stateless, so **there is no logout that invalidates an issued token** —
-expiry is the only bound. Revocation would need a token store.
+Tokens are JWTs signed with HS256, valid for **24 hours** by default — set
+`LEGAL_AI_JWT_EXPIRES_IN` (seconds) to change it. They are stateless and
+there is no denylist: **an issued token cannot be withdrawn**, so
+`POST /auth/logout` ends the session on the client and expiry is the only
+bound on a leaked one. Shorten `LEGAL_AI_JWT_EXPIRES_IN` if that window
+matters more than staying signed in.
 
 ### `POST /auth/register`
 
@@ -441,23 +444,27 @@ properly needs a job queue.
 
 Present because they are absent, not because they are planned.
 
-- **No case ownership.** `cases` has no owner column, so any authenticated
-  caller can read any case by id, and upload documents to it. Threads *are*
-  owned; cases are not. **This is not multi-tenant safe.**
 - **`ANSWER` returns the previous reply verbatim.** It is honest -- that is
   what the user is asking about -- but it is not yet a real answer over the
   stored claims.
-- **Logout revokes one token, not a whole account.** Signing out on a laptop
-  leaves a phone signed in, which is usually what is wanted; there is no
-  "sign out everywhere".
+- **Logout does not invalidate the token.** There is no denylist, so a
+  copy of a token keeps working until `exp` — up to
+  `LEGAL_AI_JWT_EXPIRES_IN` seconds after the user signed out. The route
+  exists for the client to discard its token against; it is not
+  revocation, and there is no "sign out everywhere".
 - **Open registration.** Anyone who can reach the service can create an
   account and spend model budget.
 - **`POST /auth/register` is an enumeration surface** — 409 reveals that an
   address exists. Registration cannot hide this the way login does; rate
   limiting is the only mitigation.
-- **No pagination or list endpoints.** `utils/pagination.py` exists for the
-  first one that needs it.
-- **No streaming, no progress, no cancellation.**
+- **No cancellation.** `/messages/stream` reports progress, but a client
+  that disconnects leaves the run going. See §8.
 - **No per-user audit** of who asked what.
+- **No password change, reset, or email verification.** An account is an
+  address and a hash; a forgotten password needs a DBA.
+- **No refresh token.** One token, one lifetime — so
+  `LEGAL_AI_JWT_EXPIRES_IN` trades staying signed in against the window a
+  leaked token works. A short access token plus a refresh flow would
+  separate the two.
 - **CORS is off until `LEGAL_AI_CORS_ORIGINS` is set.** Deliberate: a
   wildcard would let any site a user visits make authenticated calls.

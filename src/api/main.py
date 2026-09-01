@@ -31,7 +31,6 @@ from api.databases.postgres import connection
 from api.graph.router import router as graph_router
 from api.search.router import router as search_router
 from api.documents.router import router as documents_router
-from api.accounts.revocation import ensure_revocation_schema, is_revoked
 from api.middleware.auth import AuthMiddleware
 from api.middleware.rate_limit import RateLimiter, RateLimitMiddleware
 from api.schemas import HealthResponse, Success
@@ -85,25 +84,10 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
         description="Indian legal research over primary sources.",
         version="0.1.0",
     )
-    def _revoked(jti: str) -> bool:
-        """Whether this token has been logged out.
-
-        Failing open on a database error: the token is still signed and
-        unexpired, and refusing every request because the denylist is
-        unreachable turns a logout table into a single point of failure for
-        the whole service.
-        """
-        try:
-            with connection() as conn:
-                return is_revoked(conn, jti)
-        except Exception:
-            log.warning("auth: revocation check unavailable", exc_info=True)
-            return False
-
     # Added first, so it sits INSIDE the rate limiter: an unauthenticated
     # flood should be turned away by the cheap check, not after a token
     # verification and a database read.
-    application.add_middleware(AuthMiddleware, is_revoked=_revoked)
+    application.add_middleware(AuthMiddleware)
     application.add_middleware(RateLimitMiddleware, limiter=limiter)
 
     # Outermost, so a preflight OPTIONS is answered before the rate limiter
@@ -168,7 +152,7 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
 
     @application.on_event("startup")
     def _schema() -> None:
-        """Create the chat and revocation tables once, not per request.
+        """Create the chat tables once, not per request.
 
         `CREATE TABLE IF NOT EXISTS` still takes a lock even when it does
         nothing, and calling it on every request is how a bulk job once
@@ -186,7 +170,6 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
                 ensure_case_schema(conn)
                 ensure_case_file_schema(conn)
                 ensure_thread_schema(conn)
-                ensure_revocation_schema(conn)
         except Exception:
             # A database that is down must not stop the process starting --
             # it has to come up to report itself unhealthy.

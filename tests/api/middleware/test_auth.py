@@ -111,27 +111,6 @@ def test_no_secret_closes_everything(monkeypatch):
     assert unconfigured.get("/health").status_code == 200
 
 
-def test_a_revoked_token_is_401(monkeypatch):
-    """What makes logout mean something."""
-    monkeypatch.setenv("LEGAL_AI_JWT_SECRET", SECRET)
-    revoked = {"dead-jti"}
-    app = create_app(limiter=RateLimiter(limit=10_000))
-    # Rebuild with a denylist that does not need a database.
-    from api.middleware.auth import AuthMiddleware
-
-    app.user_middleware = [m for m in app.user_middleware if m.cls is not AuthMiddleware]
-    app.add_middleware(AuthMiddleware, is_revoked=lambda jti: jti in revoked)
-    app.middleware_stack = app.build_middleware_stack()
-
-    import jwt
-
-    token = issue_access_token("u1", secret=SECRET)
-    jti = jwt.decode(token, SECRET, algorithms=["HS256"])["jti"]
-    client = TestClient(app)
-    assert client.get("/threads", headers=_auth(token)).status_code == 200
-    revoked.add(jti)
-    assert client.get("/threads", headers=_auth(token)).status_code == 401
-
 
 def test_the_401_body_leaks_nothing(client):
     body = client.post("/threads", json={}, headers=_auth("garbage")).text.lower()

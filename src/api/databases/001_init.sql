@@ -221,18 +221,6 @@ CREATE INDEX IF NOT EXISTS messages_thread_idx
 
 -- --------------------------------------------------------------- accounts
 
--- Logged-out tokens, by their `jti`. A signed JWT is valid until it expires,
--- so without this a logout could only ask the client to forget it.
--- `expires_at` is the token's own, and rows past it are purged.
-CREATE TABLE IF NOT EXISTS revoked_tokens (
-    jti        TEXT PRIMARY KEY,
-    expires_at TIMESTAMPTZ NOT NULL,
-    revoked_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS revoked_tokens_expiry_idx
-    ON revoked_tokens (expires_at);
-
 -- Email is stored lower-cased, and unique, so one mailbox cannot become two
 -- accounts. Ids are random rather than sequential: a caller holding one
 -- valid id must not be able to guess its neighbours.

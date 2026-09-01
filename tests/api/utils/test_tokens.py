@@ -102,3 +102,42 @@ def test_an_empty_secret_is_refused_at_read():
     token = issue_access_token("user-123", secret=SECRET)
     with pytest.raises(TokenError):
         read_access_token(token, secret="")
+
+
+# --- expiry from the environment --------------------------------------------
+
+def test_a_missing_variable_still_issues_a_usable_token(monkeypatch):
+    """The fallback is a last resort, not the setting. It exists so a
+    deployment that forgot the variable starts rather than signing tokens
+    that expire immediately."""
+    from api.utils.tokens import read_expiry
+
+    monkeypatch.delenv("LEGAL_AI_JWT_EXPIRES_IN", raising=False)
+    assert read_expiry() > 0
+
+
+def test_the_deployment_can_set_the_expiry(monkeypatch):
+    from api.utils.tokens import read_expiry
+
+    monkeypatch.setenv("LEGAL_AI_JWT_EXPIRES_IN", "172800")
+    assert read_expiry() == 172800
+
+
+def test_a_bad_expiry_falls_back_rather_than_refusing_to_start(monkeypatch):
+    """Refusing to boot over a typo in a tuning value is worse than running
+    with the fallback -- same rule as the pool sizes and the timeout."""
+    from api.utils.tokens import read_expiry
+
+    monkeypatch.setenv("LEGAL_AI_JWT_EXPIRES_IN", "two days")
+    assert read_expiry() > 0
+
+
+def test_an_issued_token_honours_the_environment(monkeypatch):
+    import jwt as pyjwt
+
+    from api.utils.tokens import issue_access_token
+
+    monkeypatch.setenv("LEGAL_AI_JWT_EXPIRES_IN", "60")
+    token = issue_access_token("user-123", secret=SECRET)
+    claims = pyjwt.decode(token, SECRET, algorithms=["HS256"])
+    assert claims["exp"] - int(time.time()) <= 60

@@ -16,7 +16,6 @@ describe the API rather than serve it.
 
 from __future__ import annotations
 
-import asyncio
 import os
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -38,12 +37,6 @@ PUBLIC_PATHS = frozenset({
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """Rejects any request without a usable token, except on PUBLIC_PATHS."""
-
-    def __init__(self, app, is_revoked=None):
-        super().__init__(app)
-        # Injected so the check can be tested without a database, and so a
-        # deployment could swap the store without touching this file.
-        self._is_revoked = is_revoked
 
     async def dispatch(self, request, call_next):
         # A browser sends a preflight without credentials, so requiring a
@@ -73,17 +66,5 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Expired, forged, unsigned and malformed answer the same.
             return respond(unauthorized())
 
-        if self._is_revoked is not None:
-            # Off the event loop: the check is a database round trip, and
-            # doing it inline stalls every other in-flight request for its
-            # duration -- badly so when the pool is busy.
-            revoked = await asyncio.to_thread(self._is_revoked, claims.get("jti", ""))
-            if revoked:
-                return respond(unauthorized())
-
         request.state.user_id = claims["sub"]
-        # Carried so logout can revoke this exact token without decoding it
-        # a second time.
-        request.state.jti = claims.get("jti", "")
-        request.state.token_expires_at = int(claims.get("exp", 0))
         return await call_next(request)
