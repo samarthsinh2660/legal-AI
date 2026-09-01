@@ -22,7 +22,7 @@ from api.accounts.schemas import (
 )
 from api.databases.postgres import connection
 from api.schemas import ErrorResponse, Success
-from api.utils.errors import Failure, Result, unauthorized
+from api.utils.errors import Failure, Result, service_unavailable, unauthorized
 from api.utils.response import respond, success
 
 router = APIRouter(prefix="/auth", tags=["accounts"])
@@ -96,5 +96,14 @@ async def logout(request: Request):
     or, worse, read an unverified token.
     """
     with connection() as conn:
-        revoke(conn, request.state.jti, request.state.token_expires_at)
+        revoked = revoke(conn, request.state.jti, request.state.token_expires_at)
+    if not revoked:
+        # Issued before tokens carried an id. It stays valid until it
+        # expires, and saying otherwise would be the lie.
+        return respond(
+            service_unavailable(
+                "logout_unavailable",
+                "This session cannot be ended early; it expires on its own.",
+            )
+        )
     return success({"logged_out": True})

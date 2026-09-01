@@ -17,6 +17,8 @@ from __future__ import annotations
 import logging
 
 from api.threads.repository import (
+    DEFAULT_TITLE,
+    recent_turns,
     add_message,
     get_thread,
     list_messages,
@@ -43,7 +45,7 @@ TITLE_CHARS = 60
 def _history(conn, thread_id: str, user_id: str) -> list[Turn]:
     return [
         Turn(role=message.role, content=message.content)
-        for message in list_messages(conn, thread_id, user_id)[-HISTORY_TURNS:]
+        for message in recent_turns(conn, thread_id, user_id, HISTORY_TURNS)
     ]
 
 
@@ -77,6 +79,12 @@ async def send_message(
     thread = get_thread(conn, thread_id, user_id)
     if thread is None:
         return not_found("thread")
+    # Everything the graph needs is read now, and the connection is released
+    # before the run. Holding it for the 100+ seconds of a research call
+    # exhausts a pool of ten after ten concurrent messages, and every other
+    # request -- including the auth check and /health -- then waits out the
+    # borrow timeout and fails. CLAUDE.md section 8.
+    conn.commit()
 
     if verification_level is None:
         verification_level = Configuration.from_env().verification_level
@@ -89,13 +97,16 @@ async def send_message(
         text, answer = answer_from_history(message, history), None
     else:
         # Only the rewritten question reaches retrieval.
-        # The thread's own case and documents, not the request's: a caller
-        # must not be able to read another matter by naming its id.
+        # Both the case and the documents are the thread's own. The ids in
+        # the request are filtered against the case's files first: a
+        # document_id seen once -- from a detached case, a shared link --
+        # would otherwise read that file's full text into any answer,
+        # forever.
         result = await run_research(
             {
                 "question": rewrite_question(message, history),
                 "case_id": thread.case_id,
-                "document_ids": list(document_ids or []),
+                "document_ids": _permitted_documents(conn, thread.case_id, document_ids),
                 "verification_level": verification_level,
             }
         )
@@ -125,7 +136,7 @@ async def send_message(
     if thread.case_id and route is Route.RESEARCH and answer is not None:
         _remember(conn, thread.case_id, message, answer)
 
-    if thread.title == "New thread":
+    if thread.title == DEFAULT_TITLE:
         set_title(conn, thread_id, user_id, message[:TITLE_CHARS])
 
     return Ok({
@@ -224,9 +235,16 @@ async def stream_message(
     }):
         if kind == "step":
             yield "step", {"node": payload, "label": STEP_LABELS.get(payload, payload)}
-        elif kind == "error":
+        elif kind == "timeout":
             # Nothing is stored: a half-turn would be resolved against by the
             # next rewrite as though it were an answer.
+            yield "error", {
+                "code": "timeout",
+                "message": "Research did not finish within the time limit.",
+            }
+            return
+        elif kind == "error":
+            log.warning("research failed mid-stream", exc_info=payload)
             yield "error", {"code": "internal_error", "message": "Research failed."}
             return
         else:
@@ -240,7 +258,7 @@ async def stream_message(
 
     add_message(conn, thread_id, "user", message)
     add_message(conn, thread_id, "assistant", text or "", answer=answer)
-    if thread.title == "New conversation":
+    if thread.title == DEFAULT_TITLE:
         set_title(conn, thread_id, user_id, message[:TITLE_CHARS])
     if thread.case_id and answer is not None:
         _remember(conn, thread.case_id, message, answer)
@@ -249,3 +267,21 @@ async def stream_message(
         "text": text, "answer": answer, "clarification_needed": clarification,
         "route": route.value, "verification_level": verification_level,
     }
+
+
+def _permitted_documents(conn, case_id: str | None, requested) -> list[str]:
+    """The requested ids, kept only if they belong to this thread's case.
+
+    `get_case_file_text` looks a document up by id alone, with no owner and
+    no case filter, so anything not checked here is readable by anyone who
+    has ever seen the id.
+    """
+    if not requested:
+        return []
+    if case_id is None:
+        # A thread outside a case has no files it may read.
+        return []
+    from legal_ai.case.files import list_case_files
+
+    allowed = {document_id for document_id, _filename in list_case_files(conn, case_id)}
+    return [document_id for document_id in requested if document_id in allowed]

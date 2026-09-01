@@ -87,7 +87,7 @@ def ensure_case_schema(conn: psycopg.Connection) -> None:
         row[0]
         for row in conn.execute(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'cases'"
+            "WHERE table_name = 'cases' AND table_schema = current_schema()"
         ).fetchall()
     }
     for column, kind in (

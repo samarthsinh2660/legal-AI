@@ -15,6 +15,7 @@ from api.databases.postgres import connection
 from api.schemas import ErrorResponse, Success
 from api.threads.controller import send_message
 from api.threads.repository import (
+    DEFAULT_TITLE,
     create_thread,
     delete_thread,
     get_thread,
@@ -37,14 +38,25 @@ from api.utils.response import respond, success
 router = APIRouter(prefix="/threads", tags=["threads"])
 
 
-@router.post("", response_model=Success[ThreadModel])
+@router.post("", response_model=Success[ThreadModel],
+             responses={404: {"model": ErrorResponse}})
 async def new_thread(request: Request, body: NewThreadRequest):
-    """Start a thread, optionally inside a case."""
+    """Start a thread, optionally inside a case.
+
+    The case must be this user's. Without the check a caller could name
+    someone else's matter and, on the first message, have its description,
+    documents and findings seeded into their own context -- and their
+    findings written back into it.
+    """
+    from api.cases.repository import owns
+
     with connection() as conn:
+        if body.case_id is not None and not owns(conn, body.case_id, request.state.user_id):
+            return respond(not_found("case"))
         thread = create_thread(
             conn,
             request.state.user_id,
-            title=body.title or "New conversation",
+            title=body.title or DEFAULT_TITLE,
             case_id=body.case_id,
         )
     return success(ThreadModel(**thread.__dict__).model_dump(), status=201)
@@ -140,9 +152,17 @@ async def post_message(request: Request, thread_id: str, body: MessageRequest):
     from api.utils.errors import rate_limited
 
     user_id = request.state.user_id
+    # The quota is checked after the thread is known to exist. Counting
+    # first lets a client loop on a stale id and burn a user's research
+    # budget on requests that never reach a model.
+    with connection() as conn:
+        if get_thread(conn, thread_id, user_id) is None:
+            return respond(not_found("thread"))
     if check_ai_quota(user_id) is not None:
         return respond(rate_limited())
 
+    # One connection for the whole turn is what the controller needs, but it
+    # commits before the graph runs so the borrow is not held across it.
     with connection() as conn:
         result = await send_message(
             conn, user_id, thread_id, body.message,

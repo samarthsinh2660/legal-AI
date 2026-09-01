@@ -238,9 +238,11 @@ xdg-open design/pramana-ui.html   # Linux
 open design/pramana-ui.html       # macOS
 ```
 
-Eleven screens: landing, dashboard, research workspace, document analysis,
-cases index, case workspace, judgment search, legislation browser, knowledge
-graph, saved, history — plus a live design-system reference.
+Eight screens, each with an API behind it: dashboard, research workspace,
+cases index, case workspace, search, citation graph, history — plus a live
+design-system reference. Screens with nothing behind them (document
+analysis, legislation browser, saved) were removed rather than left as
+aspiration.
 
 ---
 

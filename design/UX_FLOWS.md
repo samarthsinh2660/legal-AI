@@ -19,11 +19,8 @@ Landing  →  Sign in  →  ┌ Pramāṇa AI ───────────�
                         │  Home                      │
                         │  New Research              │
                         │  Cases  ──▶ case workspace │
-                        │  Documents                 │
-                        │  Judgments                 │
-                        │  Legislation               │
-                        │  Knowledge                 │
-                        │  Saved                     │
+                        │  Search                    │
+                        │  Graph                     │
                         │  History                   │
                         │  ──────────                │
                         │  Settings                  │
@@ -120,6 +117,10 @@ Inline citations render as `[1]` markers; clicking one opens the right-hand
 paragraph extract, why it matters, and Open / Save actions.
 
 ## Screen 4 — Documents
+
+> **Not in the MVP.** Removed from `pramana-ui.html`: documents are uploaded to a case, not browsed standalone.
+> Kept here because the thinking may be worth revisiting, not because it
+> describes the product.
 
 Split-screen: the document on the left over a sunken canvas (rendered like a
 printed page — this is a real document, so it stays paper-white regardless of
@@ -284,6 +285,11 @@ than smoothing over them.
 
 ## Screen 6 — Judgments
 
+> **Rebuilt against `GET /search`.** Statutes and judgments, filterable by
+> kind. Results carry **no verification fields** -- nothing has been claimed
+> about a search hit, so a client must not render them with the badges an
+> answer's citations carry.
+
 A dedicated case-law search experience, separate from the conversational
 research flow — sometimes you know exactly what you're looking for.
 
@@ -297,6 +303,10 @@ research flow — sometimes you know exactly what you're looking for.
 
 ## Screen 7 — Legislation
 
+> **Not in the MVP.** Removed from `pramana-ui.html`: no legislation-browse API.
+> Kept here because the thinking may be worth revisiting, not because it
+> describes the product.
+
 The statute browser. Breadcrumb (Statute browser → Act) then the section
 title in serif, with **View on India Code** linking to the primary source.
 
@@ -306,6 +316,11 @@ correspondence, which matters constantly in current Indian practice — and
 marks and bench notes.
 
 ## Screen 8 — Knowledge
+
+> **Rebuilt against `GET /graph/{document_id}`.** Anchored on one document,
+> capped at 2 hops and 120 nodes, read-only. The API returns `truncated`
+> when the cap cut the result short, and the view **must show it**: a graph
+> quietly missing half its edges lies about how connected something is.
 
 The citation graph, on its own rather than squeezed beside statutory text.
 
@@ -322,6 +337,10 @@ relationships carry an extraction confidence and must be verified before
 being treated as fact.
 
 ## Screens 9–10 — Saved & History
+
+> **Not in the MVP.** Removed from `pramana-ui.html`: History is the thread list; Saved has no API.
+> Kept here because the thinking may be worth revisiting, not because it
+> describes the product.
 
 **Saved** groups research, judgments and provisions into collections
 (Property Law, Criminal Matters, …). **History** is a searchable table of
@@ -341,6 +360,13 @@ VERIFIED            citation checked and standing
 This is the UI expression of the three-layer data architecture in
 `../docs/DATA_LAYER_ARCHITECTURE.md`, and of its critical rule: usage-derived
 knowledge is never presented as authoritative.
+
+## What the prototype actually contains
+
+Eight screens, all of which have an API behind them: dashboard, research
+workspace (the chat), cases index, case workspace, search, citation graph,
+history, and a live design-system reference. Anything a screen shows,
+`docs/API.md` can serve.
 
 ## Not designed yet
 

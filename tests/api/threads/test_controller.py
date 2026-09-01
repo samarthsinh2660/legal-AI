@@ -260,3 +260,37 @@ async def test_a_thread_with_no_case_records_nothing(monkeypatch):
             conn, USER, thread.thread_id, "a question"
         )
     assert isinstance(result, Ok)
+
+
+def test_documents_are_filtered_to_the_threads_own_case():
+    """Found by review. `get_case_file_text` looks a document up by id
+    alone -- no owner, no case -- so anything not filtered here is readable
+    by anyone who has ever seen the id."""
+    from api.threads.controller import _permitted_documents
+    from legal_ai.case.files import ensure_case_file_schema, store_case_file
+    from legal_ai.case.store import create_case, ensure_case_schema
+
+    with connection() as conn:
+        ensure_case_schema(conn)
+        ensure_case_file_schema(conn)
+        conn.execute("DELETE FROM cases WHERE case_id LIKE 'test-perm-%'")
+        conn.commit()
+        create_case(conn, case_id="test-perm-mine", title="Mine")
+        create_case(conn, case_id="test-perm-theirs", title="Theirs")
+        store_case_file(conn, "test-perm-mine", "doc:mine", "mine.txt", "my text")
+        store_case_file(conn, "test-perm-theirs", "doc:theirs", "theirs.txt", "their text")
+
+        allowed = _permitted_documents(
+            conn, "test-perm-mine", ["doc:mine", "doc:theirs", "doc:invented"]
+        )
+        conn.execute("DELETE FROM cases WHERE case_id LIKE 'test-perm-%'")
+        conn.commit()
+
+    assert allowed == ["doc:mine"]
+
+
+def test_a_thread_outside_a_case_may_read_no_files():
+    from api.threads.controller import _permitted_documents
+
+    with connection() as conn:
+        assert _permitted_documents(conn, None, ["doc:anything"]) == []

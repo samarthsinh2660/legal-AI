@@ -25,6 +25,9 @@ POST /cases/{id}/threads       "Save to case" -- attach an existing thread
 POST /cases/{id}/documents     upload a file for the Document Agent
 GET  /cases/{id}/documents     what is attached
 
+GET  /search                   the corpus directly, unverified
+GET  /graph/{document_id}      the citation graph, read-only
+
 GET  /health                   liveness plus store connectivity
 ```
 
@@ -325,6 +328,51 @@ while the user is still looking at it.
 
 Uploads go to `case_files`, **never** the corpus. A client's pleading is
 theirs, and must never come back from a search someone else runs.
+
+---
+
+## 4.3 Search and the graph
+
+### `GET /search?q=&kind=&limit=`
+
+`kind` is `all`, `judgment` or `section`; `limit` caps at 50.
+
+```json
+{ "success": true, "data": [
+  { "document_id": "judgment:...", "kind": "judgment",
+    "title": "...", "citation": "...", "court": "...", "extract": "..." }
+]}
+```
+
+Hybrid retrieval -- the same path a thread takes, so anything found here is
+something the research agents could also find.
+
+**Results carry no verification.** Nothing has been claimed about a search
+hit, so there is nothing to check. A client must not render them with the
+badges an answer's citations carry.
+
+### `GET /graph/{document_id}?hops=&limit=`
+
+```json
+{ "success": true, "data": {
+  "nodes": [{ "id": "...", "kind": "Judgment", "title": "...", "hops": 0 }],
+  "edges": [{ "source": "...", "target": "...", "kind": "CITES" }],
+  "truncated": true
+}}
+```
+
+`kind` on a node is `Judgment`, `Section`, `Act` or `Court`; on an edge it is
+`CITES`, `CITES_SECTION`, `CONTAINS` or `DECIDED_BY`. The anchor is the
+first node, at `hops: 0`.
+
+`hops` caps at **2** and `limit` at **120**. The graph holds ~48,800 nodes;
+the point of this view is one document and what touches it, and a landmark
+with 88 citations drawn all at once says less than a list would.
+
+**Render `truncated` where the reader can see it.** A graph quietly missing
+half its edges is a picture that lies about how connected something is.
+
+Read-only. There is no write path, and the corpus is not a reader's to edit.
 
 ---
 

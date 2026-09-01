@@ -34,20 +34,24 @@ def ensure_revocation_schema(conn: psycopg.Connection) -> None:
     conn.commit()
 
 
-def revoke(conn: psycopg.Connection, jti: str, expires_at: int) -> None:
+def revoke(conn: psycopg.Connection, jti: str, expires_at: int) -> bool:
     """Refuse this token from now on.
 
     Idempotent: logging out twice is not an error, and raising on the second
     would make a retried request look like a failure.
     """
     if not jti:
-        return
+        # A token with no id cannot be named, so it cannot be revoked. The
+        # caller must not report success: "we could not" rendering as "we
+        # did" is the defect this codebase exists to avoid.
+        return False
     conn.execute(
         "INSERT INTO revoked_tokens (jti, expires_at) VALUES (%s, %s) "
         "ON CONFLICT (jti) DO NOTHING",
         (jti, datetime.fromtimestamp(expires_at, tz=timezone.utc)),
     )
     conn.commit()
+    return True
 
 
 def is_revoked(conn: psycopg.Connection, jti: str) -> bool:

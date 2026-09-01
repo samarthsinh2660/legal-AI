@@ -62,7 +62,7 @@ def ensure_case_file_schema(conn: psycopg.Connection) -> None:
     # behind it. See knowledge/static/db.py::ensure_bench_schema.
     has_facts = conn.execute(
         "SELECT 1 FROM information_schema.columns "
-        "WHERE table_name = 'case_files' AND column_name = 'facts'"
+        "WHERE table_name = 'case_files' AND column_name = 'facts' AND table_schema = current_schema()"
     ).fetchone()
     if has_facts is None:
         conn.execute("ALTER TABLE case_files ADD COLUMN IF NOT EXISTS facts JSONB")

@@ -28,6 +28,8 @@ from api.cases.router import router as cases_router
 from legal_ai.case.files import ensure_case_file_schema
 from legal_ai.case.store import ensure_case_schema
 from api.databases.postgres import connection
+from api.graph.router import router as graph_router
+from api.search.router import router as search_router
 from api.documents.router import router as documents_router
 from api.accounts.revocation import ensure_revocation_schema, is_revoked
 from api.middleware.auth import AuthMiddleware
@@ -176,13 +178,15 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
         """
         try:
             with connection() as conn:
-                ensure_thread_schema(conn)
-                ensure_revocation_schema(conn)
-                # Cases and their files predate the API, but the API adds
-                # columns to them (owner, matter type, description), so it
-                # has to run their migration too.
+                # Cases first: `threads.case_id` is a foreign key to it, so
+                # creating threads on a database without `cases` raises,
+                # the except below swallows it, and nothing after this line
+                # gets created -- leaving every /cases route to 500 on a
+                # column that was never added.
                 ensure_case_schema(conn)
                 ensure_case_file_schema(conn)
+                ensure_thread_schema(conn)
+                ensure_revocation_schema(conn)
         except Exception:
             # A database that is down must not stop the process starting --
             # it has to come up to report itself unhealthy.
@@ -192,6 +196,8 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
     application.include_router(threads_router)
     application.include_router(cases_router)
     application.include_router(documents_router)
+    application.include_router(search_router)
+    application.include_router(graph_router)
     return application
 
 

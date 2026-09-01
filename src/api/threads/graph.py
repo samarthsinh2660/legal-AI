@@ -121,16 +121,28 @@ async def research_with_progress(inputs: dict):
             loop.call_soon_threadsafe(queue.put_nowait, (_DONE, None))
 
     task = loop.run_in_executor(None, pump)
+    # One deadline for the whole run. Per-event timeouts reset on each node,
+    # so a graph emitting a step every 299s would run unbounded while the
+    # docstring claimed the wait was capped.
+    deadline = loop.time() + read_timeout()
     try:
         while True:
-            kind, payload = await asyncio.wait_for(queue.get(), timeout=read_timeout())
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError
+            kind, payload = await asyncio.wait_for(queue.get(), timeout=remaining)
             if kind is _DONE:
                 return
             if kind == "error":
-                raise payload
+                # Yielded, not raised. The response is already 200 with its
+                # headers sent, so an exception here truncates the stream
+                # with no event and no way for a client to tell it from a
+                # completed one.
+                yield "error", payload
+                return
             yield kind, payload
     except asyncio.TimeoutError:
         log.warning("research stream timed out")
-        yield "error", TimeoutError("Research did not finish within the time limit.")
+        yield "timeout", TimeoutError("Research did not finish within the time limit.")
     finally:
         task.cancel()

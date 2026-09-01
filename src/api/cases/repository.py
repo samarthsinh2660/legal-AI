@@ -49,6 +49,10 @@ def create(
     firm's matter.
     """
     case_id = uuid.uuid4().hex
+    # The owner is set in the same transaction as the insert. Committing the
+    # row first and setting user_id after leaves an ownerless case if
+    # anything fails in between -- and an ownerless case matches no user, so
+    # nobody can read or delete it.
     _create_case(
         conn,
         case_id=case_id,
@@ -62,7 +66,8 @@ def create(
         description=description,
     )
     conn.execute(
-        "UPDATE cases SET user_id = %s WHERE case_id = %s", (user_id, case_id)
+        "UPDATE cases SET user_id = %s WHERE case_id = %s AND user_id IS NULL",
+        (user_id, case_id),
     )
     conn.commit()
     return get(conn, case_id, user_id)

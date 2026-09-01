@@ -22,6 +22,12 @@ import psycopg
 from api.utils.pagination import Page
 
 
+# One spelling, used by the column default, the router and both send paths.
+# They disagreed once -- "New thread" against "New conversation" -- and the
+# auto-title silently never fired on the non-streaming path.
+DEFAULT_TITLE = "New conversation"
+
+
 @dataclass(frozen=True)
 class Thread:
     thread_id: str
@@ -86,7 +92,7 @@ def ensure_thread_schema(conn: psycopg.Connection) -> None:
 def create_thread(
     conn: psycopg.Connection,
     user_id: str,
-    title: str = "New thread",
+    title: str = DEFAULT_TITLE,
     case_id: str | None = None,
 ) -> Thread:
     thread_id = uuid.uuid4().hex
@@ -233,3 +239,29 @@ def delete_thread(conn: psycopg.Connection, thread_id: str, user_id: str) -> boo
     ).rowcount
     conn.commit()
     return deleted > 0
+
+
+def recent_turns(
+    conn: psycopg.Connection, thread_id: str, user_id: str, limit: int
+) -> list[Message]:
+    """The last `limit` messages, oldest first.
+
+    Bounded in SQL, and without `answer`. Reading the whole thread to keep
+    the tail transfers every stored answer's JSONB on every turn -- megabytes
+    on a long thread, 96% of it discarded in Python.
+    """
+    rows = conn.execute(
+        """
+        SELECT m.message_id, m.thread_id, m.role, m.content, m.created_at
+        FROM messages m
+        JOIN threads t USING (thread_id)
+        WHERE m.thread_id = %s AND t.user_id = %s
+        ORDER BY m.message_id DESC
+        LIMIT %s
+        """,
+        (thread_id, user_id, limit),
+    ).fetchall()
+    return [
+        Message(row[0], row[1], row[2], row[3], None, row[4])
+        for row in reversed(rows)
+    ]

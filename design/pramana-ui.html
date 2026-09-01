@@ -375,8 +375,6 @@
   .ctx-card-head h4 { font-family: var(--sans); font-size: var(--t-sm); font-weight: 600; letter-spacing: 0; }
   .ctx-chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .verify-toggle { display: flex; gap: 6px; }
-  .verify-toggle .filter-pill { flex: 1; text-align: center; }
-  .verify-hint { font-size: var(--t-2xs); color: var(--ink-muted); line-height: 1.5; margin-top: 10px; }
   .doc-row { padding: 12px var(--s2); display: flex; gap: 12px; align-items: flex-start; margin-bottom: var(--s1); }
   .doc-row:hover { border-color: var(--line-strong); }
   .doc-row .ic { color: var(--ink-muted); flex: none; margin-top: 2px; }
@@ -459,6 +457,22 @@
     border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 12px 12px var(--s2);
   }
   .composer:focus-within { border-color: var(--primary); }
+  .graph-canvas { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+  .graph-legend { display: flex; gap: 18px; margin-top: var(--s2); font-size: var(--t-2xs); color: var(--ink-muted); }
+  .graph-legend span { display: flex; align-items: center; gap: 7px; }
+  .dot-key { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .line-key { width: 18px; height: 0; border-top: 1.5px solid var(--line-strong); display: inline-block; }
+  .line-key.dashed { border-top-style: dashed; }
+  .composer-bar { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 0 2px; }
+  .verify-toggle { display: flex; gap: 4px; flex: none; }
+  .chip-toggle {
+    font: inherit; font-size: var(--t-2xs); padding: 5px 12px; border-radius: 999px;
+    border: 1px solid var(--line); background: transparent; color: var(--ink-muted); cursor: pointer;
+  }
+  .chip-toggle:hover { border-color: var(--line-strong); color: var(--ink-variant); }
+  .chip-toggle.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+  .chip-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .verify-hint { font-size: var(--t-2xs); color: var(--ink-muted); line-height: 1.4; }
   .composer textarea {
     flex: 1; border: none; outline: none; resize: none; background: transparent;
     font: inherit; font-size: var(--t-md); color: var(--ink); min-height: 44px; line-height: 1.6; padding: 8px 0;
@@ -987,25 +1001,13 @@
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="m3 11 5-5M5.5 4.5 9.5 8.5M2.5 13.5h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m9 6.5 3.5-3.5 3 3L12 9.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
         <span>Cases</span>
       </button>
-      <button class="nav-item" data-view="documents">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4.5 2h6L14 5.5V16h-9.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10.5 2v3.5H14" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 10h4M7 12.5h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-        <span>Documents</span>
+      <button class="nav-item" data-view="search">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5.2" stroke="currentColor" stroke-width="1.5"/><path d="m11.9 11.9 3.4 3.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span>Search</span>
       </button>
-      <button class="nav-item" data-view="judgments">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 3.5v11M4.5 6.5h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M4.5 6.5 2 11.5h5zM13.5 6.5 11 11.5h5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6.5 15h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        <span>Judgments</span>
-      </button>
-      <button class="nav-item" data-view="legislation">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 3c1.8-.6 3.8-.6 5.5 0v12c-1.7-.6-3.7-.6-5.5 0z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M15 3c-1.8-.6-3.8-.6-5.5 0v12c1.7-.6 3.7-.6 5.5 0z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-        <span>Legislation</span>
-      </button>
-      <button class="nav-item" data-view="knowledge">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="4" r="2.1" stroke="currentColor" stroke-width="1.5"/><circle cx="4" cy="14" r="2.1" stroke="currentColor" stroke-width="1.5"/><circle cx="14" cy="14" r="2.1" stroke="currentColor" stroke-width="1.5"/><path d="M7.7 5.8 5.1 11.9M10.3 5.8l2.6 6.1M6.1 14h5.8" stroke="currentColor" stroke-width="1.4"/></svg>
-        <span>Knowledge</span>
-      </button>
-      <button class="nav-item" data-view="saved">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4.5 2.5h9v13L9 12l-4.5 3.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-        <span>Saved</span>
+      <button class="nav-item" data-view="graph">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="4" r="2" stroke="currentColor" stroke-width="1.5"/><circle cx="4" cy="13" r="2" stroke="currentColor" stroke-width="1.5"/><circle cx="14" cy="13" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M7.9 5.8 5.1 11.2M10.1 5.8l2.8 5.4M6 13h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span>Graph</span>
       </button>
       <button class="nav-item" data-view="history">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 5v4l2.6 1.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.6 7.6A6.6 6.6 0 1 1 3 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M2.2 3.6v4h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1060,9 +1062,9 @@
           <button class="chip chip-outline">Find precedents for…</button>
           <button class="chip chip-outline">Explain Section…</button>
           <div class="spacer"></div>
-          <button class="btn btn-ghost" data-view-jump="documents">
+          <button class="btn btn-ghost" data-view-jump="cases">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2h5l3 3v9H4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9 2v3h3" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-            Upload Document
+            Attach to a case
           </button>
           <button class="btn btn-primary" data-view-jump="research">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="m8 2 1.4 3.6L13 7l-3.6 1.4L8 12l-1.4-3.6L3 7l3.6-1.4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
@@ -1116,18 +1118,6 @@
               <div class="qa-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.6"/><path d="M10 6.5v7M6.5 10h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
               <span class="qa-label">New Research</span>
             </div>
-            <div class="card qa-card" data-view-jump="documents">
-              <div class="qa-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 2.5h6l4 4V17.5H5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11 2.5v4h4" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="9.5" cy="11.5" r="2.2" stroke="currentColor" stroke-width="1.5"/><path d="m11.3 13.3 1.7 1.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div>
-              <span class="qa-label">Analyze Document</span>
-            </div>
-            <div class="card qa-card" data-view-jump="judgments">
-              <div class="qa-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="m3.5 12.5 5.5-5.5M6 5l4.5 4.5M3 15.5h6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="m10 7 4-4 3.3 3.3-4 4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
-              <span class="qa-label">Search Judgments</span>
-            </div>
-            <div class="card qa-card" data-view-jump="legislation">
-              <div class="qa-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 3.2c2-.7 4.2-.7 6 0v13.6c-1.8-.7-4-.7-6 0z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M16 3.2c-2-.7-4.2-.7-6 0v13.6c1.8-.7 4-.7 6 0z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
-              <span class="qa-label">Search Statutes</span>
-            </div>
           </div>
         </div>
       </div>
@@ -1145,18 +1135,6 @@
               <button class="lc-open" data-view-jump="case-detail">Open case workspace →</button>
             </div>
           </div>
-
-          <div class="ctx-block">
-            <span class="caps">Verification level</span>
-            <div class="card ctx-card">
-              <div class="verify-toggle" role="group" aria-label="Verification level">
-                <button type="button" class="filter-pill active" id="verify-quick-btn" aria-pressed="true">Quick</button>
-                <button type="button" class="filter-pill" id="verify-verified-btn" aria-pressed="false">Verified</button>
-              </div>
-              <p class="verify-hint">Quick checks that citations exist and quotes match their source. Verified adds one model pass that judges whether the source actually supports each claim — the answer itself doesn't change, and this isn't a guarantee.</p>
-            </div>
-          </div>
-
 
           <div class="ctx-block">
             <span class="caps">Research context</span>
@@ -1300,6 +1278,15 @@
                 <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2.5 9h11M9 3.5 14.5 9 9 14.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </div>
+            <!-- Verification sits with the message, not in a settings pane:
+                 it is chosen per question, the way a chat app switches mode. -->
+            <div class="composer-bar">
+              <div class="verify-toggle" role="group" aria-label="Verification level">
+                <button type="button" class="chip-toggle active" id="verify-quick-btn" aria-pressed="true">Quick</button>
+                <button type="button" class="chip-toggle" id="verify-verified-btn" aria-pressed="false">Verified</button>
+              </div>
+              <span class="verify-hint" id="verify-hint">Citations and quotes are checked. Claims are not model-checked.</span>
+            </div>
           </div>
         </div>
 
@@ -1342,111 +1329,6 @@
     </section>
 
     <!-- ================= DOCUMENTS ================= -->
-    <section class="view view-flush" data-view="documents">
-      <div class="doc-topbar">
-        <svg width="20" height="20" viewBox="0 0 18 18" fill="none" style="color:var(--ink-muted)"><path d="M4.5 2h6L14 5.5V16h-9.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10.5 2v3.5H14" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-        <span class="fname">Sale_Deed_Survey_142-2.pdf</span>
-        <span class="badge badge-ok"><span class="dot"></span>Analyzed</span>
-        <span class="chip">2 parties detected</span>
-        <div class="spacer"></div>
-        <button class="btn btn-ghost btn-sm">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 3.5h11v8h-6l-3 2.5V11.5h-2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-          Ask questions
-        </button>
-        <button class="btn btn-primary btn-sm">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-          Add to case
-        </button>
-      </div>
-
-      <div class="doc-split">
-        <div class="doc-canvas">
-          <div class="doc-page">
-            <h4>Sale Deed</h4>
-            <p><strong>THIS DEED OF SALE</strong> is made and executed on this 15th day of November, 2023, by and between:</p>
-            <p class="party"><strong>Mr. Rajesh Sharma</strong>, S/o Late Shri Ramnath Sharma, aged about 55 years, residing at 124 Vasant Vihar, New Delhi 110057, hereinafter referred to as the "VENDOR" (which expression shall mean and include his heirs, executors, administrators and assigns) of the FIRST PART.</p>
-            <p class="party"><strong>AND</strong></p>
-            <p class="party"><strong>Mrs. Sunita Patel</strong>, W/o Shri Vikram Patel, aged about 48 years, residing at 45 Jubilee Hills, Hyderabad 500033, hereinafter referred to as the "VENDEE" (which expression shall mean and include her heirs, executors, administrators and assigns) of the SECOND PART.</p>
-            <p>WHEREAS the Vendor is the absolute owner in possession and enjoyment of the property bearing Municipal No. 8-2-293/82/A/74, Plot No. 74, situated at Jubilee Hills, Hyderabad, measuring 500 sq. yds., more fully described in the Schedule hereunder written.</p>
-            <span class="hl-flag">The Vendor hereby assures the Vendee that the Schedule Property is free from all encumbrances, charges, mortgages, prior sales, gifts, wills, attachments, lis pendens, and any other claims of whatsoever nature. If any defect in title is found, the Vendor shall be solely responsible to make good the loss.</span>
-            <p>AND WHEREAS the Vendee has agreed to purchase the Schedule Property for a total consideration of ₹5,00,00,000 (Rupees Five Crores only), the receipt of which the Vendor hereby acknowledges.</p>
-          </div>
-        </div>
-
-        <aside class="doc-analysis">
-          <div class="da-head">
-            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" style="color:var(--primary)"><path d="m8 2 1.4 3.6L13 7l-3.6 1.4L8 12l-1.4-3.6L3 7l3.6-1.4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-            <h3>AI Document Analysis</h3>
-          </div>
-
-          <div class="da-group">
-            <span class="caps">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="5.5" cy="8" r="2.8" stroke="currentColor" stroke-width="1.4"/><path d="M8.3 8h6M12 8v2.2M13.5 8v1.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-              Key facts
-            </span>
-            <div class="fact-grid">
-              <div class="card fact"><div class="fl">Document type</div><div class="fv">Sale Deed</div></div>
-              <div class="card fact"><div class="fl">Execution date</div><div class="fv">15 Nov 2023</div></div>
-              <div class="card fact wide"><div class="fl">Consideration amount</div><div class="fv">₹5,00,00,000 (Five Crores)</div></div>
-            </div>
-          </div>
-
-          <div class="da-group">
-            <span class="caps">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2 1.8 13.2h12.4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 6.5v3M8 11.4v.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-              Legal issues detected
-            </span>
-            <div class="card finding">
-              <div class="finding-head">
-                <h5>Potential indemnity risk</h5>
-                <span class="locref">
-                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M4 2h5l3 3v9H4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-                  Page 1, Para 4
-                </span>
-              </div>
-              <p>The indemnity clause regarding encumbrances is unbounded. Standard practice recommends specifying a time limit or a financial cap on the Vendor's liability.</p>
-            </div>
-          </div>
-
-          <div class="da-group">
-            <span class="caps">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 3.5h10M3 7h10M3 10.5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-              Important clauses
-            </span>
-            <div class="card finding clause" style="margin-bottom:12px;">
-              <div class="finding-head">
-                <h5>Possession clause</h5>
-                <span class="locref">Page 1, Para 6</span>
-              </div>
-              <p>Explicit transfer of physical and vacant possession is confirmed on the date of execution.</p>
-            </div>
-            <div class="card finding clause">
-              <div class="finding-head">
-                <h5>Clear title assurance</h5>
-                <span class="locref">Page 1, Para 4</span>
-              </div>
-              <p>Vendor guarantees the property is free from encumbrances, prior sales and attachments.</p>
-            </div>
-          </div>
-
-          <div class="da-group">
-            <span class="caps">Relevant statutory sections</span>
-            <div class="ctx-chips">
-              <span class="chip chip-outline">Transfer of Property Act, s.54</span>
-              <span class="chip chip-outline">Registration Act, s.17</span>
-              <span class="chip chip-outline">Indian Stamp Act, Sch. I</span>
-            </div>
-          </div>
-
-          <div class="ai-note">
-            <span class="badge badge-document"><span class="dot"></span>Your document</span>
-            Extracted from your upload — not a legal source. Verify against the executed original.
-          </div>
-        </aside>
-      </div>
-    </section>
-
-    <!-- ================= CASES — INDEX ================= -->
     <section class="view" data-view="cases">
       <div class="page-head">
         <div>
@@ -1864,293 +1746,108 @@
     </section>
 
     <!-- ================= JUDGMENTS — SEARCH ================= -->
-    <section class="view" data-view="judgments">
-      <div class="page-head">
+    <!-- GET /search?q=&kind=&limit=
+         Results carry NO verification fields, by design: nothing has been
+         claimed about a search hit, so there is nothing to check. Never
+         render these with the badges an answer's citations carry. -->
+    <section class="view" data-view="search">
+      <div class="view-head">
         <div>
-          <h1>Search Judgments</h1>
-          <p>Full-text and citation search across the Supreme Court, High Courts and accessible District Court records.</p>
+          <h1>Search the corpus</h1>
+          <p class="view-sub">Statutes and judgments, directly. For a researched answer with checked citations, start a thread instead.</p>
         </div>
       </div>
 
-      <div class="card card-pad" style="margin-bottom:var(--s3);">
-        <div class="search-bar">
-          <label class="topbar-search" style="max-width:none; flex:1;">
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="m10.6 10.6 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-            <input type="text" value="anticipatory bail" placeholder="Search judgments by keyword, phrase or citation…" />
-          </label>
-          <button class="btn btn-primary">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.6"/><path d="m10.6 10.6 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            Search
+      <div class="card" style="padding: var(--s3); margin-bottom: var(--s3);">
+        <div class="composer" style="margin-bottom: 12px;">
+          <textarea rows="1" id="search-q" placeholder="Section 138 dishonour of cheque…"></textarea>
+          <button class="send" title="Search">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5.2" stroke="currentColor" stroke-width="1.7"/><path d="m11.9 11.9 3.4 3.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
           </button>
         </div>
-        <div class="filter-grid">
-          <div class="field"><label>Court</label><select><option>All courts</option><option>Supreme Court</option><option>Gujarat High Court</option><option>District Court</option></select></div>
-          <div class="field"><label>Year</label><select><option>2020 — 2026</option><option>2010 — 2019</option><option>All years</option></select></div>
-          <div class="field"><label>Judge</label><input type="text" placeholder="Any judge" /></div>
-          <div class="field"><label>Act</label><input type="text" placeholder="Any Act" /></div>
-          <div class="field"><label>Section</label><input type="text" placeholder="Any section" /></div>
-          <div class="field"><label>Citation</label><input type="text" placeholder="e.g. (2019) 8 SCC 729" /></div>
-        </div>
-        <div class="search-foot">
-          <button class="btn btn-ghost btn-sm">Reset filters</button>
-          <span class="hint">Filters apply on search. Results are ranked by relevance unless you change the sort.</span>
+        <div class="composer-bar">
+          <div class="verify-toggle" role="group" aria-label="Result type">
+            <button type="button" class="chip-toggle active" data-kind="all" aria-pressed="true">All</button>
+            <button type="button" class="chip-toggle" data-kind="judgment" aria-pressed="false">Judgments</button>
+            <button type="button" class="chip-toggle" data-kind="section" aria-pressed="false">Statutes</button>
+          </div>
+          <span class="verify-hint">Unverified results — nothing has been claimed about them yet.</span>
         </div>
       </div>
 
-      <div class="case-toolbar">
-        <span class="caps"><b class="mono">126</b> results</span>
-        <div class="spacer"></div>
-        <button class="filter-pill active">Relevance</button>
-        <button class="filter-pill">Most recent</button>
-        <button class="filter-pill">Most cited</button>
+      <div class="list-head"><span class="caps">12 results</span></div>
+      <div class="card doc-row" style="cursor:pointer;" data-view-jump="graph">
+        <div style="flex:1;">
+          <div class="doc-name">Vijay Madanlal Choudhary v. Union of India</div>
+          <div class="doc-meta">Supreme Court · [2022] 10 S.C.R. 1 · judgment</div>
+          <p class="doc-meta" style="margin-top:8px; line-height:1.6;">…the offence under Section 138 of the Negotiable Instruments Act is complete on the dishonour of the cheque and the failure to pay within fifteen days of the notice…</p>
+        </div>
       </div>
-
-      <div style="display:flex; flex-direction:column; gap:12px;">
-        <div class="card card-pad result-row">
-          <div class="result-head">
-            <div>
-              <div class="auth-case">Sushila Aggarwal v. State (NCT of Delhi)</div>
-              <div class="recent-meta" style="margin-top:6px;">
-                <span>Supreme Court</span><span>·</span><span class="mono">2020</span><span>·</span>
-                <span class="chip">(2020) 5 SCC 1</span>
-                <span class="badge badge-warn">Constitution Bench</span>
-              </div>
-            </div>
-            <span class="badge badge-ok">High relevance</span>
-          </div>
-          <p class="result-why"><b>Why relevant:</b> Held that anticipatory bail need not invariably be limited to a fixed period, and clarified the scope of protection under the provision.</p>
-          <div class="result-actions">
-            <button class="btn btn-ghost btn-sm">Open judgment</button>
-            <button class="btn btn-ghost btn-sm">Save</button>
-            <button class="btn btn-ghost btn-sm" data-open-save-modal>Add to case</button>
-          </div>
-        </div>
-
-        <div class="card card-pad result-row">
-          <div class="result-head">
-            <div>
-              <div class="auth-case">Gurbaksh Singh Sibbia v. State of Punjab</div>
-              <div class="recent-meta" style="margin-top:6px;">
-                <span>Supreme Court</span><span>·</span><span class="mono">1980</span><span>·</span>
-                <span class="chip">(1980) 2 SCC 565</span>
-                <span class="badge badge-warn">Constitution Bench</span>
-              </div>
-            </div>
-            <span class="badge badge-ok">High relevance</span>
-          </div>
-          <p class="result-why"><b>Why relevant:</b> The foundational authority on anticipatory bail; rejected the imposition of rigid limitations not found in the statute.</p>
-          <div class="result-actions">
-            <button class="btn btn-ghost btn-sm">Open judgment</button>
-            <button class="btn btn-ghost btn-sm">Save</button>
-            <button class="btn btn-ghost btn-sm" data-open-save-modal>Add to case</button>
-          </div>
-        </div>
-
-        <div class="card card-pad result-row">
-          <div class="result-head">
-            <div>
-              <div class="auth-case">Bhadresh Bipinbhai Sheth v. State of Gujarat</div>
-              <div class="recent-meta" style="margin-top:6px;">
-                <span>Supreme Court</span><span>·</span><span class="mono">2016</span><span>·</span>
-                <span class="chip">(2016) 1 SCC 152</span>
-              </div>
-            </div>
-            <span class="badge badge-warn">Medium relevance</span>
-          </div>
-          <p class="result-why"><b>Why relevant:</b> Restated the factors governing the grant of anticipatory bail, with emphasis on personal liberty.</p>
-          <div class="result-actions">
-            <button class="btn btn-ghost btn-sm">Open judgment</button>
-            <button class="btn btn-ghost btn-sm">Save</button>
-            <button class="btn btn-ghost btn-sm" data-open-save-modal>Add to case</button>
-          </div>
+      <div class="card doc-row" style="cursor:pointer;" data-view-jump="graph">
+        <div style="flex:1;">
+          <div class="doc-name">Section 138 — Dishonour of cheque for insufficiency of funds</div>
+          <div class="doc-meta">Negotiable Instruments Act, 1881 · section</div>
+          <p class="doc-meta" style="margin-top:8px; line-height:1.6;">Where any cheque drawn by a person on an account maintained by him is returned by the bank unpaid…</p>
         </div>
       </div>
     </section>
 
-    <!-- ================= LEGISLATION — STATUTE BROWSER ================= -->
-    <section class="view" data-view="legislation">
-      <div class="kx-crumb">
-        <span class="caps">Statute browser</span>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m6 4 4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <a href="#">Bharatiya Nyaya Sanhita, 2023</a>
-      </div>
-      <div class="kx-head-row">
-        <h1>Section 103: Punishment for Murder</h1>
-        <button class="btn btn-ghost">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 2.5h4.5V7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.5 2.5 7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 10v3.5h-9v-9H7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          View on India Code
-        </button>
-      </div>
-
-      <div class="kx-grid">
-        <div class="kx-col">
-          <div class="card statute-card">
-            <h3>Statutory Text</h3>
-            <p>(1) Whoever commits murder shall be punished with death or imprisonment for life, and shall also be liable to fine.</p>
-            <p>(2) When a group of five or more persons acting in concert commits murder on the ground of race, caste or community, sex, place of birth, language, personal belief or any other similar ground, each member of such group shall be punished with death or with imprisonment for life, and shall also be liable to fine.</p>
-            <div class="statute-hist">
-              <span class="caps">Legislative history</span>
-              <p style="color:var(--ink-variant)">Corresponds to Section 302 of the Indian Penal Code, 1860, with the addition of subsection (2) addressing mob lynching.</p>
-            </div>
-          </div>
-
-          <div class="card statute-card">
-            <h3>Related Sections</h3>
-            <div class="rel-row">
-              <span class="chip">Sec 100</span>
-              <div><div class="rel-name">Culpable homicide</div></div>
-            </div>
-            <div class="rel-row">
-              <span class="chip">Sec 101</span>
-              <div>
-                <div class="rel-name">Murder</div>
-                <div class="rel-desc">Defines the conditions under which culpable homicide amounts to murder.</div>
-              </div>
-            </div>
-            <div class="rel-row">
-              <span class="chip">Sec 105</span>
-              <div><div class="rel-name">Culpable homicide not amounting to murder</div></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="kx-col">
-          <div class="card statute-card">
-            <div class="section-head" style="margin-bottom:8px;">
-              <h3>Key Interpretations</h3>
-              <a href="#">View all (42)</a>
-            </div>
-            <div class="interp-row">
-              <div class="interp-year"><div class="yl">YEAR</div><div class="yv">1980</div></div>
-              <div class="interp-body">
-                <div class="interp-name">
-                  Bachan Singh v. State of Punjab
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="color:var(--primary)"><circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.4"/><path d="m5.2 8.2 2 2 3.6-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </div>
-                <p class="interp-desc">Established the "rarest of rare" doctrine governing when the death penalty may be imposed under the corresponding provision.</p>
-                <div class="interp-tags">
-                  <span class="chip">1980 (2) SCC 684</span>
-                  <span class="badge badge-warn">Constitution Bench</span>
-                </div>
-              </div>
-            </div>
-            <div class="interp-row">
-              <div class="interp-year"><div class="yl">YEAR</div><div class="yv">1983</div></div>
-              <div class="interp-body">
-                <div class="interp-name">
-                  Machhi Singh v. State of Punjab
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="color:var(--primary)"><circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.4"/><path d="m5.2 8.2 2 2 3.6-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </div>
-                <p class="interp-desc">Laid down the five-factor test applying the rarest-of-rare doctrine to the facts of a given case.</p>
-                <div class="interp-tags">
-                  <span class="chip">1983 (3) SCC 470</span>
-                  <span class="badge badge-static">Follows Bachan Singh</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ================= KNOWLEDGE — GRAPH ================= -->
-    <section class="view" data-view="knowledge">
-      <div class="page-head">
+    <!-- GET /graph/{document_id}?hops=&limit=
+         Anchored on one document, capped at 2 hops and 120 nodes. Read-only:
+         there is no write path on this endpoint. `truncated` MUST be shown --
+         a graph quietly missing half its edges lies about how connected
+         something is. -->
+    <section class="view" data-view="graph">
+      <div class="view-head">
         <div>
-          <h1>Legal Knowledge Graph</h1>
-          <p>How provisions and judgments relate: which authority interprets a section, which follows it, and which has been overruled.</p>
+          <h1>Citation graph</h1>
+          <p class="view-sub">What a judgment cites, and what cites it. Read-only.</p>
         </div>
-        <button class="btn btn-ghost" data-view-jump="legislation">
-          <svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M3 3c1.8-.6 3.8-.6 5.5 0v12c-1.7-.6-3.7-.6-5.5 0z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M15 3c-1.8-.6-3.8-.6-5.5 0v12c1.7-.6 3.7-.6 5.5 0z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-          Open in statute browser
-        </button>
+        <div class="verify-toggle" role="group" aria-label="Depth">
+          <button type="button" class="chip-toggle active" aria-pressed="true">1 hop</button>
+          <button type="button" class="chip-toggle" aria-pressed="false">2 hops</button>
+        </div>
       </div>
 
-      <div class="case-toolbar">
-        <label class="topbar-search" style="max-width:340px;">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="m10.6 10.6 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          <input type="text" value="BNS Section 103" placeholder="Find a section, judgment or Act…" />
-        </label>
-        <button class="btn btn-primary">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.6"/><path d="m10.6 10.6 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-          Search
-        </button>
-        <div class="spacer"></div>
-        <button class="filter-pill active">Sections</button>
-        <button class="filter-pill">Judgments</button>
-        <button class="filter-pill">Acts</button>
-      </div>
-
-      <div class="card graph-card" style="margin-bottom:var(--s3);">
-        <div class="graph-toolbar">
-          <span class="badge badge-dynamic">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3.5" r="1.8" stroke="currentColor" stroke-width="1.4"/><circle cx="3.5" cy="12" r="1.8" stroke="currentColor" stroke-width="1.4"/><circle cx="12.5" cy="12" r="1.8" stroke="currentColor" stroke-width="1.4"/><path d="M6.9 5.1 4.6 10.4M9.1 5.1l2.3 5.3M5.3 12h5.4" stroke="currentColor" stroke-width="1.3"/></svg>
-            Entity graph
-          </span>
-          <span class="caps">Click a node to open its detail</span>
-          <div class="spacer"></div>
-          <button class="icon-btn" style="width:30px;height:30px;border:1px solid var(--line);" title="Zoom in">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="m10.6 10.6 3 3M5.2 7h3.6M7 5.2v3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          </button>
-          <button class="icon-btn" style="width:30px;height:30px;border:1px solid var(--line);" title="Zoom out">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="m10.6 10.6 3 3M5.2 7h3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          </button>
+      <div class="card" style="padding: var(--s3);">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom: var(--s2);">
+          <span class="badge">Anchor</span>
+          <strong style="font-size: var(--t-sm);">Indore Development Authority v. Manoharlal</strong>
+          <span class="doc-meta">88 judgments cite this</span>
         </div>
+
+        <!-- The canvas the Next.js build replaces with a force layout.
+             Node colour is `kind`; line style is edge `kind`. -->
         <div class="graph-canvas">
-          <div class="g-center">
-            <span class="gl">Section</span>
-            <span class="gv">103</span>
-          </div>
-          <div class="g-nodes">
-            <div class="g-node" data-view-jump="legislation">
-              <div class="gn-court"><span class="dot"></span>Supreme Court</div>
-              <div class="gn-name">Bachan Singh v. State of Punjab</div>
-              <div class="gn-cite">1980 (2) SCC 684 · interpreted_by</div>
-            </div>
-            <div class="g-node" data-view-jump="legislation">
-              <div class="gn-court"><span class="dot"></span>Supreme Court</div>
-              <div class="gn-name">Machhi Singh v. State of Punjab</div>
-              <div class="gn-cite">1983 (3) SCC 470 · follows</div>
-            </div>
-            <div class="g-node" data-view-jump="legislation">
-              <div class="gn-court hc"><span class="dot"></span>High Court</div>
-              <div class="gn-name">State v. Ram Singh</div>
-              <div class="gn-cite">2014 SC 123 · cites</div>
-            </div>
-          </div>
+          <svg viewBox="0 0 640 300" width="100%" height="300" role="img" aria-label="Citation graph, 1 hop from the anchor">
+            <line x1="320" y1="150" x2="150" y2="70"  stroke="var(--line-strong)" stroke-width="1.4"/>
+            <line x1="320" y1="150" x2="140" y2="220" stroke="var(--line-strong)" stroke-width="1.4"/>
+            <line x1="320" y1="150" x2="500" y2="80"  stroke="var(--line-strong)" stroke-width="1.4"/>
+            <line x1="320" y1="150" x2="510" y2="215" stroke="var(--line-strong)" stroke-width="1.4" stroke-dasharray="4 3"/>
+            <line x1="320" y1="150" x2="330" y2="270" stroke="var(--line-strong)" stroke-width="1.4" stroke-dasharray="4 3"/>
+            <circle cx="150" cy="70"  r="9"  fill="var(--primary)" opacity="0.75"/>
+            <circle cx="140" cy="220" r="9"  fill="var(--primary)" opacity="0.75"/>
+            <circle cx="500" cy="80"  r="9"  fill="var(--primary)" opacity="0.75"/>
+            <circle cx="510" cy="215" r="9"  fill="var(--ok)" opacity="0.75"/>
+            <circle cx="330" cy="270" r="9"  fill="var(--ok)" opacity="0.75"/>
+            <circle cx="320" cy="150" r="15" fill="var(--primary)"/>
+          </svg>
         </div>
-      </div>
 
-      <div class="card card-pad">
-        <div class="section-head" style="margin-bottom:12px;"><h3 style="font-size:var(--t-statute)">Relationship types</h3></div>
-        <div class="comp-row" style="padding:0;">
-          <span class="badge badge-static">interpreted_by</span>
-          <span class="badge badge-static">follows</span>
-          <span class="badge badge-dynamic">cites</span>
-          <span class="badge badge-dynamic">refers_to</span>
-          <span class="badge badge-danger">distinguishes</span>
-          <span class="badge badge-danger">overrules</span>
-          <span class="badge">amended_by</span>
-          <span class="badge">contains</span>
+        <div class="graph-legend">
+          <span><i class="dot-key" style="background: var(--primary);"></i>Judgment</span>
+          <span><i class="dot-key" style="background: var(--ok);"></i>Section</span>
+          <span><i class="line-key"></i>cites</span>
+          <span><i class="line-key dashed"></i>cites section</span>
         </div>
-        <p style="font-size:var(--t-sm); color:var(--ink-variant); line-height:1.6; margin-top:var(--s2);">
-          Relationships extracted by a model enter the graph with an extraction confidence and must be verified before they are treated as fact.
+
+        <!-- `truncated: true` from the API. Never hide this. -->
+        <p class="verify-hint" style="margin-top: var(--s2);">
+          Showing 60 of 88 connections. The view is capped so it stays readable — this is not the whole picture.
         </p>
       </div>
     </section>
 
-    <!-- ================= SAVED ================= -->
-    <section class="view" data-view="saved">
-      <div class="dash-greet"><h1>Saved</h1><p>Collections of research, judgments and provisions you have kept.</p></div>
-      <div class="cap-grid">
-        <div class="card cap-card"><h4>Property Law</h4><p>18 items · last updated today</p></div>
-        <div class="card cap-card"><h4>Criminal Matters</h4><p>7 items · last updated 3 days ago</p></div>
-        <div class="card cap-card"><h4>Constitutional Law</h4><p>12 items · last updated 12 Mar</p></div>
-        <div class="card cap-card"><h4>Current Cases</h4><p>4 items · last updated yesterday</p></div>
-      </div>
-    </section>
-
-    <!-- ================= HISTORY ================= -->
     <section class="view" data-view="history">
       <div class="dash-greet"><h1>Research History</h1><p>Every question asked, with the sources and jurisdiction it used.</p></div>
       <div class="card card-pad">
@@ -2487,6 +2184,12 @@
       verifyVerifiedBtn.classList.toggle('active', isVerified);
       verifyVerifiedBtn.setAttribute('aria-pressed', String(isVerified));
       if (aiNoteVerify) { aiNoteVerify.innerHTML = isVerified ? VERIFY_NOTE.verified : VERIFY_NOTE.quick; }
+      var hint = document.getElementById('verify-hint');
+      if (hint) {
+        hint.textContent = isVerified
+          ? 'Each claim is also checked against its source by a model. Slower, and not a guarantee.'
+          : 'Citations and quotes are checked. Claims are not model-checked.';
+      }
     }
     if (verifyQuickBtn && verifyVerifiedBtn) {
       verifyQuickBtn.addEventListener('click', function () { setVerifyLevel('quick'); });

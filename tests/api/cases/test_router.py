@@ -221,3 +221,28 @@ def test_the_description_can_be_edited(app):
     case_id = _new_case(client)
     edited = client.patch(f"/cases/{case_id}", json={"description": "Now with facts."})
     assert edited.json()["data"]["description"] == "Now with facts."
+
+
+def test_a_thread_cannot_be_created_inside_someone_elses_case(app):
+    """Found by review, untested before. `POST /threads` took any case_id:
+    naming another firm's matter seeded its description, documents and
+    findings into your context -- and wrote your findings back into it."""
+    mine, theirs = _client(app, MINE), _client(app, THEIRS)
+    their_case = _new_case(theirs)
+    refused = mine.post("/threads", json={"case_id": their_case})
+    assert refused.status_code == 404
+
+
+def test_a_thread_can_be_created_inside_my_own_case(app):
+    client = _client(app, MINE)
+    case_id = _new_case(client)
+    created = client.post("/threads", json={"case_id": case_id})
+    assert created.status_code == 201
+    assert created.json()["data"]["case_id"] == case_id
+
+
+def test_an_unknown_case_id_is_404_not_a_500(app):
+    """It used to reach the foreign key and raise."""
+    assert _client(app, MINE).post(
+        "/threads", json={"case_id": "no-such-case"}
+    ).status_code == 404
