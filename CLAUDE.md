@@ -166,7 +166,57 @@ Corpus jobs run for hours. Start them detached, wait on the PID, and never
 hold a database transaction open across a model call — doing so once queued
 an `ALTER TABLE` behind it and froze every reader for half an hour.
 
-## 9. Git
+## 9. The frontend
+
+`frontend/` is a Next.js 16 App Router app. **It is not the Next.js you may
+remember** -- `frontend/AGENTS.md` says so for a reason. Read the relevant
+page under `frontend/node_modules/next/dist/docs/` before writing code. Two
+that have already bitten: `params`/`searchParams`/`cookies`/`headers` are
+Promises with no synchronous fallback left, and `middleware.ts` is now
+`proxy.ts` with a Node runtime.
+
+`frontend/FRONTEND_GUIDE.md` is the full contract and outranks habit. The
+short version:
+
+    UI  ->  hooks  ->  services  ->  apiClient  ->  the API
+
+A component never calls a service; a service never uses a hook; every
+response is Zod-parsed at the service, so a backend shape change fails
+there rather than as `undefined` three components later.
+
+**Atoms** (`components/ui/`) are shadcn primitives with no domain meaning.
+**Molecules** (`components/molecules/`, `features/*/component/`) are one
+domain thing built from atoms, with no hook and no fetching. **Organisms**
+are the components that do use a hook, and therefore own the loading,
+empty and error states. The test is mechanical: *needs a custom hook ->
+organism; otherwise molecule.* Pages under `app/` only compose.
+
+State has one home each: server data in TanStack Query, the session in
+`features/auth/hooks/useAuth.tsx`, everything else `useState` until two
+distant components genuinely need it. There is no Redux store; the guide
+allows one, but nothing yet needs global UI state, and §5 applies here too.
+
+Three places where this codebase departs from the guide, all because the
+guide describes a different backend:
+
+- Our envelope is `{success, data}` / `{success, error:{code, message}}`,
+  not `{data, message, code}`. `lib/api.ts` unwraps it and throws
+  `RequestError` carrying the backend's `code` -- branch on that, not on
+  the HTTP status.
+- Paging is offset-based (`items`, `total`, `limit`, `offset`, `has_more`),
+  not cursor-based. `types/common.ts` has the schema helper.
+- There is no refresh token, so `useAuth` has no refresh path. A 401 on
+  boot clears the session; any other error leaves it alone, because a
+  server that is merely down must not sign a user out.
+
+Design tokens live only in `app/globals.css`, which is the one file allowed
+a colour literal. shadcn's semantic names are *defined as* our tokens from
+`design/DESIGN_SYSTEM.md`, so a `<Button>` is already the right indigo. Add
+a token to `:root` and `@theme` before reaching for `bg-[#abc]`,
+`text-[13px]` or `rounded-[12px]`. Light only: `design/` specifies no dark
+palette, and inventing one would ship colours nobody chose.
+
+## 10. Git
 
 The user handles all git operations. Do not commit unless explicitly asked,
 and never add a `Co-Authored-By` line.
