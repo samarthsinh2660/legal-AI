@@ -170,3 +170,82 @@ def test_find_leading_authorities_on_a_section_nothing_cites(conn, driver):
     write_act_section(driver, act, section)
 
     assert find_leading_authorities("test:act-8:sec-1") == []
+
+
+# --- good law over a real edge ----------------------------------------------
+#
+# tests/retrieval/test_retrieval_good_law.py already pins the decision rule on
+# synthetic input. What is exercised here is the seam under it: an OVERRULED
+# written onto a CITES edge in Neo4j, read back and turned into a warning.
+# Until the corpus held its first overruling (PRAKASH v. PHULAVATI, overruled
+# by VINEETA SHARMA) that path had never run on a real negative, so the
+# expensive half of the badge -- the half that says "do not rely on this" --
+# had only ever been asserted about a tuple.
+
+def _overrule(driver, overruled_id: str, overruling_id: str) -> None:
+    with driver.session() as session:
+        session.run(
+            """
+            MATCH (citing:Judgment {document_id: $citing})
+            MATCH (cited:Judgment {document_id: $cited})
+            MERGE (citing)-[r:CITES]->(cited)
+            SET r.treatment = 'OVERRULED'
+            """,
+            citing=overruling_id,
+            cited=overruled_id,
+        )
+
+
+def test_an_overruled_judgment_comes_back_doubted(conn, driver):
+    from legal_ai.retrieval.good_law import GoodLaw
+    from legal_ai.tools.graph import is_still_good_law
+
+    overruled = _doc("test:j-overruled", "judgment", "Earlier Case", "the earlier holding", court="Test Court")
+    overruling = _doc("test:j-overruling", "judgment", "Later Case", "the earlier holding is wrongly decided", court="Test Court")
+    upsert_document(conn, overruled, embedding=_sparse_vector((8, 1.0)))
+    upsert_document(conn, overruling, embedding=_sparse_vector((9, 1.0)))
+    write_judgment(driver, overruled)
+    write_judgment(driver, overruling)
+    _overrule(driver, "test:j-overruled", "test:j-overruling")
+
+    result = is_still_good_law("test:j-overruled")
+
+    assert result.status is GoodLaw.DOUBTED
+    assert result.overruled_by == ("test:j-overruling",)
+    assert result.is_a_warning
+
+
+def test_the_overruling_judgment_itself_is_not_doubted(conn, driver):
+    """The edge points one way. Reading it backwards would condemn every
+    judgment that overruled something."""
+    from legal_ai.retrieval.good_law import GoodLaw
+    from legal_ai.tools.graph import is_still_good_law
+
+    overruled = _doc("test:j-overruled", "judgment", "Earlier Case", "the earlier holding", court="Test Court")
+    overruling = _doc("test:j-overruling", "judgment", "Later Case", "wrongly decided", court="Test Court")
+    upsert_document(conn, overruled, embedding=_sparse_vector((8, 1.0)))
+    upsert_document(conn, overruling, embedding=_sparse_vector((9, 1.0)))
+    write_judgment(driver, overruled)
+    write_judgment(driver, overruling)
+    _overrule(driver, "test:j-overruled", "test:j-overruling")
+
+    assert is_still_good_law("test:j-overruling").status is not GoodLaw.DOUBTED
+
+
+def test_the_warning_names_the_judgment_that_overruled_it(conn, driver):
+    """A warning that does not say what to go and read is not actionable."""
+    from legal_ai.agents.draft import render_good_law
+    from legal_ai.tools.graph import is_still_good_law
+
+    overruled = _doc("test:j-overruled", "judgment", "Earlier Case", "the earlier holding", court="Test Court")
+    overruling = _doc("test:j-overruling", "judgment", "Later Case", "wrongly decided", court="Test Court")
+    upsert_document(conn, overruled, embedding=_sparse_vector((8, 1.0)))
+    upsert_document(conn, overruling, embedding=_sparse_vector((9, 1.0)))
+    write_judgment(driver, overruled)
+    write_judgment(driver, overruling)
+    _overrule(driver, "test:j-overruled", "test:j-overruling")
+
+    rendered = render_good_law(is_still_good_law("test:j-overruled"))
+
+    assert "test:j-overruling" in rendered
+    assert "overruled" in rendered.lower()

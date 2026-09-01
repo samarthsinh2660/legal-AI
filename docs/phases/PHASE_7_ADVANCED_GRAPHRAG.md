@@ -274,6 +274,17 @@ returns DOUBTED.
   OVERRULED       0
 ```
 
+Rebuilt 2026-09-01 after the 2015 deepening, over the reporter tables
+rather than the model:
+
+```
+3,256 edges treated (3,851 judgments carry a table)
+  CONSIDERED     2543
+  FOLLOWED        624
+  DISTINGUISHED    87
+  OVERRULED         2
+```
+
 ------------------------------------------------------------------------
 
 ## 4. Measured, and what it settled
@@ -435,13 +446,31 @@ change the product.
 
 ### Measurement gaps
 
-**No OVERRULED case in the treatment eval.** The corpus holds no
-reporter-labelled overruling where the overruled judgment is also stored, so
-the label whose errors are worst is unscored. The classifier is shown not to
-*invent* overrulings; it is not shown to *catch* one. Closing this needs
-either deeper Supreme Court coverage until an overruled pair lands, or a
-hand-built fixture from known overrulings (Puttaswamy over Kharak Singh,
-say). Until then the product copy must not imply the check is complete.
+**No OVERRULED case in the treatment eval.** The 150-case eval set holds
+no reporter-labelled overruling, so the model's recall on the label whose
+errors are worst is still unscored. The classifier is shown not to *invent*
+overrulings; it is not shown to *catch* one. This is narrower than it was
+--- see below, the corpus now holds two --- but two pairs are not an eval
+set, and the model is barred from the label anyway, so what is unscored is
+a path nothing in production takes.
+
+**Closed 2026-09-01: the DOUBTED path now runs on a real negative.**
+Deepening 2015 Supreme Court coverage (60 -> 700 judgments) landed the
+first overruled pair whose *both* ends we hold:
+
+```
+PRAKASH & ORS. v. PHULAVATI & ORS.        [2015] 12 SCR 579
+  overruled by VINEETA SHARMA v. RAKESH SHARMA   (coparcenary)
+TOMASO BRUNO & ANR. v. STATE OF U.P.
+  overruled by ARJUN PANDITRAO KHOTKAR            (s.65B certificates)
+```
+
+Both came from the reporter's own Case Law Reference table, not the model.
+`is_still_good_law` returns DOUBTED for each, `is_a_warning` is true, and
+the reader line names the overruling judgment. Before this the DOUBTED
+branch had only ever been asserted about a synthetic tuple; the seam
+between a Neo4j edge and the badge was untested. `tests/tools/`
+`test_tools_graph.py` now pins it over a real edge.
 
 **Authority ranking is unscored.** It returns the right cases by inspection
 -- P. Mohanraj on NI Act s.138, Vidya Drolia on arbitration -- but there is
