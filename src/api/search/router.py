@@ -17,6 +17,20 @@ from api.utils.response import respond, success
 
 router = APIRouter(prefix="/search", tags=["search"])
 
+
+def _statutory_phrasing(question: str) -> str | None:
+    """`question` in the vocabulary a statute uses, or None.
+
+    The planner's own call, so search and chat rewrite the same way. It is
+    one model call, which is why search is slower than it was; the raw
+    phrasing is still searched alongside, so nothing is lost when the
+    rewrite is wrong.
+    """
+    from legal_ai.agents.research_plan import plan_research
+
+    angles = plan_research(question, max_angles=1)
+    return angles[0].query if angles else None
+
 MAX_RESULTS = 50
 
 
@@ -37,15 +51,28 @@ async def search(
     about them, so there is nothing to check; a client must not render them
     with the badges an answer's citations carry.
     """
-    from legal_ai.retrieval.hybrid import hybrid_search
+    from legal_ai.retrieval import hybrid
     from legal_ai.retrieval.metadata import MetadataFilters
 
     if not q.strip():
         return respond(invalid_request("A search needs something to search for."))
 
     filters = MetadataFilters(document_type=None if kind == "all" else kind)
+
+    # A statute is written in statutory words and searched for in a
+    # lawyer's. Searching both and fusing scores MRR 0.404 against 0.333
+    # for the reader's phrasing alone. Chat has done this since 2026-09-02;
+    # search passing the raw phrase made the same corpus answer worse here.
+    query, also = q.strip(), None
     try:
-        results = hybrid_search(q.strip(), limit=limit, filters=filters)
+        rewritten = _statutory_phrasing(q.strip())
+    except Exception:
+        rewritten = None
+    if rewritten and rewritten != q.strip():
+        query, also = rewritten, q.strip()
+
+    try:
+        results = hybrid.hybrid_search(query, limit=limit, filters=filters, also=also)
     except Exception:
         # Retrieval reaches two stores and an embedder; a reader gets a
         # sentence, and the traceback stays in the log.

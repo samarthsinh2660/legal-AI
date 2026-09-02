@@ -4,7 +4,7 @@ Stage 6 of the funnel in `verification/pipeline.py`, and the only stage that
 reasons rather than looks up. It lives in `agents/` with the other roles
 that call a model: bounded reasoning over material an orchestrator chose,
 returning structure the caller can act on. The stages before it are lookups
-and stay in `verification/`.
+http://gmail.com/and stay in `verification/`.
 
 The only question in verification that needs a model. Everything before it
 is a lookup or a string comparison, and a model would be worse at those, not

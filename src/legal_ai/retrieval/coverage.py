@@ -1,6 +1,9 @@
-"""Codes a question names that the corpus does not hold.
+"""What a question reaches for that the corpus does not hold.
 
-The register is empty. All three criminal codes repealed in 2023 -- the
+Two gaps. A **repealed code** whose replacement we hold, and a subject
+worked out in **state-made rules**, of which we hold none at all.
+
+The repealed register is empty. All three criminal codes repealed in 2023 -- the
 IPC, the CrPC and the Indian Evidence Act -- were ingested on 2026-09-02
 (scripts/ingest_repealed_codes.py), and they were the only entries. There
 is nothing left to warn about, so every question now gets no note.
@@ -26,10 +29,33 @@ import re
 _REPEALED: tuple[tuple[re.Pattern[str], str, str], ...] = ()
 
 
+# Subjects worked out in state-made rules rather than the central Act. The
+# corpus holds central legislation only -- no state Act, no state rule -- so
+# on these the parent Act gives the framework and never the number the
+# reader wants. Same list as `context.clarification`, which asks *which*
+# state; this says we would not hold it either way.
+_STATE_MADE = re.compile(
+    r"\b(rera|real estate|builder|promoter|flat|apartment|possession|"
+    r"rent|landlord|tenant|eviction|lease deed|"
+    r"stamp duty|registration fee|land revenue|mutation|"
+    r"shops? and establishment|profession tax)\b",
+    re.IGNORECASE,
+)
+
+_STATE_NOTE = (
+    "This corpus holds central legislation only. The rules under this law "
+    "are made by each state, and none of them are in it, so what follows is "
+    "the central Act's framework rather than the rate, period or fee your "
+    "state prescribes. Check the state rules before relying on a number."
+)
+
+
 def coverage_note(question: str | None) -> str | None:
     """A sentence naming what we do not hold, or None.
 
-    One note, for the first code matched. Two would bury the point.
+    One note only. A repealed code is reported ahead of a state-rules gap:
+    both are true of a question that names both, and the specific one is
+    worth more of the reader's attention.
     """
     text = (question or "").strip()
     if not text:
@@ -44,4 +70,7 @@ def coverage_note(question: str | None) -> str | None:
                 f"the older code, so check the section number against it "
                 f"rather than relying on what follows."
             )
+
+    if _STATE_MADE.search(text):
+        return _STATE_NOTE
     return None

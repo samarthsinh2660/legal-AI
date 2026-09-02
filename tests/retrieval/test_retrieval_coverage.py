@@ -36,9 +36,8 @@ def test_the_criminal_procedure_code_is_no_longer_a_gap():
     assert coverage_note("anticipatory bail under the Code of Criminal Procedure") is None
 
 
-def test_a_question_naming_no_repealed_code_gets_no_note():
+def test_a_question_naming_no_gap_at_all_gets_no_note():
     for question in (
-        "Can a homebuyer claim a refund under RERA?",
         "What does Section 138 of the Negotiable Instruments Act require?",
         "What is the limitation period for recovery of money?",
     ):
@@ -65,3 +64,53 @@ def test_an_entry_still_produces_a_note(monkeypatch):
     note = coverage_note("oppression under the Companies Act, 1956")
     assert note and "Companies Act, 2013" in note
     assert coverage_note("oppression under the Companies Act, 2013") is None
+
+
+# --- state-made rules -------------------------------------------------------
+#
+# The corpus holds Central legislation only: zero state Acts, zero rules.
+# RERA, rent control and stamp duty are all worked out in state rules, so a
+# question about them is answered from the parent Act alone -- which is the
+# framework, not the number the reader wants. Saying nothing about that is
+# the silent degradation the whole system is built to avoid.
+
+def test_a_rera_question_says_the_state_rules_are_not_held():
+    note = coverage_note("What interest rate must a promoter pay on a refund?")
+    assert note
+    assert "state" in note.lower()
+    assert "central" in note.lower()
+
+
+def test_rent_and_stamp_duty_are_recognised_too():
+    for question in (
+        "How much notice must a landlord give before eviction?",
+        "What is the stamp duty on a lease deed?",
+    ):
+        assert coverage_note(question), question
+
+
+def test_a_purely_central_question_gets_no_state_note():
+    for question in (
+        "What does Section 138 of the Negotiable Instruments Act require?",
+        "What is the punishment for murder?",
+    ):
+        assert coverage_note(question) is None, question
+
+
+def test_a_repealed_code_would_win_over_the_state_note(monkeypatch):
+    """One note, and the more specific fact earns it.
+
+    The repealed register is empty -- all three codes are held -- so this
+    exercises the precedence with a stand-in rather than corpus state,
+    which is what will still be true when the next entry is added."""
+    import re
+
+    from legal_ai.retrieval import coverage
+
+    monkeypatch.setattr(coverage, "_REPEALED", (
+        (re.compile(r"\bMade-Up Code\b", re.IGNORECASE),
+         "the Made-Up Code, 1900", "the Replacement Act, 2020"),
+    ))
+
+    note = coverage.coverage_note("stamp duty on a lease under the Made-Up Code")
+    assert "Made-Up Code" in note
