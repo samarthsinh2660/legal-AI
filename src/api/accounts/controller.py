@@ -12,6 +12,8 @@ them.
 
 from __future__ import annotations
 
+import logging
+
 import os
 
 from fastapi import Header
@@ -40,6 +42,8 @@ def _no_secret():
     return service_unavailable(
         "auth_unavailable", "Authentication is not configured on this server."
     )
+
+log = logging.getLogger(__name__)
 
 
 # Burned when the address is unknown, so that path costs the same as a
@@ -73,7 +77,14 @@ def register(conn, email: str, password: str) -> Result:
 
 
 def login(conn, email: str, password: str) -> Result:
-    """Verify credentials and return a signed access token."""
+    """Verify credentials and return a signed access token.
+
+    Sign-ins are audited here rather than in `middleware.audit`, which is
+    where every other event is recorded. It has to be: `/auth/login` is a
+    public path, so nobody is attached to the request by the time the
+    middleware runs, and this is the only place that learns who the
+    attempt was for.
+    """
     if not _secret():
         return _no_secret()
     ensure_account_schema(conn)
@@ -82,10 +93,41 @@ def login(conn, email: str, password: str) -> Result:
         # Hash anyway: returning early here is a timing oracle for which
         # addresses exist, however identical the response text is.
         verify_password(password or "", _DUMMY_HASH)
+        # Nothing is recorded: there is no account to attribute it to, and
+        # a row keyed by the address would turn the trail into a register
+        # of who does *not* have an account here.
         return invalid_credentials()
     if not verify_password(password or "", user.password_hash):
+        _audit(conn, user.user_id, 401)
         return invalid_credentials()
+    _audit(conn, user.user_id, 200)
     return Ok(issue_access_token(user.user_id, secret=_secret()))
+
+
+def _audit(conn, user_id: str, status: int) -> None:
+    """Record a sign-in attempt. Written before the reply, on purpose.
+
+    This costs the known-address branch about 5ms that the unknown-address
+    branch does not pay (61.8ms against 57.0ms, measured 2026-09-02), which
+    is a weak account-enumeration oracle of the kind `_DUMMY_HASH` exists
+    to close. It is accepted rather than removed: `POST /auth/register`
+    already answers the same question outright with a 409, so the timing
+    tells an attacker nothing new -- and writing the row in a background
+    thread to equalise it would lose sign-in events whenever the process
+    stopped, which is the one thing an audit trail may not do.
+
+    No ensure_audit_schema: `CREATE TABLE IF NOT EXISTS` takes a lock even
+    when it does nothing, and this is the hottest unauthenticated route --
+    CLAUDE.md section 8. Startup creates the table.
+
+    A failure here must not stop the sign-in; the gap is loud in the logs.
+    """
+    from api.audit.repository import record
+
+    try:
+        record(conn, user_id, "sign-in", "account", None, status)
+    except Exception:
+        log.error("audit: could not record sign-in for %s", user_id, exc_info=True)
 
 
 def current_user_id(authorization: str = Header(default="")) -> Result:

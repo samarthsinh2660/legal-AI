@@ -413,6 +413,62 @@ Read-only. There is no write path, and the corpus is not a reader's to edit.
 
 ---
 
+## 4.4 The audit trail
+
+### `GET /audit?limit=&offset=`
+
+```json
+{ "success": true, "data": { "items": [
+  { "event_id": 41, "action": "read", "resource_type": "case",
+    "resource_id": "5a4759f7...", "status": 404,
+    "at": "2026-09-02T09:14:22Z" }
+], "total": 128, "limit": 50, "offset": 0, "has_more": true } }
+```
+
+Your own events, newest first. There is no route that reads another user's
+trail: no firm-administrator role exists yet, and adding the route before
+the role would be an access-control hole dressed as a feature.
+
+Events are written by middleware, so a route cannot forget to record one.
+Sign-ins are the exception and are recorded in the accounts controller --
+`/auth/login` is public, so nobody is attached to the request by the time
+the middleware runs, and that is the only place that learns who the attempt
+was for.
+
+**A refused request is recorded as refused.** A 404 on someone else's case
+is the row a firm looks for first.
+
+**The trail holds no privileged content** -- no question, no answer, no
+document text. All of that is stored once already under the user's own row,
+and a second copy here would be another place for it to leak from.
+
+Append-only: nothing updates or deletes an event.
+
+Reading the trail is itself recorded: for a compliance feature, "who read
+the trail" is the row a firm asks for.
+
+| Not recorded | Why |
+|---|---|
+| `/health`, `/docs` | a liveness probe every ten seconds buries the rest |
+| a sign-in for an unknown address | no account to attribute it to, and a row keyed by the address would be a register of who has *no* account here |
+| an unauthenticated request to a protected route | auth refuses it before the audit layer runs |
+| `/auth/me`, `/auth/logout` | no resource id to record; storing the path segment (`"me"`) would fill the resource index with junk |
+| a request refused by the rate limiter | the 429 is returned before auth identifies anyone |
+
+**Known limits.**
+
+- A failed sign-in against a *real* address is recorded, so anyone who
+  knows an address can append 401 rows to that account's trail, one per
+  attempt, bounded only by the per-address rate limit. Recording them is
+  right; the trail has no retention or coalescing yet.
+- Recording a sign-in costs the known-address branch about 5ms the
+  unknown-address branch does not pay, which is a weak enumeration oracle.
+  It is accepted because `POST /auth/register` already answers the same
+  question with a 409, and because writing the row in the background to
+  equalise it would lose events when the process stops.
+
+---
+
 ## 5. `GET /health`
 
 Unauthenticated and never rate limited: a liveness probe runs outside any

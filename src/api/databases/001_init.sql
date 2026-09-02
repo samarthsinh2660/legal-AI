@@ -221,6 +221,29 @@ CREATE INDEX IF NOT EXISTS messages_thread_idx
 
 -- --------------------------------------------------------------- accounts
 
+-- Who did what, to which matter, and when. A firm will not put client data
+-- in a tool it cannot audit. Append-only: never updated, never deleted.
+--
+-- Deliberately holds no question, answer or document text. All of that is
+-- stored once under the user's own row already, and a second copy here
+-- would be another place for privileged material to leak from.
+CREATE TABLE IF NOT EXISTS audit_events (
+    event_id      BIGSERIAL PRIMARY KEY,
+    user_id       TEXT NOT NULL,
+    action        TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id   TEXT,
+    status        INT NOT NULL,
+    at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- "What did this user touch", and its mirror, "who touched this matter".
+CREATE INDEX IF NOT EXISTS audit_events_user_idx
+    ON audit_events (user_id, event_id DESC);
+CREATE INDEX IF NOT EXISTS audit_events_resource_idx
+    ON audit_events (resource_type, resource_id, event_id DESC);
+
+
 -- Email is stored lower-cased, and unique, so one mailbox cannot become two
 -- accounts. Ids are random rather than sequential: a caller holding one
 -- valid id must not be able to guess its neighbours.

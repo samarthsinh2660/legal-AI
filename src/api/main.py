@@ -31,6 +31,9 @@ from api.databases.postgres import connection
 from api.graph.router import router as graph_router
 from api.search.router import router as search_router
 from api.documents.router import router as documents_router
+from api.audit.repository import ensure_audit_schema
+from api.audit.router import router as audit_router
+from api.middleware.audit import AuditMiddleware
 from api.middleware.auth import AuthMiddleware
 from api.middleware.rate_limit import RateLimiter, RateLimitMiddleware
 from api.schemas import HealthResponse, Success
@@ -84,9 +87,12 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
         description="Indian legal research over primary sources.",
         version="0.1.0",
     )
-    # Added first, so it sits INSIDE the rate limiter: an unauthenticated
-    # flood should be turned away by the cheap check, not after a token
-    # verification and a database read.
+    # Added first, so it runs innermost -- by then AuthMiddleware has set
+    # request.state.user_id and there is someone to attribute the event to.
+    application.add_middleware(AuditMiddleware)
+
+    # An unauthenticated flood should be turned away by the cheap check,
+    # not after a token verification and a database read.
     application.add_middleware(AuthMiddleware)
     application.add_middleware(RateLimitMiddleware, limiter=limiter)
 
@@ -170,11 +176,13 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
                 ensure_case_schema(conn)
                 ensure_case_file_schema(conn)
                 ensure_thread_schema(conn)
+                ensure_audit_schema(conn)
         except Exception:
             # A database that is down must not stop the process starting --
             # it has to come up to report itself unhealthy.
             log.warning("startup: could not ensure chat schema", exc_info=True)
 
+    application.include_router(audit_router)
     application.include_router(accounts_router)
     application.include_router(threads_router)
     application.include_router(cases_router)
