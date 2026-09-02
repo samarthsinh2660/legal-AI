@@ -10,6 +10,7 @@ import { PageLoader } from "@/components/molecules/loading";
 import { useResearchThread } from "../hooks/useResearchThread";
 import { MessageBubble } from "./message-bubble";
 import { ProgressSteps } from "./progress-steps";
+import { ThreadCaseBanner } from "./thread-case-banner";
 import { VerificationToggle } from "./verification-toggle";
 
 /**
@@ -62,6 +63,8 @@ export function ResearchThread({
 
   return (
     <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-4">
+      <ThreadCaseBanner threadId={threadId} />
+
       <div className="flex-1 space-y-4">
         {messages.length === 0 && !isSending && (
           <EmptyState message="Ask your first question below." />
