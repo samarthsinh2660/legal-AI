@@ -33,6 +33,10 @@ type AuthContextValue = {
    *  routing on `!user` before this settles bounces a signed-in user to
    *  the login screen on every refresh. */
   isLoading: boolean;
+  /** Set when a stored token could not be checked because the server was
+   *  unreachable. The session may be perfectly good, so this is not the
+   *  same as being signed out and must not be treated as it. */
+  unreachable: boolean;
   signIn: (credentials: Credentials) => Promise<void>;
   signUp: (credentials: Credentials) => Promise<void>;
   signOut: () => Promise<void>;
@@ -43,6 +47,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [unreachable, setUnreachable] = useState(false);
   const queryClient = useQueryClient();
   const router = useRouter();
 
@@ -76,9 +81,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // A 401 means the token is spent: drop it. Anything else (server
         // down, offline) must not sign the user out -- their token may be
         // perfectly good.
-        if (!cancelled && error instanceof RequestError && error.status === 401) {
+        if (cancelled) return;
+        if (error instanceof RequestError && error.status === 401) {
           clear();
+          return;
         }
+        // The token is still theirs. Say the server is unreachable rather
+        // than showing them the signed-out screen.
+        setUnreachable(true);
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -93,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (credentials: Credentials) => {
       const session = await authService.login(credentials);
       window.localStorage.setItem(TOKEN_KEY, session.access_token);
+      setUnreachable(false);
       // Read the identity back rather than assuming it from the form, so
       // `user.email` is the stored, lower-cased one.
       setUser(await authService.me());
@@ -115,8 +126,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clear, router]);
 
   const value = useMemo(
-    () => ({ user, isLoading, signIn, signUp, signOut }),
-    [user, isLoading, signIn, signUp, signOut],
+    () => ({ user, isLoading, unreachable, signIn, signUp, signOut }),
+    [user, isLoading, unreachable, signIn, signUp, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
