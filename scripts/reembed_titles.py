@@ -10,8 +10,9 @@ it from MISS to rank 2.
 The title is embedded, not stored: the passage shown to the model is
 unchanged, so this rewrites vectors only.
 
-Sections only. Judgments are 345,761 chunks against 17,867 -- 20 hours
-against one -- and a case name is usually already in the body text.
+`--judgments` extends it to case law. That is 345,761 chunks against
+17,867, so it runs for hours rather than minutes; sections alone were done
+first because a statute's title is its whole semantic handle.
 
 Resumable: re-running continues where an interrupted run stopped, because
 progress is a row in `reembed_title_progress`, not a counter in memory.
@@ -42,13 +43,13 @@ def _ensure_progress_table(conn) -> None:
     conn.commit()
 
 
-def _pending(conn, limit: int) -> list[tuple[str, str, str]]:
+def _pending(conn, limit: int, types: list[str]) -> list[tuple[str, str, str]]:
     return conn.execute(
         """
         SELECT ch.chunk_id, ch.text, coalesce(d.title, '')
         FROM document_chunks ch
         JOIN documents d USING (document_id)
-        WHERE d.document_type = 'section'
+        WHERE d.document_type = ANY(%s)
           AND coalesce(d.title, '') <> ''
           AND NOT EXISTS (
             SELECT 1 FROM reembed_title_progress p WHERE p.chunk_id = ch.chunk_id
@@ -56,28 +57,32 @@ def _pending(conn, limit: int) -> list[tuple[str, str, str]]:
         ORDER BY ch.chunk_id
         LIMIT %s
         """,
-        (limit,),
+        (types, limit),
     ).fetchall()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None, help="stop after N chunks")
+    parser.add_argument("--judgments", action="store_true",
+                        help="include judgment chunks (345,761 of them)")
     args = parser.parse_args()
+    types = ["section", "judgment"] if args.judgments else ["section"]
 
     conn = get_connection()
     _ensure_progress_table(conn)
 
     total = conn.execute(
         """SELECT count(*) FROM document_chunks ch JOIN documents d USING (document_id)
-           WHERE d.document_type = 'section' AND coalesce(d.title, '') <> ''"""
+           WHERE d.document_type = ANY(%s) AND coalesce(d.title, '') <> ''""",
+        (types,),
     ).fetchone()[0]
-    print(f"model={model_name()} | {total} section chunks", flush=True)
+    print(f"model={model_name()} | {total} chunks | types={types}", flush=True)
 
     done = 0
     started = time.time()
     while True:
-        rows = _pending(conn, BATCH)
+        rows = _pending(conn, BATCH, types)
         if not rows:
             break
         # Read, then release, then embed. Holding the transaction across the

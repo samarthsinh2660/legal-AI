@@ -1,11 +1,15 @@
 """Codes a question names that the corpus does not hold.
 
-Of the three criminal codes repealed in 2023 only the Indian Evidence Act
-is still absent; the IPC and the CrPC were ingested on 2026-09-02
-(scripts/ingest_ipc_crpc.py). An offence committed before 1 July 2024 is
-still charged under the old code, so asking about Evidence Act s.65B is a
-live question, not a stale one -- and answering it from the replacement
-without saying so would be a claim about the law we cannot make.
+The register is empty. All three criminal codes repealed in 2023 -- the
+IPC, the CrPC and the Indian Evidence Act -- were ingested on 2026-09-02
+(scripts/ingest_repealed_codes.py), and they were the only entries. There
+is nothing left to warn about, so every question now gets no note.
+
+The mechanism stays because the entry criterion below is narrow and
+mechanical, and the corpus is a fraction of Indian law: the next
+repealed-code-with-a-held-replacement gets one tuple here rather than a
+rebuild of a path that reaches the reader through DraftAnswer, the API
+payload and the answer view.
 
 Deterministic: whether we hold an Act is a fact about our shelf, not an
 ambiguity. No model call, so the note costs nothing.
@@ -19,13 +23,7 @@ import re
 # absent and have a held replacement belong here -- a note naming a
 # replacement we do not hold either would send the reader nowhere, and a
 # note about a code we now hold would send them away from it.
-_REPEALED = (
-    (
-        re.compile(r"\b(indian evidence act|evidence act, 1872)\b", re.IGNORECASE),
-        "the Indian Evidence Act, 1872",
-        "the Bharatiya Sakshya Adhiniyam, 2023",
-    ),
-)
+_REPEALED: tuple[tuple[re.Pattern[str], str, str], ...] = ()
 
 
 def coverage_note(question: str | None) -> str | None:

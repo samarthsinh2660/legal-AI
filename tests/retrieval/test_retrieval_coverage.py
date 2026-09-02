@@ -1,30 +1,29 @@
 """Naming a code we do not hold.
 
-The corpus holds the Bharatiya Sakshya Adhiniyam and not the Indian
-Evidence Act it replaced. An offence committed before 1 July 2024 is still
-tried under the old law, so a lawyer asking about s.65B is asking a live
-question -- and search answered it with unrelated near-misses instead of
-saying we do not hold it.
+There are none left. The IPC, the CrPC and the Indian Evidence Act were
+all ingested by 2026-09-02, so the register is empty and every question
+gets no note. The tests below hold that line, because a note sending a
+reader to the BNS or the BSA for a section we now carry verbatim is a
+worse error than no note at all.
 
-The IPC and the CrPC were ingested on 2026-09-02, so naming either is no
-longer a gap; the tests below hold that line, because a note sending a
-reader to the BNS for a section we now carry verbatim is a worse error
-than no note at all.
+The last test keeps the empty mechanism honest: it puts one entry back and
+checks the sentence still reaches the caller, so the path does not rot
+while unused.
 """
 
+import re
+
+import legal_ai.retrieval.coverage as coverage
 from legal_ai.retrieval.coverage import coverage_note
 
 
-def test_the_evidence_act_is_recognised():
-    note = coverage_note("Section 65B of the Indian Evidence Act")
-    assert note and "Bharatiya Sakshya Adhiniyam" in note
+def test_no_code_is_a_gap_any_more():
+    assert coverage._REPEALED == ()
 
 
-def test_the_note_says_the_old_code_still_governs_older_offences():
-    """Without this the note reads as "that law is gone", which is wrong and
-    would mislead on every pre-July-2024 matter."""
-    note = coverage_note("Indian Evidence Act 1872")
-    assert "1 July 2024" in note or "before" in note.lower()
+def test_the_evidence_act_is_no_longer_a_gap():
+    assert coverage_note("Section 65B of the Indian Evidence Act") is None
+    assert coverage_note("Indian Evidence Act 1872") is None
 
 
 def test_the_penal_code_is_no_longer_a_gap():
@@ -46,11 +45,23 @@ def test_a_question_naming_no_repealed_code_gets_no_note():
         assert coverage_note(question) is None, question
 
 
-def test_naming_the_replacement_gets_no_note():
-    """Asking about the code we DO hold is not a coverage gap."""
+def test_naming_a_replacement_gets_no_note():
     assert coverage_note("What does BSA section 63 say about electronic records?") is None
 
 
 def test_an_empty_question_is_not_a_gap():
     assert coverage_note("") is None
     assert coverage_note(None) is None
+
+
+def test_an_entry_still_produces_a_note(monkeypatch):
+    monkeypatch.setattr(
+        coverage,
+        "_REPEALED",
+        ((re.compile(r"\bcompanies act, 1956\b", re.IGNORECASE),
+          "the Companies Act, 1956",
+          "the Companies Act, 2013"),),
+    )
+    note = coverage_note("oppression under the Companies Act, 1956")
+    assert note and "Companies Act, 2013" in note
+    assert coverage_note("oppression under the Companies Act, 2013") is None
