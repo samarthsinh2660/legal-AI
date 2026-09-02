@@ -23,6 +23,7 @@ class Intent(str, Enum):
     GREETING = "GREETING"
     THANKS = "THANKS"
     CAPABILITY = "CAPABILITY"
+    PLEASANTRY = "PLEASANTRY"
 
     # Anything else, including everything ambiguous. The gate only fires on
     # what it positively recognises.
@@ -33,6 +34,24 @@ _GREETING = re.compile(
     r"(hi|hello|hey|yo|namaste|good\s+(morning|afternoon|evening|day))"
     r"([\s,!.]+(there|again|team|sir|ma'?am))?"
     r"([\s,!.]*(are\s+you\s+there|you\s+there|how\s+are\s+you))?",
+    re.IGNORECASE,
+)
+
+# "how are you" on its own. It used to be reachable only as the optional
+# tail of _GREETING, so "hi how are you" was caught and a bare "how are
+# you" was not: it fell through to the router, which chose ANSWER, and
+# recall correctly found nothing in the thread that addressed it. The
+# reader got "I could not answer that from this conversation" in reply to
+# a pleasantry. Found 2026-09-03.
+_PLEASANTRY = re.compile(
+    r"((how\s+(are\s+you|are\s+things|is\s+it\s+going|do\s+you\s+do)"
+    r"|how'?s\s+(it\s+going|everything|life)"
+    r"|what'?s\s+up|whats\s+up|sup"
+    r"|are\s+you\s+(there|ok(ay)?|alright|working|awake)"
+    r"|you\s+there"
+    r"|nice\s+to\s+meet\s+you"
+    r"|good\s+to\s+see\s+you)"
+    r"([\s,!.]*(doing|today|mate|sir|ma'?am|buddy|bro))?)",
     re.IGNORECASE,
 )
 
@@ -61,6 +80,11 @@ _REPLIES = {
         "rests on."
     ),
     Intent.THANKS: "You're welcome. Ask another question whenever you need to.",
+    Intent.PLEASANTRY: (
+        "I'm well, thank you. Ask a legal question and I will search the "
+        "statutes and judgments we hold, then show you what each part of "
+        "the answer rests on."
+    ),
     Intent.CAPABILITY: (
         "I research Indian law over primary sources: Central statutes from "
         "India Code and Supreme Court judgments, searched for each question "
@@ -94,6 +118,9 @@ def classify(message: str | None) -> Intent:
     for intent, pattern in (
         (Intent.GREETING, _GREETING),
         (Intent.THANKS, _THANKS),
+        # Before CAPABILITY: "how do you do" is a pleasantry, and
+        # CAPABILITY's "how do you work" is close enough to catch it.
+        (Intent.PLEASANTRY, _PLEASANTRY),
         (Intent.CAPABILITY, _CAPABILITY),
     ):
         if pattern.fullmatch(stripped):

@@ -6,6 +6,8 @@ and answered on the inherent powers of courts under s.151 CPC. The planner
 had no way to say "not a legal question", so it invented an angle.
 """
 
+import pytest
+
 from legal_ai.conversation.intent import Intent, classify, reply_for
 
 
@@ -67,3 +69,53 @@ def test_the_capability_reply_says_what_the_corpus_actually_holds():
     assert "judgment" in reply or "statute" in reply
     # It must not promise the whole of Indian law.
     assert "not a lawyer" in reply or "not legal advice" in reply
+
+
+# --- pleasantries ---------------------------------------------------------
+#
+# "how are you" was reachable only as the optional tail of the greeting
+# pattern, so "hi how are you" was caught and the bare form was not. It fell
+# through to the router, which chose ANSWER, and recall correctly found
+# nothing in the thread addressing it -- so a pleasantry was answered with
+# "I could not answer that from this conversation." Found 2026-09-03.
+
+@pytest.mark.parametrize("message", [
+    "how are you",
+    "how are you?",
+    "How are you doing?",
+    "hows it going",
+    "how is it going",
+    "what's up",
+    "whats up",
+    "are you there",
+    "are you working",
+    "you there?",
+    "nice to meet you",
+    "good to see you",
+])
+def test_a_bare_pleasantry_is_not_researched(message):
+    assert classify(message) is Intent.PLEASANTRY
+    assert reply_for(Intent.PLEASANTRY)
+
+
+@pytest.mark.parametrize("message", [
+    "how does anticipatory bail work",
+    "how are the courts treating section 138",
+    "what is up with section 420 prosecutions",
+    "are you allowed to appeal a section 143A order",
+])
+def test_a_legal_question_that_starts_like_one_is_still_researched(message):
+    """The gate fires only on what it positively recognises whole. Swallowing
+    a question because it opens with 'how are' would be far worse than
+    letting a pleasantry through."""
+    assert classify(message) is Intent.LEGAL
+    assert reply_for(Intent.LEGAL) is None
+
+
+def test_the_pleasantry_reply_answers_the_question_it_was_asked():
+    """"Hello." in reply to "how are you" reads as a bot that did not
+    listen."""
+    reply = reply_for(Intent.PLEASANTRY).lower()
+    assert "i'm well" in reply or "i am well" in reply
+    # And still points at what this is for.
+    assert "legal question" in reply
