@@ -80,3 +80,27 @@ def test_a_search_that_finds_nothing_is_an_empty_list_not_an_error(client):
     body = client.get("/search?q=zzzqqqxxx nonexistent phrase&limit=5")
     assert body.status_code == 200
     assert isinstance(body.json()["data"], list)
+
+
+def test_a_failed_rewrite_still_searches_the_reader_s_words(client, monkeypatch):
+    """The rewrite is a model call. When it fails the search must degrade to
+    what it always did, not to nothing."""
+    import api.search.router as search_router
+    import legal_ai.retrieval.hybrid as hybrid
+
+    seen = {}
+    monkeypatch.setattr(
+        search_router, "_statutory_phrasing",
+        lambda q: (_ for _ in ()).throw(RuntimeError("model down")),
+    )
+
+    def fake(query, **kw):
+        seen["query"], seen["also"] = query, kw.get("also")
+        return []
+
+    monkeypatch.setattr(hybrid, "hybrid_search", fake)
+    response = client.get("/search?q=cheque+bounce")
+
+    assert response.status_code == 200
+    assert seen["query"] == "cheque bounce"
+    assert seen["also"] is None
