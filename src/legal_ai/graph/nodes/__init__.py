@@ -128,6 +128,7 @@ def research(state: ResearchState) -> dict:
     )
     return {
         "findings": result.evidence,
+        "searched": bool(result.angles),
         "research_rounds": state.get("research_rounds", 0) + 1,
     }
 
@@ -149,6 +150,7 @@ def analyst(state: ResearchState) -> dict:
         state["question"],
         list(state.get("findings") or []),
         documents=tuple(context.documents) if context is not None else (),
+        searched=state.get("searched", True),
     )
     return {"claims": list(result.claims), "analysis": result}
 

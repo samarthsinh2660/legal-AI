@@ -35,6 +35,7 @@ from legal_ai.context.models import DocumentFacts
 from legal_ai.llm.client import generate
 from legal_ai.schemas.answer import AnalysisResult
 from legal_ai.schemas.evidence import Evidence
+from legal_ai.retrieval.evidence_builder import EXTRACT_CHARS
 from legal_ai.schemas.verification import Claim
 
 # Provisions put in front of the model. Beyond this the tail is the least
@@ -43,7 +44,21 @@ MAX_EVIDENCE_SHOWN = 12
 
 # Characters of each provision shown. Enough to state what it provides
 # without pasting an entire Act into the prompt.
-PASSAGE_CHARS = 700
+_UNAVAILABLE = "Retrieved {n} provisions; analysis was unavailable."
+
+# Evidence arrives already budgeted by `retrieval.evidence_builder` -- a
+# section whole, anything longer as its nearest few passages. A smaller cap
+# here would only undo that: it used to be 700, which showed the model the
+# first passage of a multi-passage judgment extract and dropped the rest.
+SECTION_CHARS = 4000
+
+# Said when the planner found no legal issue to search for. Carries no
+# legal disclaimer: there is no legal information here to disclaim.
+OUT_OF_SCOPE = (
+    "I only research Indian law -- statutes and judgments -- so I cannot "
+    "help with that. Ask a legal question and I will search the corpus and "
+    "show you what the answer rests on."
+)
 
 PROMPT = """You are an Indian legal analyst. Below are provisions and
 authorities retrieved for a question, each with an identifier in [brackets].
@@ -75,7 +90,8 @@ Return ONLY JSON:
 
 def _render_evidence(evidence: list[Evidence]) -> str:
     return "\n\n".join(
-        f"[{item.document_id}] {item.title or ''}\n{item.content[:PASSAGE_CHARS]}"
+        f"[{item.document_id}] {item.title or ''}\n"
+        f"{item.content[:max(SECTION_CHARS, EXTRACT_CHARS)]}"
         for item in evidence[:MAX_EVIDENCE_SHOWN]
         if item.document_id
     )
@@ -115,6 +131,7 @@ def analyse(
     question: str,
     evidence: list[Evidence],
     documents: tuple[DocumentFacts, ...] = (),
+    searched: bool = True,
 ) -> AnalysisResult:
     """Claims for `question`, each grounded in retrieved Evidence.
 
@@ -124,6 +141,11 @@ def analyse(
     would not be visible at all.
     """
     if not evidence:
+        # Two different facts. `searched=False` means no angle was planned,
+        # so nothing was looked for; reporting that as an empty corpus
+        # would tell the reader we looked.
+        if not searched:
+            return AnalysisResult(lede=OUT_OF_SCOPE)
         return AnalysisResult(lede="No supporting provisions were retrieved.")
 
     available = {item.document_id for item in evidence if item.document_id}
@@ -140,9 +162,14 @@ def analyse(
             )
         )
     except Exception:
-        return AnalysisResult(
-            lede=f"Retrieved {len(evidence)} provisions; analysis was unavailable."
-        )
+        return AnalysisResult(lede=_UNAVAILABLE.format(n=len(evidence)))
+
+    # An unreadable reply is the same outcome as an unreachable model, and
+    # must not take a different route: `_parse` returns {} rather than
+    # raising, which produced a blank answer indistinguishable from "the
+    # corpus holds nothing".
+    if not parsed:
+        return AnalysisResult(lede=_UNAVAILABLE.format(n=len(evidence)))
 
     claims: list[Claim] = []
     dropped: list[str] = []

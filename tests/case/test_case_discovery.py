@@ -136,7 +136,7 @@ def _plan(monkeypatch, query="q"):
         '[{"angle":"a","query":"%s"}]' % query)
     monkeypatch.setattr(sup, "generate", lambda p, **kw: "s")
     monkeypatch.setattr(sup, "_search",
-        lambda q, limit, filters=None: [_evidence("act:1:sec-18")])
+        lambda q, limit, filters=None, also=None: [_evidence("act:1:sec-18")])
 
 
 def test_a_statute_question_does_not_reach_a_third_party(monkeypatch):
@@ -201,7 +201,7 @@ def test_the_sections_just_found_become_the_second_query(monkeypatch):
 def test_a_duplicate_judgment_is_not_added_twice(monkeypatch):
     _plan(monkeypatch)
     monkeypatch.setattr(sup, "_search",
-        lambda q, limit, filters=None: [_evidence("judgment:ik-1", "judgment")])
+        lambda q, limit, filters=None, also=None: [_evidence("judgment:ik-1", "judgment")])
     monkeypatch.setattr(sup, "_discover",
         lambda *a, **k: [_evidence("judgment:ik-1", "judgment")])
     result = sup.research("what have the courts held")

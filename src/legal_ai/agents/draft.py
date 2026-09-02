@@ -15,7 +15,13 @@ whole payoff for having a verifier at all.
 from __future__ import annotations
 
 from legal_ai.retrieval.authority import Authority, rank_by_authority
-from legal_ai.schemas.answer import AnalysisResult, DraftAnswer
+from legal_ai.retrieval.coverage import coverage_note
+from legal_ai.schemas.answer import (
+    DISCLAIMER,
+    AnalysisResult,
+    DraftAnswer,
+    SourceLink,
+)
 from legal_ai.schemas.evidence import Evidence
 from legal_ai.schemas.verification import Claim, Verdict
 
@@ -130,6 +136,8 @@ def build_answer(
     statutes = [i for i in cited if (by_id.get(i) and (by_id[i].document_type or "") in _STATUTE_TYPES)]
     judgments = [i for i in cited if (by_id.get(i) and (by_id[i].document_type or "") == "judgment")]
 
+    from legal_ai.agents.analyst import OUT_OF_SCOPE
+
     return DraftAnswer(
         question=question,
         lede=analysis.lede,
@@ -141,7 +149,49 @@ def build_answer(
         partially_supported=tuple(partial),
         support_not_checked=skipped_support,
         citations=tuple(sorted(cited)),
+        sources=_sources(sorted(cited), evidence),
+        coverage_note=coverage_note(question) or "",
+        # Nothing legal was said, so there is nothing to disclaim. The
+        # boilerplate under "I cannot help with that" reads as a
+        # non-sequitur.
+        disclaimer="" if analysis.lede == OUT_OF_SCOPE else DISCLAIMER,
     )
+
+
+# A URL pointing at a bundle rather than at one document: judgment year
+# tars, and the single JSON file the IPC and CrPC were parsed from. Both
+# are real sources and neither opens the provision a reader clicked.
+_ARCHIVE = (".tar", ".tar.gz", ".zip", "/tar/", ".json")
+
+# India Code moved to indiacode.gov.in in 2026 and renumbered every handle,
+# so the stored nic.in URLs return 404. Verified 2026-09-01.
+# scripts/repair_india_code_urls.py repointed what it could resolve on
+# 2026-09-02; 28 Acts and their 648 sections still have no exact title match
+# on the new site and keep the dead URL. The test is per row, not per
+# corpus, so those stay withheld while the repaired ones are offered.
+_DEAD_HOSTS = ("indiacode.nic.in",)
+
+
+def _sources(cited: list[str], evidence: list[Evidence]) -> tuple[SourceLink, ...]:
+    """A link per cited id, from the evidence that carried it."""
+    by_id = {item.document_id: item for item in evidence if item.document_id}
+    links = []
+    for document_id in cited:
+        item = by_id.get(document_id)
+        if item is None:
+            continue
+        url = item.provenance.source.url or ""
+        links.append(SourceLink(
+            document_id=document_id,
+            title=item.title or "",
+            citation=item.citation,
+            court=item.court,
+            url=url or None,
+            openable=bool(url)
+            and not any(mark in url for mark in _ARCHIVE)
+            and not any(host in url for host in _DEAD_HOSTS),
+        ))
+    return tuple(links)
 
 
 def render(answer: DraftAnswer) -> str:
@@ -176,6 +226,10 @@ def render(answer: DraftAnswer) -> str:
                      "sources searched, so verify independently:")
         for text in answer.unchecked:
             lines.append(f"- {text}")
+
+    if answer.coverage_note:
+        lines.append("")
+        lines.append(answer.coverage_note)
 
     if answer.support_not_checked:
         lines.append("")

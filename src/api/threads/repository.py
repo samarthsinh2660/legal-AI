@@ -203,6 +203,33 @@ def list_messages(
     return [Message(*row) for row in rows]
 
 
+def recent_answers(
+    conn: psycopg.Connection, thread_id: str, user_id: str, limit: int
+) -> list[dict[str, Any]]:
+    """The structured answers of the last `limit` assistant turns, oldest first.
+
+    The counterpart to `recent_turns`, which drops `answer` because prose is
+    all the rewriter and the router need. Composing a reply out of what the
+    thread established needs the opposite: the claims and their buckets, not
+    the paragraph they were rendered into. Turns that stored no structured
+    answer are absent rather than present-and-empty -- there is nothing in
+    them to carry forward.
+    """
+    rows = conn.execute(
+        """
+        SELECT m.answer
+        FROM messages m
+        JOIN threads t USING (thread_id)
+        WHERE m.thread_id = %s AND t.user_id = %s
+          AND m.role = 'assistant' AND m.answer IS NOT NULL
+        ORDER BY m.message_id DESC
+        LIMIT %s
+        """,
+        (thread_id, user_id, limit),
+    ).fetchall()
+    return [row[0] for row in reversed(rows) if isinstance(row[0], dict)]
+
+
 def set_title(conn: psycopg.Connection, thread_id: str, user_id: str, title: str) -> None:
     """Name the thread from its first message, so a sidebar is readable."""
     conn.execute(

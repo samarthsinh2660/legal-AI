@@ -4,6 +4,7 @@ import pytest
 
 from legal_ai.ingestion.schema import CanonicalDocument, content_hash
 from legal_ai.knowledge.static.chunk_store import (
+    chunk_and_store,
     delete_chunks,
     documents_needing_chunks,
     get_chunks,
@@ -11,6 +12,8 @@ from legal_ai.knowledge.static.chunk_store import (
 )
 from legal_ai.knowledge.static.db import ensure_chunk_schema, ensure_schema, get_connection
 from legal_ai.knowledge.static.embeddings import embed, embedding_dim
+
+EMBEDDING_DIM = embedding_dim()
 from legal_ai.knowledge.static.store import upsert_document
 from legal_ai.retrieval.chunking import Chunk
 from legal_ai.schemas.evidence import Provenance, SourceRef
@@ -91,7 +94,7 @@ def test_documents_needing_chunks_finds_only_long_unchunked_documents(conn):
     upsert_document(conn, _doc("test:c-short", "section", "tiny"), embedding=embed("tiny"))
 
     pending = documents_needing_chunks(conn, min_chars=500)
-    ids = [doc_id for doc_id, _text, _type in pending]
+    ids = [doc_id for doc_id, _text, _type, _title in pending]
 
     assert "test:c-long" in ids
     assert "test:c-short" not in ids
@@ -102,7 +105,7 @@ def test_documents_needing_chunks_excludes_acts(conn):
     # individually; chunking Acts would duplicate them.
     upsert_document(conn, _doc("test:c-act", "act", LONG), embedding=embed(LONG))
 
-    ids = [doc_id for doc_id, _t, _ty in documents_needing_chunks(conn, min_chars=500)]
+    ids = [doc_id for doc_id, _t, _ty, _ti in documents_needing_chunks(conn, min_chars=500)]
     assert "test:c-act" not in ids
 
 
@@ -111,7 +114,7 @@ def test_documents_needing_chunks_skips_already_chunked_documents(conn):
     chunks = [Chunk(text="already done", ordinal=0)]
     upsert_chunks(conn, "test:c-done", chunks, [embed(chunks[0].text)])
 
-    ids = [doc_id for doc_id, _t, _ty in documents_needing_chunks(conn, min_chars=500)]
+    ids = [doc_id for doc_id, _t, _ty, _ti in documents_needing_chunks(conn, min_chars=500)]
     assert "test:c-done" not in ids
 
 
@@ -176,3 +179,72 @@ def test_chunk_and_store_uses_the_judgment_splitter_for_judgments(conn):
 
     labels = [c.label for c in get_chunks(conn, "test:cas-judg")]
     assert any(label and label.isdigit() for label in labels)
+
+
+# --- the title is part of what a chunk means ------------------------------
+#
+# `search_vector` is generated from title || full_text, so keyword search
+# has always covered titles. The vector index never did: 93% of sections had
+# their title in no chunk, so "dishonour of cheque for insufficiency of
+# funds" could not retrieve the section of that exact name. Embedding the
+# title with each chunk moved it from MISS to rank 2.
+
+def test_the_title_is_embedded_with_each_chunk(conn, monkeypatch):
+    embedded: list[str] = []
+
+    def fake_embed_many(texts):
+        embedded.extend(texts)
+        return [[0.0] * EMBEDDING_DIM for _ in texts]
+
+    import legal_ai.knowledge.static.embeddings as embeddings
+    monkeypatch.setattr(embeddings, "embed_many", fake_embed_many)
+
+    upsert_document(conn, _doc("test:ch-titled", "section", "x" * 3000))
+    chunk_and_store(
+        conn,
+        "test:ch-titled",
+        "x" * 3000,
+        "section",
+        max_chars=1000,
+        title="Dishonour of cheque for insufficiency of funds",
+    )
+
+    assert embedded, "nothing was embedded"
+    assert all("Dishonour of cheque" in text for text in embedded)
+
+
+def test_the_stored_passage_does_not_repeat_the_title(conn, monkeypatch):
+    """The title improves the vector; repeating it in every passage would
+    spend prompt budget saying the same thing three times."""
+    import legal_ai.knowledge.static.embeddings as embeddings
+    monkeypatch.setattr(
+        embeddings, "embed_many",
+        lambda texts: [[0.0] * EMBEDDING_DIM for _ in texts],
+    )
+
+    upsert_document(conn, _doc("test:ch-clean", "section", "x" * 3000))
+    chunk_and_store(conn, "test:ch-clean", "y" * 3000, "section",
+                    max_chars=1000, title="A Title")
+
+    stored = get_chunks(conn, "test:ch-clean")
+    assert stored
+    assert all(not c.text.startswith("A Title") for c in stored)
+
+
+def test_a_document_with_no_title_still_chunks(conn, monkeypatch):
+    import legal_ai.knowledge.static.embeddings as embeddings
+    monkeypatch.setattr(
+        embeddings, "embed_many",
+        lambda texts: [[0.0] * EMBEDDING_DIM for _ in texts],
+    )
+
+    upsert_document(conn, _doc("test:ch-untitled", "section", "x" * 3000))
+    assert chunk_and_store(conn, "test:ch-untitled", "z" * 3000, "section",
+                           max_chars=1000) > 0
+
+
+def test_the_pending_row_carries_the_title_the_chunker_needs(conn):
+    upsert_document(conn, _doc("test:c-title-row", "section", LONG))
+    pending = documents_needing_chunks(conn, min_chars=500)
+    row = next(r for r in pending if r[0] == "test:c-title-row")
+    assert row[3] == "Title test:c-title-row"

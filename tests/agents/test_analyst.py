@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pytest
 
 from legal_ai.agents import analyst
+from legal_ai.agents.analyst import analyse
 from legal_ai.schemas.evidence import Evidence, Provenance, SourceRef
 from legal_ai.schemas.verification import Claim
 
@@ -152,3 +153,104 @@ def test_nothing_is_dropped_when_every_citation_is_real(monkeypatch):
         {"text": "a", "evidence_ids": ["act:2158:sec-18"]},
     ]})
     assert analyst.analyse("q", EVIDENCE).dropped_ids == ()
+
+
+def test_a_question_that_was_never_searched_says_so():
+    """Distinct from "we searched and found nothing".
+
+    A greeting or an off-topic message plans no angles, so nothing is
+    retrieved -- but reporting that as a thin corpus tells the reader we
+    looked. Same three-state rule the rest of the system follows.
+    """
+    result = analyse("write me a poem", [], searched=False)
+
+    assert result.claims == ()
+    assert "provisions were retrieved" not in result.lede
+    assert "indian law" in result.lede.lower()
+
+
+def test_an_empty_search_still_reports_a_thin_corpus():
+    result = analyse("a real legal question", [], searched=True)
+
+    assert "No supporting provisions were retrieved." in result.lede
+
+
+def test_a_whole_statute_section_is_not_truncated_in_the_prompt():
+    """`build_evidence` carries a section whole; a render cap sized for a
+    judgment passage would cut the provisos straight back off."""
+    from legal_ai.agents.analyst import _render_evidence
+    from legal_ai.retrieval.evidence_builder import SECTION_CHARS
+
+    section = "The offence. " * 100 + "Provided that notice is given within thirty days."
+    item = Evidence(
+        document_id="act:2189:sec-138",
+        document_type="section",
+        title="Dishonour of cheque",
+        content=section,
+        provenance=Provenance(
+            source=SourceRef(name="India Code", url="https://x", source_type="primary"),
+            retrieved_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            licence="GoI",
+            attribution_required=False,
+        ),
+    )
+
+    rendered = _render_evidence([item])
+
+    assert "thirty days" in rendered
+    assert len(section) <= SECTION_CHARS
+
+
+def test_an_unreadable_reply_says_so_rather_than_answering_blankly(monkeypatch):
+    """A blank answer and "the corpus holds nothing" look identical on
+    screen. The exception path already said so; an unparseable reply took a
+    different route and said nothing at all.
+    """
+    monkeypatch.setattr(analyst, "generate", lambda *a, **kw: "not json at all")
+
+    result = analyse("a question", [_evidence("act:1:sec-1")])
+
+    assert result.claims == ()
+    assert result.lede
+    assert "unavailable" in result.lede.lower()
+
+
+def test_a_reply_with_no_claims_still_reports_its_lede(monkeypatch):
+    """Distinct from unreadable: the model answered and found nothing to
+    claim, which is a real outcome the prompt asks for."""
+    monkeypatch.setattr(
+        analyst, "generate",
+        lambda *a, **kw: '{"lede": "The material does not answer this.", "claims": []}',
+    )
+
+    result = analyse("a question", [_evidence("act:1:sec-1")])
+
+    assert result.claims == ()
+    assert result.lede == "The material does not answer this."
+
+
+def test_a_judgment_extract_is_not_truncated_to_one_passage_in_the_prompt():
+    """`build_evidence` carries several passages of a judgment; a render cap
+    of 700 chars would show the model the first one and throw the rest away."""
+    from legal_ai.agents.analyst import _render_evidence
+    from legal_ai.retrieval.evidence_builder import ELLIPSIS, EXTRACT_CHARS
+
+    extract = ("Held on the first point. " * 40) + f"\n{ELLIPSIS}\n" + \
+              ("Held on the second point. " * 40)
+    item = Evidence(
+        document_id="judgment:x",
+        document_type="judgment",
+        title="X v. Y",
+        content=extract,
+        provenance=Provenance(
+            source=SourceRef(name="SCI", url="https://x", source_type="primary"),
+            retrieved_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            licence="GoI",
+            attribution_required=False,
+        ),
+    )
+
+    rendered = _render_evidence([item])
+
+    assert "second point" in rendered
+    assert len(extract) <= EXTRACT_CHARS

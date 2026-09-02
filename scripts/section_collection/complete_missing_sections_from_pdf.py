@@ -186,7 +186,10 @@ def run() -> None:
             )
             vector = embed(doc.full_text)
             upsert_document(conn, doc, embedding=vector)
-            chunk_and_store(conn, doc.document_id, doc.full_text, doc.document_type)
+            chunk_and_store(
+                conn, doc.document_id, doc.full_text, doc.document_type,
+                title=doc.title,
+            )
             filled += 1
 
         total_filled += filled

@@ -223,11 +223,45 @@ device: what is stored and shown back is what the user typed.
 | `route` | Meaning |
 |---|---|
 | `RESEARCH` | The corpus was searched for this |
-| `ANSWER` | Answered from earlier in the thread |
+| `ANSWER` | Composed from claims already established in this thread |
 
 A UI that renders them identically is making a claim the system did not.
 When in doubt the router researches: answering from memory when fresh law
 was wanted is a wrong answer, researching unnecessarily is only slow.
+
+An `ANSWER` turn is **not a replay of the previous reply**. It is a new
+answer to the question asked, built out of the claims earlier turns stored,
+in the same `answer` shape as a researched one — so §4.1 applies to it
+unchanged. Three properties hold by construction:
+
+- **Every id came from a stored claim.** The model is shown the stored
+  claims numbered and replies with numbers; it never writes an identifier
+  and never rewrites a claim, so a fabricated citation is not representable
+  on this path.
+- **A carried claim keeps its bucket.** An `unchecked` claim re-used in a
+  later turn is still `unchecked`. Nothing is promoted by being re-emitted,
+  and where a text was stored in two buckets the less reassuring one wins.
+- **`support_not_checked` carries forward** from every answer the claims
+  were drawn from.
+
+When the thread holds nothing that answers the question — or the
+composition fails — the reply says so and **`answer` is `null`**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "text": "I could not answer that from this conversation. …",
+    "answer": null,
+    "route": "ANSWER"
+  }
+}
+```
+
+`route: "ANSWER"` with `answer: null` is that outcome and is the one case a
+client should render as a dead end rather than as a result. It does not fall
+back to the previous reply, and it does not quietly research instead: a turn
+that never touched the corpus must not read like one that did.
 
 **The four claim slots stay four slots** inside `answer` -- see §4.1 below.
 
@@ -379,6 +413,62 @@ Read-only. There is no write path, and the corpus is not a reader's to edit.
 
 ---
 
+## 4.4 The audit trail
+
+### `GET /audit?limit=&offset=`
+
+```json
+{ "success": true, "data": { "items": [
+  { "event_id": 41, "action": "read", "resource_type": "case",
+    "resource_id": "5a4759f7...", "status": 404,
+    "at": "2026-09-02T09:14:22Z" }
+], "total": 128, "limit": 50, "offset": 0, "has_more": true } }
+```
+
+Your own events, newest first. There is no route that reads another user's
+trail: no firm-administrator role exists yet, and adding the route before
+the role would be an access-control hole dressed as a feature.
+
+Events are written by middleware, so a route cannot forget to record one.
+Sign-ins are the exception and are recorded in the accounts controller --
+`/auth/login` is public, so nobody is attached to the request by the time
+the middleware runs, and that is the only place that learns who the attempt
+was for.
+
+**A refused request is recorded as refused.** A 404 on someone else's case
+is the row a firm looks for first.
+
+**The trail holds no privileged content** -- no question, no answer, no
+document text. All of that is stored once already under the user's own row,
+and a second copy here would be another place for it to leak from.
+
+Append-only: nothing updates or deletes an event.
+
+Reading the trail is itself recorded: for a compliance feature, "who read
+the trail" is the row a firm asks for.
+
+| Not recorded | Why |
+|---|---|
+| `/health`, `/docs` | a liveness probe every ten seconds buries the rest |
+| a sign-in for an unknown address | no account to attribute it to, and a row keyed by the address would be a register of who has *no* account here |
+| an unauthenticated request to a protected route | auth refuses it before the audit layer runs |
+| `/auth/me`, `/auth/logout` | no resource id to record; storing the path segment (`"me"`) would fill the resource index with junk |
+| a request refused by the rate limiter | the 429 is returned before auth identifies anyone |
+
+**Known limits.**
+
+- A failed sign-in against a *real* address is recorded, so anyone who
+  knows an address can append 401 rows to that account's trail, one per
+  attempt, bounded only by the per-address rate limit. Recording them is
+  right; the trail has no retention or coalescing yet.
+- Recording a sign-in costs the known-address branch about 5ms the
+  unknown-address branch does not pay, which is a weak enumeration oracle.
+  It is accepted because `POST /auth/register` already answers the same
+  question with a 409, and because writing the row in the background to
+  equalise it would lose events when the process stops.
+
+---
+
 ## 5. `GET /health`
 
 Unauthenticated and never rate limited: a liveness probe runs outside any
@@ -444,9 +534,9 @@ properly needs a job queue.
 
 Present because they are absent, not because they are planned.
 
-- **`ANSWER` returns the previous reply verbatim.** It is honest -- that is
-  what the user is asking about -- but it is not yet a real answer over the
-  stored claims.
+- **`ANSWER` composes only over claims stored in the same thread.** A fact
+  established in another thread on the same case is not reachable from it,
+  and the turn will report that it could not answer rather than looking.
 - **Logout does not invalidate the token.** There is no denylist, so a
   copy of a token keeps working until `exp` — up to
   `LEGAL_AI_JWT_EXPIRES_IN` seconds after the user signed out. The route

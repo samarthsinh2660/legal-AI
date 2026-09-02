@@ -67,41 +67,46 @@
     "id": "murder-punishment",
     "question": "what is the punishment for murder",
     "expected": [
-      "act:20062:sec-103"
+      "act:20062:sec-103",
+      "act:ipc-1860:sec-302"
     ],
-    "note": "BNS s.103 - Punishment for murder"
+    "note": "BNS s.103 - Punishment for murder Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "rape-punishment",
     "question": "what punishment does the law prescribe for rape",
     "expected": [
-      "act:20062:sec-64"
+      "act:20062:sec-64",
+      "act:ipc-1860:sec-376"
     ],
-    "note": "BNS s.64 - Punishment for rape"
+    "note": "BNS s.64 - Punishment for rape Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "grievous-hurt",
     "question": "what injuries count as grievous hurt",
     "expected": [
-      "act:20062:sec-116"
+      "act:20062:sec-116",
+      "act:ipc-1860:sec-320"
     ],
-    "note": "BNS s.116 - Grievous hurt"
+    "note": "BNS s.116 - Grievous hurt Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "criminal-breach-of-trust",
     "question": "someone I entrusted money to has misappropriated it",
     "expected": [
-      "act:20062:sec-316"
+      "act:20062:sec-316",
+      "act:ipc-1860:sec-405"
     ],
-    "note": "BNS s.316 - Criminal breach of trust"
+    "note": "BNS s.316 - Criminal breach of trust Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "maintenance-wife-children",
     "question": "my husband has stopped supporting me and the children, can I claim maintenance",
     "expected": [
-      "act:20099:sec-144"
+      "act:20099:sec-144",
+      "act:crpc-1973:sec-125"
     ],
-    "note": "BNSS s.144 - Order for maintenance of wives, children and parents"
+    "note": "BNSS s.144 - Order for maintenance of wives, children and parents Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "consumer-district-commission",
@@ -155,58 +160,66 @@
     "id": "defamation-offence",
     "question": "someone posted false things about me and damaged my reputation",
     "expected": [
-      "act:20062:sec-356"
+      "act:20062:sec-356",
+      "act:ipc-1860:sec-499"
     ],
-    "note": "BNS s.356 - Defamation"
+    "note": "BNS s.356 - Defamation Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "defamation-prosecution",
     "question": "how does a court take up a defamation complaint",
     "expected": [
-      "act:20099:sec-222"
+      "act:20099:sec-222",
+      "act:crpc-1973:sec-199"
     ],
-    "note": "BNSS s.222 - Prosecution for defamation"
+    "note": "BNSS s.222 - Prosecution for defamation Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "wrongful-restraint",
     "question": "my neighbour blocked me from using the common passage",
     "expected": [
       "act:20062:sec-126",
-      "act:2349:sec-33"
+      "act:2349:sec-33",
+      "act:ipc-1860:sec-339"
     ],
-    "note": "BNS s.126 wrongful restraint (criminal) or Indian Easements Act s.33 suit for disturbance of easement (civil). A blocked right of way has both remedies."
+    "note": "BNS s.126 wrongful restraint (criminal) or Indian Easements Act s.33 suit for disturbance of easement (civil). A blocked right of way has both remedies. Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "murder-life-convict",
     "question": "what happens if a person already serving life imprisonment commits murder",
     "expected": [
-      "act:20062:sec-104"
+      "act:20062:sec-104",
+      "act:ipc-1860:sec-303"
     ],
-    "note": "BNS s.104 - Punishment for murder by life-convict"
+    "note": "BNS s.104 - Punishment for murder by life-convict Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "hurt-dangerous-weapon",
     "question": "he attacked me with a knife and injured me",
     "expected": [
-      "act:20062:sec-118"
+      "act:20062:sec-118",
+      "act:ipc-1860:sec-324",
+      "act:ipc-1860:sec-326"
     ],
-    "note": "BNS s.118 - Voluntarily causing hurt by dangerous weapons"
+    "note": "BNS s.118 - Voluntarily causing hurt by dangerous weapons Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "extortion",
     "question": "they threatened to harm my family unless I paid them money",
     "expected": [
-      "act:20062:sec-308"
+      "act:20062:sec-308",
+      "act:ipc-1860:sec-383"
     ],
-    "note": "BNS s.308 - Extortion"
+    "note": "BNS s.308 - Extortion Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "kidnapping",
     "question": "someone took my child away without my permission",
     "expected": [
-      "act:20062:sec-137"
+      "act:20062:sec-137",
+      "act:ipc-1860:sec-359"
     ],
-    "note": "BNS s.137 - Kidnapping"
+    "note": "BNS s.137 - Kidnapping Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "child-kidnapping",
@@ -237,9 +250,10 @@
     "question": "what counts as cruelty by a husband or his relatives",
     "expected": [
       "act:20062:sec-86",
-      "act:20062:sec-85"
+      "act:20062:sec-85",
+      "act:ipc-1860:sec-498A"
     ],
-    "note": "BNS s.86 defines cruelty 'for the purposes of section 85'; s.85 is the offence. Either answers the question."
+    "note": "BNS s.86 defines cruelty 'for the purposes of section 85'; s.85 is the offence. Either answers the question. Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "child-cruelty",
@@ -253,25 +267,28 @@
     "id": "abetment-suicide",
     "question": "he was pushed to take his own life by constant harassment",
     "expected": [
-      "act:20062:sec-108"
+      "act:20062:sec-108",
+      "act:ipc-1860:sec-306"
     ],
-    "note": "BNS s.108 - Abetment of suicide"
+    "note": "BNS s.108 - Abetment of suicide Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "death-by-negligence",
     "question": "a rash driver killed a pedestrian without intending to",
     "expected": [
-      "act:20062:sec-106"
+      "act:20062:sec-106",
+      "act:ipc-1860:sec-304A"
     ],
-    "note": "BNS s.106 - Causing death by negligence"
+    "note": "BNS s.106 - Causing death by negligence Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "rape-certain-cases",
     "question": "harsher punishment for rape by a police officer or public servant",
     "expected": [
-      "act:20062:sec-65"
+      "act:20062:sec-65",
+      "act:ipc-1860:sec-376"
     ],
-    "note": "BNS s.65 - Punishment for rape in certain cases"
+    "note": "BNS s.65 - Punishment for rape in certain cases Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "state-consumer-commission",
@@ -326,9 +343,10 @@
     "question": "a fake profile in my name was used to cheat people",
     "expected": [
       "act:1999:sec-66D",
-      "act:20062:sec-319"
+      "act:20062:sec-319",
+      "act:ipc-1860:sec-416"
     ],
-    "note": "IT Act s.66D is the online-specific offence; BNS s.319 is cheating by personation generally. Both correct."
+    "note": "IT Act s.66D is the online-specific offence; BNS s.319 is cheating by personation generally. Both correct. Both codes are accepted: the 2023 section and the provision it replaced, which still governs any offence before 1 July 2024."
   },
   {
     "id": "cyber-terrorism",

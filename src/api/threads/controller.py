@@ -2,8 +2,9 @@
 
 Where the phase's two findings meet. A follow-up is rewritten before it
 reaches retrieval, because "what about Bombay" retrieves nothing on its own.
-A message about the answer already given is answered from it, rather than
-re-running a thirty-second fan-out to re-find what is on screen.
+A message the router judges answerable from the thread is composed out of the
+claims the thread already established, rather than re-running a
+thirty-second fan-out to re-find what is on screen.
 
 Both fallbacks point the same way -- towards doing more work, never less. A
 broken rewriter sends the user's own words; an uncertain route researches.
@@ -18,6 +19,7 @@ import logging
 
 from api.threads.repository import (
     DEFAULT_TITLE,
+    recent_answers,
     recent_turns,
     add_message,
     get_thread,
@@ -25,9 +27,12 @@ from api.threads.repository import (
     set_title,
 )
 from api.utils.errors import Failure, Ok, Result, not_found
+from legal_ai.agents.draft import render
 from legal_ai.config import Configuration
 from api.threads.graph import research as run_research
+from legal_ai.conversation.recall import answer_from_thread
 from legal_ai.conversation.rewriter import Turn, rewrite_question
+from legal_ai.conversation.intent import Intent, classify, reply_for
 from legal_ai.conversation.router import Route, route_message
 
 # Turns of history handed to the rewriter and the router. Bounded because
@@ -49,18 +54,37 @@ def _history(conn, thread_id: str, user_id: str) -> list[Turn]:
     ]
 
 
-def answer_from_history(question: str, history: list[Turn]) -> str:
-    """Answer a question about the reply already given.
+# What an ANSWER turn says when the thread cannot answer the question.
+# Until 2026-09 this path returned the previous assistant turn verbatim, so a
+# new question got the old answer with nothing on screen saying so. Composing
+# over the stored claims replaces that; where composition finds nothing, the
+# reply says nothing was found. It does not fall back to the replay, and it
+# does not silently research -- a turn that never touched the corpus must not
+# read like one that did.
+COULD_NOT_ANSWER = (
+    "I could not answer that from this conversation. Nothing established in "
+    "the thread so far addresses it, and this turn did not search the corpus. "
+    "Ask it as a fresh question to have it researched."
+)
 
-    Deliberately not implemented as a model call yet. Until there is one,
-    routing here returns the last answer verbatim, which is honest -- it is
-    what the user is asking about -- and it never invents law. Milestone 18
-    replaces this with a bounded call over the stored claims.
+
+def answer_from_thread_turn(conn, user_id: str, thread_id: str, message: str):
+    """The ANSWER route's reply: `(text, answer)`.
+
+    `answer` is None when the thread held nothing that answers the question,
+    which the caller renders as `COULD_NOT_ANSWER` rather than as an answer.
+
+    The read is committed before the composition call. Holding the
+    transaction across it queues every writer behind a model round-trip --
+    CLAUDE.md section 8.
     """
-    for turn in reversed(history):
-        if turn.role == "assistant":
-            return turn.content
-    return ""
+    stored = recent_answers(conn, thread_id, user_id, HISTORY_TURNS)
+    conn.commit()
+
+    composed = answer_from_thread(message, stored)
+    if composed is None:
+        return COULD_NOT_ANSWER, None
+    return render(composed), _as_dict(composed)
 
 
 async def send_message(
@@ -89,12 +113,24 @@ async def send_message(
     if verification_level is None:
         verification_level = Configuration.from_env().verification_level
 
+    # A greeting is settled by a pattern, not a model. Before this gate the
+    # planner was asked to plan a corpus search for it and had no way to
+    # decline, so "thanks!" cost 80s and came back with the law on gratuity.
+    small_talk = reply_for(classify(message))
+    if small_talk is not None:
+        add_message(conn, thread_id, "user", message)
+        add_message(conn, thread_id, "assistant", small_talk)
+        return Ok({
+            "text": small_talk, "answer": None, "clarification_needed": None,
+            "route": Route.ANSWER.value, "verification_level": verification_level,
+        })
+
     history = _history(conn, thread_id, user_id)
     route = route_message(message, history)
 
     clarification = None
     if route is Route.ANSWER:
-        text, answer = answer_from_history(message, history), None
+        text, answer = answer_from_thread_turn(conn, user_id, thread_id, message)
     else:
         # Only the rewritten question reaches retrieval.
         # Both the case and the documents are the thread's own. The ids in
@@ -212,16 +248,26 @@ async def stream_message(
     if verification_level is None:
         verification_level = Configuration.from_env().verification_level
 
+    small_talk = reply_for(classify(message))
+    if small_talk is not None:
+        add_message(conn, thread_id, "user", message)
+        add_message(conn, thread_id, "assistant", small_talk)
+        yield "done", {
+            "text": small_talk, "answer": None, "clarification_needed": None,
+            "route": Route.ANSWER.value, "verification_level": verification_level,
+        }
+        return
+
     history = _history(conn, thread_id, user_id)
     route = route_message(message, history)
 
     if route is Route.ANSWER:
-        # Nothing to report on: it never touched the corpus.
-        text = answer_from_history(message, history)
+        # No steps to report on: it never touched the corpus.
+        text, answer = answer_from_thread_turn(conn, user_id, thread_id, message)
         add_message(conn, thread_id, "user", message)
-        add_message(conn, thread_id, "assistant", text or "")
+        add_message(conn, thread_id, "assistant", text or "", answer=answer)
         yield "done", {
-            "text": text, "answer": None, "clarification_needed": None,
+            "text": text, "answer": answer, "clarification_needed": None,
             "route": route.value, "verification_level": verification_level,
         }
         return

@@ -127,7 +127,10 @@ def run() -> None:
             doc.content_hash = content_hash(text)
             vector = embed(text) if text.strip() else None
             upsert_document(conn, doc, embedding=vector)
-            chunk_and_store(conn, doc.document_id, doc.full_text, doc.document_type)
+            chunk_and_store(
+                conn, doc.document_id, doc.full_text, doc.document_type,
+                title=doc.title,
+            )
             filled += 1
 
         total_filled += filled

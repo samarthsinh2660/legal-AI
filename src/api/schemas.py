@@ -49,6 +49,18 @@ class ClaimModel(BaseModel):
     paragraph: Optional[int] = None
 
 
+class SourceLinkModel(BaseModel):
+    """A cited document and how to open it. `openable` false means the URL
+    is a bundled archive, not the document -- show the citation instead."""
+
+    document_id: str
+    title: str = ""
+    citation: Optional[str] = None
+    court: Optional[str] = None
+    url: Optional[str] = None
+    openable: bool = False
+
+
 class AnswerModel(BaseModel):
     question: str
     lede: str
@@ -59,7 +71,10 @@ class AnswerModel(BaseModel):
     unchecked: list[str]
     partially_supported: list[str]
     support_not_checked: bool
+    # Empty unless the question named an Act the corpus does not hold.
+    coverage_note: str = ""
     citations: list[str]
+    sources: list[SourceLinkModel] = []
     disclaimer: str
 
     @classmethod
@@ -81,7 +96,15 @@ class AnswerModel(BaseModel):
             unchecked=list(answer.unchecked),
             partially_supported=list(answer.partially_supported),
             support_not_checked=answer.support_not_checked,
+            coverage_note=answer.coverage_note,
             citations=list(answer.citations),
+            sources=[
+                SourceLinkModel(
+                    document_id=s.document_id, title=s.title, citation=s.citation,
+                    court=s.court, url=s.url, openable=s.openable,
+                )
+                for s in answer.sources
+            ],
             disclaimer=answer.disclaimer,
         )
 

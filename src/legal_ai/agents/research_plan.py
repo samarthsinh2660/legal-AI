@@ -20,16 +20,22 @@ from dataclasses import dataclass
 from legal_ai.config import DEFAULT_CONFIG
 from legal_ai.llm.client import generate
 
-PROMPT = """You are planning a search of an Indian legal corpus of statutes.
+PROMPT = """You are planning a search of an Indian legal corpus of statutes
+and judgments.
 
 {context}
 
 Question: {question}
 
-Break the question into the distinct legal angles it raises -- different
-remedies, forums, or statutes. **Prefer ONE angle.** Most questions have
-one. Use more only where the question raises separate legal problems
-researched in different statutes. At most {max_angles}.
+FIRST decide whether this is a legal question at all. A greeting, a thank
+you, a question about what this tool does, or anything else with no legal
+issue in it is NOT a legal question. For those, return an empty array []
+and nothing else. Do not invent a legal angle for a message that has none.
+
+Otherwise, break the question into the distinct legal angles it raises --
+different remedies, forums, or statutes. **Prefer ONE angle.** Most
+questions have one. Use more only where the question raises separate legal
+problems researched in different statutes. At most {max_angles}.
 
 For each angle give a search query in the vocabulary an Indian STATUTE
 would use, not the words a member of the public would use. The corpus holds
@@ -87,6 +93,13 @@ def plan_research(
         return fallback
     if not isinstance(parsed, list):
         return fallback
+
+    # An array the model deliberately left empty says "no legal issue here".
+    # Checked before the items are read, so it stays distinct from a reply
+    # whose items were malformed -- that is a garbled answer, and dropping a
+    # real question on it would be far worse than one wasted search.
+    if not parsed:
+        return []
 
     angles = [
         Angle(angle=str(item["angle"]).strip(), query=str(item["query"]).strip())

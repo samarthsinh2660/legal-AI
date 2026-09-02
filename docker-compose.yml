@@ -54,6 +54,9 @@ services:
       # that every deployment shares.
       LEGAL_AI_JWT_SECRET: ${LEGAL_AI_JWT_SECRET}
       LEGAL_AI_JWT_EXPIRES_IN: ${LEGAL_AI_JWT_EXPIRES_IN:-86400}
+      # No default. A wildcard would let any site the user visits make
+      # authenticated calls; unset simply means no browser may call it.
+      LEGAL_AI_CORS_ORIGINS: ${LEGAL_AI_CORS_ORIGINS:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       LEGAL_AI_VERIFICATION_LEVEL: ${LEGAL_AI_VERIFICATION_LEVEL:-quick}
     ports:

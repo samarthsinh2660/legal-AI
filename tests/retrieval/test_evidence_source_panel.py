@@ -81,11 +81,15 @@ def test_without_a_query_the_whole_document_is_carried():
 
 
 def test_hybrid_search_results_are_passages_with_provenance():
+    # A judgment arrives as its nearest few passages, not one -- so the bound
+    # is the extract budget, not a single passage.
+    from legal_ai.retrieval.evidence_builder import EXTRACT_CHARS
+
     results = hybrid_search("refund when builder fails to give possession", limit=3)
     assert results
     for item in results:
         assert isinstance(item, Evidence)
-        assert len(item.content) <= PASSAGE_CHARS
+        assert len(item.content) <= EXTRACT_CHARS
         assert item.provenance.source.url
         assert item.document_id
 

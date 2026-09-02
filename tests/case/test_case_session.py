@@ -112,3 +112,53 @@ def test_a_later_session_sees_the_earlier_one(conn):
                  findings=(EstablishedFinding(claim="Section 18 applies", evidence_ids=("a",)),))
     later = start_session(conn, "What is the refund rate?", case_id="test:s7")
     assert [f.claim for f in later.established_findings] == ["Section 18 applies"]
+
+
+# --- the case's own jurisdiction ------------------------------------------
+#
+# A case records the state and court it sits in. `start_session` seeded the
+# thread with findings and description but not jurisdiction, so every
+# state-dependent question in a case stopped to ask for the state.
+
+def test_the_thread_inherits_the_case_state(conn):
+    create_case(conn, "test:j1", "Iyer v. Meridian", state="Maharashtra")
+    context = start_session(conn, "Can she claim a refund?", case_id="test:j1")
+    assert context.jurisdiction.state == "Maharashtra"
+
+
+def test_the_thread_inherits_the_case_court(conn):
+    create_case(conn, "test:j2", "Iyer v. Meridian", court="Maharashtra RERA")
+    context = start_session(conn, "Can she claim a refund?", case_id="test:j2")
+    assert context.jurisdiction.court == "Maharashtra RERA"
+
+
+def test_a_state_named_in_the_question_beats_the_case(conn):
+    """The question is about this turn; the case is a standing default. A
+    lawyer asking a Karnataka question inside a Maharashtra matter means
+    Karnataka."""
+    create_case(conn, "test:j3", "Iyer v. Meridian", state="Maharashtra")
+    context = start_session(
+        conn, "What do the Karnataka RERA rules say about refunds?", case_id="test:j3"
+    )
+    assert context.jurisdiction.state == "Karnataka"
+
+
+def test_a_case_with_no_state_leaves_the_thread_unset(conn):
+    """Not guessed from the court or the description: an unknown state has
+    to stay unknown, because the clarification gate is what turns it into a
+    question rather than a wrong answer."""
+    create_case(conn, "test:j4", "Iyer v. Meridian", court="Bombay High Court")
+    context = start_session(conn, "Can she claim a refund?", case_id="test:j4")
+    assert context.jurisdiction.state is None
+
+
+def test_the_case_state_clears_the_clarification_gate(conn):
+    """The seam this exists for: a state-dependent question inside a case
+    that names its state must research, not stop and ask."""
+    from legal_ai.context.clarification import clarification_needed
+
+    create_case(conn, "test:j5", "Iyer v. Meridian", state="Maharashtra")
+    context = start_session(
+        conn, "Can a homebuyer claim a refund for late possession?", case_id="test:j5"
+    )
+    assert clarification_needed(context) is None

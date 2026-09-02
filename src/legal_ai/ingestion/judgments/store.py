@@ -40,7 +40,10 @@ def store_judgment(document: CanonicalDocument) -> bool:
         # Judgments routinely run to tens of thousands of characters, far
         # past what the embedder reads. Without this the tail of every
         # newly fetched judgment would be unsearchable.
-        chunk_and_store(conn, document.document_id, document.full_text, document.document_type)
+        chunk_and_store(
+            conn, document.document_id, document.full_text,
+            document.document_type, title=document.title,
+        )
 
         # Derived from the text, so it is set here rather than in the
         # canonical upsert that statutes also pass through.

@@ -111,3 +111,44 @@ def test_rendering_marks_the_unsupported_section():
 
 def test_rendering_an_empty_analysis_still_carries_the_disclaimer():
     assert "not legal advice" in render(build_answer("q", AnalysisResult(), []))
+
+
+def test_an_out_of_scope_reply_carries_no_legal_disclaimer():
+    """There is no legal information in it to disclaim, and the boilerplate
+    on "I cannot help with that" reads as a non-sequitur."""
+    from legal_ai.agents.analyst import OUT_OF_SCOPE
+    from legal_ai.agents.draft import build_answer
+    from legal_ai.schemas.answer import AnalysisResult
+
+    answer = build_answer("write me a poem", AnalysisResult(lede=OUT_OF_SCOPE), [])
+
+    assert answer.disclaimer == ""
+    assert "not legal advice" not in render(answer).lower()
+
+
+def test_an_answer_names_a_code_the_corpus_does_not_hold(monkeypatch):
+    """A statement about our shelf, like support_not_checked -- not a claim
+    about the law, and it must reach the reader.
+
+    The register in retrieval.coverage is empty since the last repealed
+    code was ingested, so the note is injected here; what is under test is
+    the path from build_answer to render, not the register's contents.
+    """
+    import legal_ai.agents.draft as draft
+    from legal_ai.schemas.answer import AnalysisResult
+
+    monkeypatch.setattr(draft, "coverage_note", lambda q: "We do not hold the Foo Act.")
+    answer = draft.build_answer("What does the Foo Act require?", AnalysisResult(lede="x"), [])
+
+    assert "Foo Act" in answer.coverage_note
+    assert "Foo Act" in render(answer)
+
+
+def test_an_answer_about_a_held_act_carries_no_coverage_note():
+    from legal_ai.agents.draft import build_answer
+    from legal_ai.schemas.answer import AnalysisResult
+
+    answer = build_answer(
+        "What does Section 138 of the NI Act require?", AnalysisResult(lede="x"), []
+    )
+    assert answer.coverage_note == ""
