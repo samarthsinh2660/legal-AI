@@ -75,16 +75,42 @@ license / usage terms
 
 # 3. India Code --- Primary Legislation Source
 
+**IN USE** --- 860 Acts and 35,601 sections in the corpus came from here.
+
 ## Official
 
--   Website: https://www.indiacode.nic.in/
--   Central Acts: https://www.indiacode.nic.in/handle/123456789/1362
--   Ministry/Law & Justice browse:
-    https://www.indiacode.nic.in/handle/123456789/1362/browse?type=ministry&value=Law+and+Justice
+-   Website: https://indiacode.gov.in/
+-   REST API (DSpace 9): https://indiacode.gov.in/server/api
+-   Search: `…/server/api/discover/search/objects?query=<terms>`
 
-India Code exposes legislation including Acts and searchable metadata.
-The official repository can be browsed/search-filtered by enactment
-details, department/ministry and other metadata.
+## The site moved, and it broke our ingestion (verified 2026-09-02)
+
+India Code migrated from `indiacode.nic.in` to `indiacode.gov.in` and
+**renumbered every handle**. Consequences, all measured:
+
+-   The old host 404s. `scripts/ingest_india_code.py`,
+    `ingestion/india_code/scraper.py`, `section_body.py` and
+    `section_collection/ingest_spent_acts.py` all fail against the live
+    site. Re-running any India Code ingestion today yields nothing.
+-   Handles changed: the Negotiable Instruments Act was
+    `123456789/2189`, its sections now sit under ids like
+    `123456789/535860`. **Every provenance URL on all 35,601 stored
+    sections points at a dead host**, which is why `agents/draft.py`
+    withholds those links rather than showing a reader a 404.
+-   The new host serves 502 to our `PramanaAI-Ingestion/0.1` User-Agent
+    and 200 to a browser one. It is filtering on UA.
+
+Repairing this means re-mapping handles through the new REST API. Until
+then India Code is readable by hand and not by us.
+
+## What it does NOT hold
+
+The three repealed criminal codes have no section structure here. The IPC
+and the Indian Evidence Act exist as **PDF only** (in the `Repeal`
+community); the **Code of Criminal Procedure, 1973 is absent entirely** ---
+browsing `Repeal > CENTRAL` by title returns the 1861, 1872, 1882 and 1898
+Codes and 24 amendment Acts, and stops. See §9a for the source we use
+instead.
 
 ## What we want
 
@@ -122,6 +148,53 @@ get_related_legislation()
 India Code should be treated as the preferred source for the statute
 text. Research datasets can help build schemas or benchmarks, but the
 current statute should be checked against India Code.
+
+------------------------------------------------------------------------
+
+# 3a. The repealed criminal codes --- IPC, CrPC
+
+**NOT IN THE CORPUS.** We hold their 2023 replacements (Bharatiya Nyaya
+Sanhita 358 sections, Nagarik Suraksha Sanhita 531, Sakshya Adhiniyam 170)
+and none of the codes they replaced. This matters because **an offence
+committed before 1 July 2024 is still charged under the old code**, so
+these are live law, not history. `retrieval/coverage.py` tells a reader so
+when a question names one.
+
+## Candidate source (evaluated 2026-09-02, not yet ingested)
+
+https://github.com/civictech-India/Indian-Law-Penal-Code-Json
+
+``` text
+ipc.json    575 sections   chapter · section · title · full text
+crpc.json   525 sections   the CrPC, which India Code does not hold at all
+```
+
+Verified before recommending:
+
+-   **Cross-validated against a second compilation.** devgan.in lists 575
+    IPC sections; this dataset lists 575; the two agree on every section
+    number, with no entry unique to either.
+-   Letter-suffixed sections are handled: 498A, 376A, 120B, 153AA all
+    present with correct titles.
+-   Text is verbatim. s.302 reads "Whoever commits murder shall be
+    punished with death, or imprisonment for life, and shall also be
+    liable to fine." s.420, s.124A, s.375 and s.511 also check out.
+-   1 empty body in 575; median body 323 characters.
+
+**Two conditions before using it.** It is a community compilation, so it
+is `source_type="research"` like Indian Kanoon --- never `primary`. And
+**the repository carries no LICENSE file**; the statutory text itself is
+free to reproduce under s.52(1)(q) of the Copyright Act, but the
+compilation's terms are unstated.
+
+## Rejected
+
+https://devgan.in/all_sections_ipc.php --- the index returns 575 sections
+with titles, but **every individual section page returns HTTP 500**
+(checked s.1, s.302, s.375, s.420, s.498A, with a browser UA, referer and
+gzip). Numbers and titles with no body would put retrievable stubs in the
+corpus that look like law and contain none. A private aggregator, so
+`research` tier at best if the pages return.
 
 ------------------------------------------------------------------------
 
@@ -168,6 +241,9 @@ underlying court system.
 ------------------------------------------------------------------------
 
 # 5. Supreme Court Bulk Corpus --- Vanga
+
+**IN USE** --- 13,131 judgments. Bundled year tars, so a citation gets
+no direct link; see `agents/draft.py`.
 
 ## Repository
 
@@ -232,6 +308,8 @@ Do not make this our only live-search mechanism.
 
 # 6. High Courts --- Official / eCourts Infrastructure
 
+**NOT USED.** No code reaches eCourts.
+
 ## eCourts India
 
 -   https://ecourts.gov.in/
@@ -260,6 +338,8 @@ Cause lists
 ------------------------------------------------------------------------
 
 # 7. High Court Bulk Corpus --- Vanga
+
+**IN USE** --- part of the same 13,131.
 
 ## Repository
 
@@ -317,6 +397,8 @@ the original provenance fields.
 ------------------------------------------------------------------------
 
 # 8. Bharat Courts --- Programmatic Court Access
+
+**IN USE** --- the ingestion path for judgments.
 
 ## Repository
 
@@ -389,6 +471,9 @@ The underlying official court/eCourts source remains the authority.
 
 # 9. Indian Kanoon API
 
+**IN USE** --- `tools/judgments.discover_judgments`. `source_type="research"`,
+not primary, and the only judgments that get a per-document link.
+
 ## Official API documentation
 
 https://api.indiankanoon.org/documentation/
@@ -452,6 +537,8 @@ without checking the applicable terms.
 
 # 10. District Courts
 
+**NOT USED.**
+
 ## Primary infrastructure
 
 -   eCourts Services: https://services.ecourts.gov.in/
@@ -485,7 +572,14 @@ This is useful for the Dynamic Researcher.
 
 ------------------------------------------------------------------------
 
+> **Sections 11-21 are research datasets and models nothing in this
+> repository reads.** They were surveyed during planning and are kept as a
+> record of what was considered and why it was not taken. Do not read them
+> as a description of the system.
+
 # 11. OpenJustice India
+
+**NOT USED.**
 
 ## Website
 
@@ -502,6 +596,8 @@ terms before using data in a product.
 ------------------------------------------------------------------------
 
 # 12. Indian Court Decisions --- Large Hugging Face Dataset
+
+**NOT USED.**
 
 ## Dataset
 
@@ -543,6 +639,8 @@ This is a research/data resource, not automatically our legal authority.
 
 # 13. Indian Legal Records & Judgments Corpus
 
+**NOT USED.**
+
 ## Hugging Face
 
 https://huggingface.co/datasets/LH2-data-labs/indian-legal-records
@@ -572,6 +670,8 @@ Again, verify provenance and licensing before using it in production.
 ------------------------------------------------------------------------
 
 # 14. KanoonGPT Indian Case Laws
+
+**NOT USED.**
 
 ## Hugging Face
 
@@ -603,6 +703,8 @@ provenance and redistribution terms.
 
 # 15. IMLJD --- Indian Legal Multi-Judgment Dataset
 
+**NOT USED.**
+
 The IMLJD project is relevant to our GraphRAG work because it combines
 Indian judgment data with structured legal relationships/knowledge-graph
 research.
@@ -627,6 +729,8 @@ than only vector chunks.
 ------------------------------------------------------------------------
 
 # 16. ILDC --- Indian Legal Documents Corpus
+
+**NOT USED.**
 
 ## GitHub
 
@@ -660,6 +764,8 @@ model benchmarking
 ------------------------------------------------------------------------
 
 # 17. NyayaAnumana / INLegalLlama
+
+**NOT USED.**
 
 ## Paper
 
@@ -697,6 +803,8 @@ It should not automatically become our production knowledge source.
 
 # 18. InLegalBERT
 
+**NOT USED.**
+
 ## Hugging Face
 
 https://huggingface.co/law-ai/InLegalBERT
@@ -731,6 +839,8 @@ automatically beats modern general embeddings.
 ------------------------------------------------------------------------
 
 # 19. LawSum
+
+**NOT USED.**
 
 LawSum is an Indian Supreme Court judgment dataset intended for legal
 summarization research.
@@ -1072,7 +1182,7 @@ Every tool response should include:
 {
   "source": {
     "name": "Supreme Court of India",
-    "url": "https://...",
+    "url": "https://indiacode.gov.in/handle/123456789/535860",
     "document_id": "...",
     "source_type": "primary"
   },

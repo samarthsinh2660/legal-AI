@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FolderOpen, Home, Plus, Search, Share2 } from "lucide-react";
+import { FolderOpen, Home, Plus, ScrollText, Search, Share2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/molecules/wordmark";
@@ -24,6 +24,7 @@ const ITEMS = [
   { href: "/cases", label: "Cases", icon: FolderOpen },
   { href: "/search", label: "Search", icon: Search },
   { href: "/graph", label: "Graph", icon: Share2 },
+  { href: "/activity", label: "Activity", icon: ScrollText },
 ] as const;
 
 export function AppSidebar() {
