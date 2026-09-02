@@ -1,29 +1,18 @@
 """Naming a code we do not hold.
 
-The corpus holds the Bharatiya Nyaya Sanhita, Nagarik Suraksha Sanhita and
-Sakshya Adhiniyam, and none of the three codes they replaced. An offence
-committed before 1 July 2024 is still charged under the old code, so a
-lawyer asking about IPC s.498A is asking a live question -- and search
-answered it with unrelated near-misses instead of saying we do not hold it.
+The corpus holds the Bharatiya Sakshya Adhiniyam and not the Indian
+Evidence Act it replaced. An offence committed before 1 July 2024 is still
+tried under the old law, so a lawyer asking about s.65B is asking a live
+question -- and search answered it with unrelated near-misses instead of
+saying we do not hold it.
+
+The IPC and the CrPC were ingested on 2026-09-02, so naming either is no
+longer a gap; the tests below hold that line, because a note sending a
+reader to the BNS for a section we now carry verbatim is a worse error
+than no note at all.
 """
 
 from legal_ai.retrieval.coverage import coverage_note
-
-
-def test_naming_the_penal_code_says_we_do_not_hold_it():
-    note = coverage_note("What does Section 498A IPC require?")
-    assert note
-    assert "Indian Penal Code" in note
-    assert "Bharatiya Nyaya Sanhita" in note
-
-
-def test_the_spelled_out_name_is_recognised_too():
-    assert coverage_note("section 302 of the Indian Penal Code")
-
-
-def test_the_criminal_procedure_code_is_recognised():
-    note = coverage_note("What does CrPC section 482 say?")
-    assert note and "Bharatiya Nagarik Suraksha Sanhita" in note
 
 
 def test_the_evidence_act_is_recognised():
@@ -34,8 +23,18 @@ def test_the_evidence_act_is_recognised():
 def test_the_note_says_the_old_code_still_governs_older_offences():
     """Without this the note reads as "that law is gone", which is wrong and
     would mislead on every pre-July-2024 matter."""
-    note = coverage_note("IPC 420")
+    note = coverage_note("Indian Evidence Act 1872")
     assert "1 July 2024" in note or "before" in note.lower()
+
+
+def test_the_penal_code_is_no_longer_a_gap():
+    assert coverage_note("What does Section 498A IPC require?") is None
+    assert coverage_note("section 302 of the Indian Penal Code") is None
+
+
+def test_the_criminal_procedure_code_is_no_longer_a_gap():
+    assert coverage_note("What does CrPC section 482 say?") is None
+    assert coverage_note("anticipatory bail under the Code of Criminal Procedure") is None
 
 
 def test_a_question_naming_no_repealed_code_gets_no_note():
@@ -49,7 +48,7 @@ def test_a_question_naming_no_repealed_code_gets_no_note():
 
 def test_naming_the_replacement_gets_no_note():
     """Asking about the code we DO hold is not a coverage gap."""
-    assert coverage_note("What does BNS section 85 say about cruelty?") is None
+    assert coverage_note("What does BSA section 63 say about electronic records?") is None
 
 
 def test_an_empty_question_is_not_a_gap():

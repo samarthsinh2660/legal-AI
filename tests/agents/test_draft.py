@@ -133,11 +133,13 @@ def test_an_answer_names_a_code_the_corpus_does_not_hold():
     from legal_ai.schemas.answer import AnalysisResult
 
     answer = build_answer(
-        "What does Section 498A IPC require?", AnalysisResult(lede="x"), []
+        "What does Section 65B of the Indian Evidence Act require?",
+        AnalysisResult(lede="x"),
+        [],
     )
 
-    assert "Indian Penal Code" in answer.coverage_note
-    assert "Indian Penal Code" in render(answer)
+    assert "Indian Evidence Act" in answer.coverage_note
+    assert "Indian Evidence Act" in render(answer)
 
 
 def test_an_answer_about_a_held_act_carries_no_coverage_note():

@@ -128,3 +128,23 @@ def test_a_live_india_code_url_is_still_offered():
         [_evidence("act:1:sec-1", "https://indiacode.gov.in/handle/123456789/535860")],
     )
     assert answer.sources[0].openable
+
+
+def test_a_bundled_json_file_is_not_offered_as_a_link():
+    """The IPC and CrPC came from one JSON file holding every section. It
+    is a real source and proves provenance, but a reader clicking
+    "Punishment for murder" would get 575 sections of raw JSON -- the same
+    case as the year tar, and the same answer."""
+    answer = build_answer(
+        "q",
+        _analysis("act:ipc-1860:sec-302"),
+        [_evidence(
+            "act:ipc-1860:sec-302",
+            "https://raw.githubusercontent.com/civictech-India/"
+            "Indian-Law-Penal-Code-Json/main/ipc.json",
+            title="Punishment for murder",
+        )],
+    )
+    source = answer.sources[0]
+    assert not source.openable
+    assert source.title == "Punishment for murder"

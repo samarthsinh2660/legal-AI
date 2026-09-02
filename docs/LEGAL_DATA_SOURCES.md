@@ -153,14 +153,18 @@ current statute should be checked against India Code.
 
 # 3a. The repealed criminal codes --- IPC, CrPC
 
-**NOT IN THE CORPUS.** We hold their 2023 replacements (Bharatiya Nyaya
+**INGESTED 2026-09-02** --- IPC 574 sections (`act:ipc-1860`), CrPC 525
+(`act:crpc-1973`), `source_type="research"`. IPC s.304B is absent: empty
+body in the source. The Indian Evidence Act is still missing.
+
+Previously: we held only their 2023 replacements (Bharatiya Nyaya
 Sanhita 358 sections, Nagarik Suraksha Sanhita 531, Sakshya Adhiniyam 170)
 and none of the codes they replaced. This matters because **an offence
 committed before 1 July 2024 is still charged under the old code**, so
 these are live law, not history. `retrieval/coverage.py` tells a reader so
 when a question names one.
 
-## Candidate source (evaluated 2026-09-02, not yet ingested)
+## Source used
 
 https://github.com/civictech-India/Indian-Law-Penal-Code-Json
 

@@ -1,10 +1,11 @@
 """Codes a question names that the corpus does not hold.
 
-The three criminal codes repealed in 2023 are absent and their replacements
-are present. An offence committed before 1 July 2024 is still charged under
-the old code, so asking about IPC s.498A is a live question, not a stale
-one -- and answering it from the replacement without saying so would be a
-claim about the law we cannot make.
+Of the three criminal codes repealed in 2023 only the Indian Evidence Act
+is still absent; the IPC and the CrPC were ingested on 2026-09-02
+(scripts/ingest_ipc_crpc.py). An offence committed before 1 July 2024 is
+still charged under the old code, so asking about Evidence Act s.65B is a
+live question, not a stale one -- and answering it from the replacement
+without saying so would be a claim about the law we cannot make.
 
 Deterministic: whether we hold an Act is a fact about our shelf, not an
 ambiguity. No model call, so the note costs nothing.
@@ -16,22 +17,9 @@ import re
 
 # (pattern, repealed code, what we hold instead). Only codes that are BOTH
 # absent and have a held replacement belong here -- a note naming a
-# replacement we do not hold either would send the reader nowhere.
+# replacement we do not hold either would send the reader nowhere, and a
+# note about a code we now hold would send them away from it.
 _REPEALED = (
-    (
-        re.compile(r"\b(i\.?p\.?c\.?|indian penal code|penal code)\b", re.IGNORECASE),
-        "the Indian Penal Code, 1860",
-        "the Bharatiya Nyaya Sanhita, 2023",
-    ),
-    (
-        re.compile(
-            r"\b(cr\.?p\.?c\.?|code of criminal procedure"
-            r"|criminal procedure code)\b",
-            re.IGNORECASE,
-        ),
-        "the Code of Criminal Procedure, 1973",
-        "the Bharatiya Nagarik Suraksha Sanhita, 2023",
-    ),
     (
         re.compile(r"\b(indian evidence act|evidence act, 1872)\b", re.IGNORECASE),
         "the Indian Evidence Act, 1872",

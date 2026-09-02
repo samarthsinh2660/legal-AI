@@ -158,13 +158,17 @@ def build_answer(
     )
 
 
-# A URL pointing into a bundled archive rather than at one document.
-_ARCHIVE = (".tar", ".tar.gz", ".zip", "/tar/")
+# A URL pointing at a bundle rather than at one document: judgment year
+# tars, and the single JSON file the IPC and CrPC were parsed from. Both
+# are real sources and neither opens the provision a reader clicked.
+_ARCHIVE = (".tar", ".tar.gz", ".zip", "/tar/", ".json")
 
 # India Code moved to indiacode.gov.in in 2026 and renumbered every handle,
-# so the stored nic.in URLs return 404. Verified 2026-09-01. Repairing them
-# means re-mapping 35,601 section handles against the new REST API; until
-# that runs, the link is withheld rather than shown broken.
+# so the stored nic.in URLs return 404. Verified 2026-09-01.
+# scripts/repair_india_code_urls.py repointed what it could resolve on
+# 2026-09-02; 28 Acts and their 648 sections still have no exact title match
+# on the new site and keep the dead URL. The test is per row, not per
+# corpus, so those stay withheld while the repaired ones are offered.
 _DEAD_HOSTS = ("indiacode.nic.in",)
 
 
