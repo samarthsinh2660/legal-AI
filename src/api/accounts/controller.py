@@ -12,6 +12,8 @@ them.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import logging
 
 import os
@@ -20,6 +22,8 @@ from fastapi import Header
 
 from api.utils.passwords import hash_password, verify_password
 from api.accounts.repository import (
+    update_email,
+    update_name,
     DuplicateEmail,
     User,
     create_user,
@@ -55,7 +59,7 @@ def _secret() -> str:
     return os.environ.get("LEGAL_AI_JWT_SECRET", "")
 
 
-def register(conn, email: str, password: str) -> Result:
+def register(conn, email: str, password: str, name: str | None = None) -> Result:
     """Create an account and return its user id.
 
     The length floor is product policy, not cryptography, so it lives here
@@ -66,14 +70,32 @@ def register(conn, email: str, password: str) -> Result:
         return invalid_request("A valid email is required.")
     if len(password or "") < 12:
         return invalid_request("Password must be at least 12 characters.")
+    name = (name or "").strip() or None
+    if name is not None and len(name) > NAME_MAX:
+        return invalid_request(f"Name must be at most {NAME_MAX} characters.")
     ensure_account_schema(conn)
     try:
-        user = create_user(conn, email, hash_password(password))
+        user = create_user(conn, email, hash_password(password), name=name)
     except DuplicateEmail:
         # An enumeration surface by nature: the caller has to be told the
         # address is taken. Rate limiting is the mitigation.
         return conflict("email_taken", "An account with that email already exists.")
     return Ok(user.user_id)
+
+
+@dataclass(frozen=True)
+class Session:
+    """A signed token and the account it was signed for.
+
+    Carried together because the password check already loaded the row --
+    returning the token alone made the caller fetch it again, which is the
+    round trip `/auth/me` used to be.
+    """
+
+    access_token: str
+    user_id: str
+    email: str
+    name: str | None = None
 
 
 def login(conn, email: str, password: str) -> Result:
@@ -101,7 +123,12 @@ def login(conn, email: str, password: str) -> Result:
         _audit(conn, user.user_id, 401)
         return invalid_credentials()
     _audit(conn, user.user_id, 200)
-    return Ok(issue_access_token(user.user_id, secret=_secret()))
+    return Ok(Session(
+        access_token=issue_access_token(user.user_id, secret=_secret()),
+        user_id=user.user_id,
+        email=user.email,
+        name=user.name,
+    ))
 
 
 def _audit(conn, user_id: str, status: int) -> None:
@@ -147,3 +174,65 @@ def current_user_id(authorization: str = Header(default="")) -> Result:
 def user_for(conn, user_id: str) -> User | None:
     """The account behind an already-verified token id."""
     return find_by_id(conn, user_id)
+
+
+# Long enough for a full name with honorifics, short enough that the
+# sidebar does not have to cope with a paragraph.
+NAME_MAX = 80
+
+
+def change_email(conn, user_id: str, email: str, password: str) -> Result:
+    """Change the address, after re-checking the password.
+
+    The password is required because a token is not enough here: an address
+    is the account's recovery path and the handle a sign-in uses, so a
+    borrowed session must not be able to move it. Every other field on this
+    screen is recoverable; this one takes the account with it.
+
+    No confirmation mail, and that is a real limit rather than an oversight
+    -- there is no mail path in this system at all. A typo therefore locks
+    the user out of sign-in until someone fixes the row by hand, which is
+    why the screen says so before the field is touched.
+    """
+    email = (email or "").strip()
+    if "@" not in email or len(email) < 3:
+        return invalid_request("A valid email is required.")
+
+    user = find_by_id(conn, user_id)
+    if user is None:
+        return unauthorized()
+    if not verify_password(password or "", user.password_hash):
+        # Deliberately distinct from `unauthorized`: the session is fine,
+        # the password given for this one action is not.
+        return invalid_request("That password is not correct.")
+    if email.lower() == user.email:
+        return Ok(user)
+
+    try:
+        updated = update_email(conn, user_id, email)
+    except DuplicateEmail:
+        return conflict("email_taken", "An account with that email already exists.")
+    if updated is None:
+        return unauthorized()
+    return Ok(updated)
+
+
+def rename(conn, user_id: str, name: str) -> Result:
+    """Change the display name of an already-authenticated account.
+
+    The name is the only editable field. Changing an address re-keys the
+    account and wants a confirmation round trip to the new one; changing a
+    password wants the old one. Neither belongs in a text box that saves as
+    you leave it, so both are absent rather than half-built.
+    """
+    name = (name or "").strip()
+    if not name:
+        return invalid_request("A name is required.")
+    if len(name) > NAME_MAX:
+        return invalid_request(f"Name must be at most {NAME_MAX} characters.")
+
+    updated = update_name(conn, user_id, name)
+    if updated is None:
+        # Validly signed token, account gone. Same answer as any bad token.
+        return unauthorized()
+    return Ok(updated)

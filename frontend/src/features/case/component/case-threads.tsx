@@ -48,7 +48,7 @@ export function CaseThreads({ caseId }: { caseId: string }) {
             No research on this matter yet.
           </p>
           <Button asChild className="mt-4">
-            <Link href={`/?case=${caseId}`}>
+            <Link href={`/dashboard?case=${caseId}`}>
               <Plus className="size-4" />
               Start a thread on this case
             </Link>

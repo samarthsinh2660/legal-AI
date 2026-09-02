@@ -37,12 +37,18 @@ export function provenanceOf(id: string): Provenance | null {
 /** A short, human label for a citation marker. Ids are opaque, so this
  *  shows the part a lawyer can act on and keeps the whole id in the
  *  title attribute. */
-export function shortLabel(id: string): string {
-  const section = /^act:\d+:sec-(.+)$/.exec(id);
+export function shortLabel(id: string, citation?: string | null): string {
+  // Act ids are not all numeric -- the codes ingested in September are
+  // named (`act:crpc-1973`, `act:ipc-1860`), and the old `\d+` pattern
+  // missed them, so "s. 438" rendered as the raw `act:crpc-1973:sec-438`.
+  const section = /^act:[^:]+:sec-(.+)$/.exec(id);
   if (section) return `s. ${section[1]}`;
   if (id.startsWith("case-file:")) {
     return id.split(":").slice(2).join(":") || "document";
   }
-  if (id.startsWith("judgment:")) return "judgment";
+  // Every judgment used to read "judgment", so three cited authorities
+  // rendered as three identical chips. The reporter citation is what tells
+  // them apart, and what a reader would look up.
+  if (id.startsWith("judgment:")) return citation?.trim() || "judgment";
   return id;
 }

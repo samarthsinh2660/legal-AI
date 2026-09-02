@@ -6,7 +6,7 @@ import { FolderOpen, PenLine, Search, Share2 } from "lucide-react";
  *  a document can only be uploaded to a case that already exists, so it
  *  belongs on the case, not on a cold start. */
 const ACTIONS = [
-  { href: "/", label: "New Research", icon: PenLine },
+  { href: "/research/new", label: "New Research", icon: PenLine },
   { href: "/cases", label: "Cases", icon: FolderOpen },
   { href: "/search", label: "Search corpus", icon: Search },
   { href: "/graph", label: "Citation graph", icon: Share2 },

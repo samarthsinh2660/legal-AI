@@ -6,8 +6,7 @@ round.
 
 ```
 POST /auth/register            create an account
-POST /auth/login               exchange credentials for a bearer token
-GET  /auth/me                  who the token belongs to
+POST /auth/login               a bearer token, and who it is for
 
 POST /threads                  start a research thread
 GET  /threads                  this user's threads
@@ -171,14 +170,25 @@ An unknown address and a wrong password return **byte-identical** responses,
 and take the same time. Anything else would let a caller discover which
 addresses hold accounts.
 
-### `GET /auth/me`
+**`/auth/login` answers with the identity, not just the token:**
 
 ```json
-{ "success": true, "data": { "user_id": "9351a80d...", "email": "advocate@example.com" } }
+{ "success": true, "data": {
+  "access_token": "eyJhbGci...", "token_type": "bearer",
+  "user_id": "9351a80d...", "email": "advocate@example.com"
+}}
 ```
 
-401 for a missing, expired, forged or malformed token, and for a valid token
-whose account has since been deleted. All four answer the same.
+Both together because a client needs both. `GET /auth/me` was removed on
+2026-09-03: it made every sign-in two round trips and every page load a
+third, to return what the login already knew. A client restores a session
+from what it stored, checking the token's own `exp` locally.
+
+What that gives up is detecting a *deleted* account: `/auth/me` loaded the
+row and 401'd, and it was the only route that did — every other route
+verifies the signature and nothing else, so such a token has always worked
+everywhere else. No route deletes an account, so reaching that state takes a
+manual `DELETE`. Closing it properly means a user lookup on every request.
 
 ---
 
@@ -388,7 +398,7 @@ something the research agents could also find.
 hit, so there is nothing to check. A client must not render them with the
 badges an answer's citations carry.
 
-### `GET /graph/{document_id}?hops=&limit=`
+### `GET /graph/{document_id}?limit=`
 
 ```json
 { "success": true, "data": {
@@ -402,9 +412,12 @@ badges an answer's citations carry.
 `CITES`, `CITES_SECTION`, `CONTAINS` or `DECIDED_BY`. The anchor is the
 first node, at `hops: 0`.
 
-`hops` caps at **2** and `limit` at **120**. The graph holds ~48,800 nodes;
-the point of this view is one document and what touches it, and a landmark
-with 88 citations drawn all at once says less than a list would.
+One step out, `limit` capped at **120**. The graph holds ~48,800 nodes; the
+point of this view is one document and what touches it, and a landmark with
+88 citations drawn all at once says less than a list would. The `hops`
+parameter was removed on 2026-09-03 — a second hop showed what the
+*neighbours* cite, which is not what the reader asked about, and the UI that
+offered the choice found nobody changing it.
 
 **Render `truncated` where the reader can see it.** A graph quietly missing
 half its edges is a picture that lies about how connected something is.
@@ -452,7 +465,7 @@ the trail" is the row a firm asks for.
 | `/health`, `/docs` | a liveness probe every ten seconds buries the rest |
 | a sign-in for an unknown address | no account to attribute it to, and a row keyed by the address would be a register of who has *no* account here |
 | an unauthenticated request to a protected route | auth refuses it before the audit layer runs |
-| `/auth/me`, `/auth/logout` | no resource id to record; storing the path segment (`"me"`) would fill the resource index with junk |
+| `/auth/logout` | no resource id to record; storing the path segment (`"logout"`) would fill the resource index with junk |
 | a request refused by the rate limiter | the 429 is returned before auth identifies anyone |
 
 **Known limits.**

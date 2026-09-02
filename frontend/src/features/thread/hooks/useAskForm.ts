@@ -17,10 +17,18 @@ import { useCallback, useState } from "react";
 
 import { RequestError } from "@/lib/api";
 import { useCreateThread } from "./index";
-import { QUESTION_MAX_LENGTH } from "../types";
+import { QUESTION_MAX_LENGTH, Verification } from "../types";
 
 export function useAskForm(caseId?: string) {
   const [question, setQuestion] = useState("");
+  // Quick by default. It still checks every citation exists; what it
+  // skips is whether each source supports the claim, and the answer says
+  // so. Verified costs a third model call and roughly doubles the wait,
+  // which is a choice worth making per question rather than paying by
+  // default on the first one someone asks.
+  const [verification, setVerification] = useState<Verification>(
+    Verification.Quick,
+  );
   const [error, setError] = useState<string | null>(null);
   const { threadCreate, isCreating } = useCreateThread();
   const router = useRouter();
@@ -50,7 +58,8 @@ export function useAskForm(caseId?: string) {
         caseId,
       });
       router.push(
-        `/research/${thread.thread_id}?ask=${encodeURIComponent(asked)}`,
+        `/research/${thread.thread_id}?ask=${encodeURIComponent(asked)}`
+        + `&mode=${verification}`,
       );
     } catch (caught) {
       setError(
@@ -59,7 +68,10 @@ export function useAskForm(caseId?: string) {
           : "Could not start the research. Try again.",
       );
     }
-  }, [question, threadCreate, caseId, router]);
+  }, [question, threadCreate, caseId, verification, router]);
 
-  return { question, error, isCreating, handleChange, handleSubmit };
+  return {
+    question, error, isCreating, verification, setVerification,
+    handleChange, handleSubmit,
+  };
 }

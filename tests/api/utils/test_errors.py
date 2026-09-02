@@ -55,7 +55,7 @@ def test_a_failure_has_nowhere_to_put_an_exception():
 
 
 def test_unauthenticated_and_bad_credentials_are_different_codes():
-    """A client shown 401 on /auth/me should re-authenticate; one shown 401
+    """A client shown 401 on a protected route should re-authenticate; one shown 401
     from a login should re-prompt. Same status, different meaning."""
     assert unauthorized().code != invalid_credentials().code
 

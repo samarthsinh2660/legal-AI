@@ -19,7 +19,7 @@ type Errors = Partial<Record<keyof Credentials | "form", string>>;
 export function useLoginForm(mode: "signIn" | "signUp") {
   const { signIn, signUp } = useAuth();
   const router = useRouter();
-  const [form, setForm] = useState<Credentials>({ email: "", password: "" });
+  const [form, setForm] = useState<Credentials>({ email: "", password: "", name: "" });
   const [errors, setErrors] = useState<Errors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -34,6 +34,9 @@ export function useLoginForm(mode: "signIn" | "signUp") {
 
   const handleSubmit = useCallback(async () => {
     const found: Errors = {};
+    // Sign-up only: it is what the sidebar shows, so asking for it once
+    // here beats showing an address to everyone forever.
+    if (mode === "signUp" && !form.name?.trim()) found.name = "Name is required";
     if (!form.email.trim()) found.email = "Email is required";
     // Only on sign-up. Telling someone signing in that their password is
     // too short reveals it is not the stored one.
@@ -49,7 +52,7 @@ export function useLoginForm(mode: "signIn" | "signUp") {
     setIsSubmitting(true);
     try {
       await (mode === "signIn" ? signIn(form) : signUp(form));
-      router.push("/");
+      router.push("/dashboard");
     } catch (error) {
       // The backend's message is already written for a reader and reveals
       // nothing -- an unknown address and a wrong password answer alike.

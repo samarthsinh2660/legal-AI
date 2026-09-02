@@ -109,10 +109,18 @@ async def research_with_progress(inputs: dict):
         # each update back through the loop -- the same reason `research`
         # uses to_thread.
         try:
+            # A question with no attached documents still runs the
+            # `document` node, which returns immediately having read
+            # nothing. Announcing "Reading your documents" for it claims
+            # work that did not happen, so the step is suppressed rather
+            # than the node skipped -- the graph shape stays fixed.
+            skip = set() if inputs.get("document_ids") else {"document"}
             state = {}
             for update in _compiled().stream(inputs):
                 for node, produced in update.items():
                     state.update(produced or {})
+                    if node in skip:
+                        continue
                     loop.call_soon_threadsafe(queue.put_nowait, ("step", node))
             loop.call_soon_threadsafe(queue.put_nowait, ("done", state))
         except Exception as exc:  # noqa: BLE001 - reported, then re-raised to the caller

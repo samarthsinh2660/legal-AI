@@ -1,32 +1,26 @@
-import { z } from "zod";
-
 import { apiClient } from "@/lib/api";
-import {
-  NeighbourhoodSchema,
-  SearchHitSchema,
-  type Neighbourhood,
-  type SearchHit,
-} from "../types";
+import { NeighbourhoodSchema, type Neighbourhood } from "../types";
 
 export async function fetchNeighbourhood(
   documentId: string,
-  hops: number,
   limit: number,
 ): Promise<Neighbourhood> {
   const data = await apiClient.get<unknown>(
-    `/graph/${encodeURIComponent(documentId)}?hops=${hops}&limit=${limit}`,
+    `/graph/${encodeURIComponent(documentId)}?limit=${limit}`,
   );
   return NeighbourhoodSchema.parse(data);
 }
 
-/** The graph needs an anchor, and the corpus is far too large to list.
- *  Search is how the reader finds one. */
-export async function searchDocuments(
-  query: string,
-  limit = 8,
-): Promise<SearchHit[]> {
+/** One batch of a named slice. No anchor: a reader browses the graph
+ *  before naming a document in it. */
+export async function fetchOverview(
+  view: string,
+  offset: number,
+  limit: number,
+): Promise<Neighbourhood> {
   const data = await apiClient.get<unknown>(
-    `/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+    `/graph/overview?view=${encodeURIComponent(view)}`
+    + `&offset=${offset}&limit=${limit}`,
   );
-  return z.array(SearchHitSchema).parse(data);
+  return NeighbourhoodSchema.parse(data);
 }

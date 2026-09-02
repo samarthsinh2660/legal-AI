@@ -2,25 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FolderOpen, Home, Plus, ScrollText, Search, Share2 } from "lucide-react";
+import { Clock, FolderOpen, Home, Plus, ScrollText, Search, Share2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Wordmark } from "@/components/molecules/wordmark";
+import { Mark, Wordmark } from "@/components/molecules/wordmark";
+import { AccountMenu } from "@/features/auth/component/account-menu";
 import { cn } from "@/lib/utils";
 
 /**
  * The persistent nav. A molecule: `usePathname` is a framework hook, not a
  * data hook, so this owns no loading or error state.
  *
- * History and Settings from the reference design are still absent:
- * History would be this same thread list under another name, and Settings
- * has nothing behind it. Every item below goes somewhere real.
+ * Settings from the reference design is still absent: it has nothing
+ * behind it. Every item below goes somewhere real.
  *
  * Collapsing to a 68px icon rail below 860px is CSS, not a breakpoint
  * hook: JS would render one width on the server and another after mount.
  */
 const ITEMS = [
-  { href: "/", label: "Home", icon: Home },
+  { href: "/dashboard", label: "Home", icon: Home },
+  { href: "/history", label: "History", icon: Clock },
   { href: "/cases", label: "Cases", icon: FolderOpen },
   { href: "/search", label: "Search", icon: Search },
   { href: "/graph", label: "Graph", icon: Share2 },
@@ -33,18 +34,17 @@ export function AppSidebar() {
   return (
     <aside className="sticky top-0 flex h-screen w-[68px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-line bg-surface-card px-2 py-4 lg:w-64 lg:px-4">
       <Link
-        href="/"
+        href="/dashboard"
         className="flex h-9 items-center justify-center lg:justify-start"
       >
-        <Wordmark className="hidden lg:inline" />
-        <span className="font-serif text-statute font-bold text-primary-deep lg:hidden">
-          प
-        </span>
+        <Wordmark className="hidden lg:block" />
+        <Mark className="lg:hidden" />
       </Link>
 
-      {/* Home is the ask screen, so a new question starts there. */}
+      {/* Its own route, so this always opens a fresh chat -- including
+          when the reader is already on the dashboard. */}
       <Button asChild className="w-full justify-center lg:justify-start">
-        <Link href="/">
+        <Link href="/research/new">
           <Plus className="size-4" />
           <span className="hidden lg:inline">New Research</span>
         </Link>
@@ -54,7 +54,7 @@ export function AppSidebar() {
         {ITEMS.map(({ href, label, icon: Icon }) => {
           // "/" would otherwise light up on every route.
           const active =
-            href === "/" ? pathname === "/" : pathname.startsWith(href);
+            pathname === href || pathname.startsWith(href + "/");
           return (
             <Link
               key={href}
@@ -77,6 +77,11 @@ export function AppSidebar() {
           );
         })}
       </nav>
+
+      {/* Pushed to the foot: the nav grows downward, the account stays put. */}
+      <div className="mt-auto">
+        <AccountMenu />
+      </div>
     </aside>
   );
 }

@@ -52,13 +52,16 @@ def _login(client, email, password=PASSWORD):
     return client.post("/auth/login", json={"email": email, "password": password})
 
 
-def test_register_then_login_then_identify(client):
+def test_register_then_login_returns_the_token_and_the_identity(client):
+    """One round trip. The client needs both to render anything, and asking
+    for the identity separately made every sign-in two calls and every page
+    load a third."""
     assert _register(client, "test-flow@example.com").status_code == 200
-    token = _login(client, "test-flow@example.com").json()["data"]["access_token"]
+    body = _login(client, "test-flow@example.com").json()["data"]
 
-    me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
-    assert me.status_code == 200
-    assert me.json()["data"]["email"] == "test-flow@example.com"
+    assert body["access_token"]
+    assert body["email"] == "test-flow@example.com"
+    assert body["user_id"]
 
 
 def test_a_second_registration_of_the_same_email_is_refused(client):
@@ -113,13 +116,24 @@ def test_an_expired_token_is_refused(client):
 def test_a_non_bearer_scheme_is_refused(client):
     _register(client, "test-scheme@example.com")
     token = _login(client, "test-scheme@example.com").json()["data"]["access_token"]
-    response = client.get("/auth/me", headers={"Authorization": f"Basic {token}"})
+    response = client.get("/threads", headers={"Authorization": f"Basic {token}"})
     assert response.status_code == 401
 
 
-def test_a_token_for_a_deleted_account_is_refused(client):
+def test_a_token_for_a_deleted_account_still_works(client):
     """Statelessness has a cost, and this is where it shows: the token is
-    validly signed and unexpired, but the account is gone."""
+    validly signed and unexpired, and the account is gone.
+
+    Asserted as it is, not as it should be. `/auth/me` used to load the row
+    and 401, but it was the only route that did -- every other route has
+    always accepted such a token, because the middleware verifies the
+    signature and nothing else. Removing that route (2026-09-03) narrowed
+    nothing; it removed the one place the gap was not visible.
+
+    No route deletes an account, so the only way to reach this state is a
+    manual DELETE. Closing it means a user lookup on every request, and
+    that is a cost worth paying only once account deletion exists.
+    """
     _register(client, "test-gone@example.com")
     token = _login(client, "test-gone@example.com").json()["data"]["access_token"]
 
@@ -129,8 +143,8 @@ def test_a_token_for_a_deleted_account_is_refused(client):
     connection.commit()
     connection.close()
 
-    response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 401
+    response = client.get("/threads", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
 
 
 def test_no_configured_secret_closes_the_service(monkeypatch):

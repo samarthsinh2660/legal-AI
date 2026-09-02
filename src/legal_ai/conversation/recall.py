@@ -37,7 +37,7 @@ from typing import Any
 
 from legal_ai.config import DEFAULT_CONFIG
 from legal_ai.llm.client import generate
-from legal_ai.schemas.answer import DraftAnswer
+from legal_ai.schemas.answer import DraftAnswer, SourceLink
 from legal_ai.schemas.verification import Claim
 
 # Stored answers read back for one composition. Matches the history the
@@ -145,6 +145,39 @@ def _selected(parsed: dict, claims: list[_Stored]) -> list[_Stored]:
     return chosen
 
 
+def _sources_for(answers: list[dict[str, Any]], cited: set[str]) -> tuple[SourceLink, ...]:
+    """The stored source links for the ids this composition carried forward.
+
+    Copied from storage, never rebuilt: the link was made by the turn that
+    retrieved the document, from the Evidence it held. Nothing here has
+    that Evidence, so re-deriving a URL would be a guess.
+
+    Without this the composed answer had claims and ids but no links, and
+    the screen fell back to printing bare identifiers -- so a follow-up
+    looked materially worse than the answer it was composed from, for no
+    reason the reader could see. Found 2026-09-03.
+
+    Later turns win: the same document may have been stored twice, and the
+    most recent link is the one most recently checked.
+    """
+    found: dict[str, SourceLink] = {}
+    for answer in answers:
+        for raw in answer.get("sources") or ():
+            if not isinstance(raw, dict):
+                continue
+            document_id = raw.get("document_id")
+            if document_id in cited:
+                found[document_id] = SourceLink(
+                    document_id=document_id,
+                    title=raw.get("title") or "",
+                    citation=raw.get("citation"),
+                    court=raw.get("court"),
+                    url=raw.get("url"),
+                    openable=bool(raw.get("openable")),
+                )
+    return tuple(found.values())
+
+
 def answer_from_thread(
     question: str,
     answers: list[dict[str, Any]],
@@ -206,4 +239,5 @@ def answer_from_thread(
         partially_supported=tuple(s.text for s in by_bucket["partially_supported"]),
         support_not_checked=any(s.support_not_checked for s in chosen),
         citations=tuple(sorted(cited)),
+        sources=_sources_for(answers, cited),
     )
