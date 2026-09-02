@@ -49,7 +49,7 @@ export function useLoginForm(mode: "signIn" | "signUp") {
     setIsSubmitting(true);
     try {
       await (mode === "signIn" ? signIn(form) : signUp(form));
-      router.push("/");
+      router.push("/dashboard");
     } catch (error) {
       // The backend's message is already written for a reader and reveals
       // nothing -- an unknown address and a wrong password answer alike.

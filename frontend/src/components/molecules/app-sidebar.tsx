@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
  * hook: JS would render one width on the server and another after mount.
  */
 const ITEMS = [
-  { href: "/", label: "Home", icon: Home },
+  { href: "/dashboard", label: "Home", icon: Home },
   { href: "/cases", label: "Cases", icon: FolderOpen },
   { href: "/search", label: "Search", icon: Search },
   { href: "/graph", label: "Graph", icon: Share2 },
@@ -33,7 +33,7 @@ export function AppSidebar() {
   return (
     <aside className="sticky top-0 flex h-screen w-[68px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-line bg-surface-card px-2 py-4 lg:w-64 lg:px-4">
       <Link
-        href="/"
+        href="/dashboard"
         className="flex h-9 items-center justify-center lg:justify-start"
       >
         <Wordmark className="hidden lg:inline" />
@@ -42,9 +42,9 @@ export function AppSidebar() {
         </span>
       </Link>
 
-      {/* Home is the ask screen, so a new question starts there. */}
+      {/* The dashboard is the ask screen, so a new question starts there. */}
       <Button asChild className="w-full justify-center lg:justify-start">
-        <Link href="/">
+        <Link href="/dashboard">
           <Plus className="size-4" />
           <span className="hidden lg:inline">New Research</span>
         </Link>
@@ -54,7 +54,7 @@ export function AppSidebar() {
         {ITEMS.map(({ href, label, icon: Icon }) => {
           // "/" would otherwise light up on every route.
           const active =
-            href === "/" ? pathname === "/" : pathname.startsWith(href);
+            pathname === href || pathname.startsWith(href + "/");
           return (
             <Link
               key={href}

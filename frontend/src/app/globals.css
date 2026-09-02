@@ -215,4 +215,17 @@
   .mono {
     font-variant-numeric: tabular-nums;
   }
+
+  /* The hero's running step. Stopped under prefers-reduced-motion by the
+   * base layer, which zeroes every animation. */
+  .spin {
+    animation: pramana-spin 1.1s linear infinite;
+    transform-origin: 50% 50%;
+  }
+}
+
+@keyframes pramana-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
