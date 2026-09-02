@@ -4,6 +4,7 @@ import { ProvenanceBadge } from "@/components/molecules/provenance-badge";
 import { provenanceOf } from "../evidence";
 import type { Answer } from "../types";
 import { CitationRef } from "./citation-ref";
+import { SourceList } from "./source-list";
 import { EvidenceBlock } from "./evidence-block";
 
 /** The distinct provenances actually present, so the answer is marked
@@ -95,7 +96,10 @@ export function AnswerView({ answer }: { answer: Answer }) {
         </p>
       )}
 
-      {(answer.applicable_law.length > 0 || answer.key_judgments.length > 0) && (
+      {answer.sources.length > 0 && <SourceList sources={answer.sources} />}
+
+      {answer.sources.length === 0 &&
+        (answer.applicable_law.length > 0 || answer.key_judgments.length > 0) && (
         <section className="border-t border-line pt-4">
           <span className="caps text-ink-muted">Sources</span>
           <div className="mt-2 flex flex-wrap gap-1.5">

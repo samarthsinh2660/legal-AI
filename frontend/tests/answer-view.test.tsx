@@ -31,6 +31,7 @@ function answer(overrides: Partial<Answer> = {}): Answer {
     support_not_checked: false,
     coverage_note: "",
     citations: [],
+    sources: [],
     disclaimer: "",
     ...overrides,
   };
@@ -173,6 +174,48 @@ describe("citations", () => {
       "href",
       "/graph?anchor=act%3A2158%3Asec-18",
     );
+  });
+});
+
+describe("sources", () => {
+  it("links a source a reader can open", () => {
+    render(
+      <AnswerView
+        answer={answer({
+          sources: [{
+            document_id: "act:2189:sec-138",
+            title: "Dishonour of cheque",
+            citation: null, court: null,
+            url: "https://www.indiacode.nic.in/handle/123456789/2189",
+            openable: true,
+          }],
+        })}
+      />,
+    );
+    const link = screen.getByRole("link", { name: /Dishonour of cheque/i });
+    expect(link).toHaveAttribute("href", "https://www.indiacode.nic.in/handle/123456789/2189");
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("offers no link when the stored url is a bundled archive", () => {
+    render(
+      <AnswerView
+        answer={answer({
+          sources: [{
+            document_id: "judgment:escr01",
+            title: "A v. B",
+            citation: "[2020] 8 S.C.R. 1057",
+            court: "Supreme Court of India",
+            url: "https://x.s3.amazonaws.com/data/tar/year=2020/english.tar",
+            openable: false,
+          }],
+        })}
+      />,
+    );
+    expect(screen.queryByRole("link", { name: /A v\. B/i })).not.toBeInTheDocument();
+    // The citation is what the reader uses instead, so it must be shown.
+    expect(screen.getByText(/2020\] 8 S\.C\.R\. 1057/)).toBeInTheDocument();
+    expect(screen.getByText(/no direct link/i)).toBeInTheDocument();
   });
 });
 

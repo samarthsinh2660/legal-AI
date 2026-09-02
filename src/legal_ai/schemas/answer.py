@@ -25,6 +25,25 @@ DISCLAIMER = (
 
 
 @dataclass(frozen=True)
+class SourceLink:
+    """A cited document and how to open it.
+
+    `openable` is false when the stored URL is a bundled archive rather
+    than the document -- Supreme Court and High Court judgments came from
+    year tars, and offering a several-hundred-megabyte download as "open
+    this judgment" is worse than offering no link. Those carry their
+    citation instead, which is what a reader looks up.
+    """
+
+    document_id: str
+    title: str = ""
+    citation: str | None = None
+    court: str | None = None
+    url: str | None = None
+    openable: bool = False
+
+
+@dataclass(frozen=True)
 class DraftAnswer:
     """What the research screen renders."""
 
@@ -65,6 +84,10 @@ class DraftAnswer:
     support_not_checked: bool = False
 
     citations: tuple[str, ...] = ()
+
+    # One per cited id, carrying the link a reader opens to check the
+    # claim. Without these the answer is a set of opaque identifiers.
+    sources: tuple[SourceLink, ...] = ()
 
     # Set when the question names an Act the corpus does not hold. A
     # statement about our shelf, not about the law -- see

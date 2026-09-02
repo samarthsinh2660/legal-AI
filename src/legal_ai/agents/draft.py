@@ -16,7 +16,12 @@ from __future__ import annotations
 
 from legal_ai.retrieval.authority import Authority, rank_by_authority
 from legal_ai.retrieval.coverage import coverage_note
-from legal_ai.schemas.answer import DISCLAIMER, AnalysisResult, DraftAnswer
+from legal_ai.schemas.answer import (
+    DISCLAIMER,
+    AnalysisResult,
+    DraftAnswer,
+    SourceLink,
+)
 from legal_ai.schemas.evidence import Evidence
 from legal_ai.schemas.verification import Claim, Verdict
 
@@ -144,12 +149,45 @@ def build_answer(
         partially_supported=tuple(partial),
         support_not_checked=skipped_support,
         citations=tuple(sorted(cited)),
+        sources=_sources(sorted(cited), evidence),
         coverage_note=coverage_note(question) or "",
         # Nothing legal was said, so there is nothing to disclaim. The
         # boilerplate under "I cannot help with that" reads as a
         # non-sequitur.
         disclaimer="" if analysis.lede == OUT_OF_SCOPE else DISCLAIMER,
     )
+
+
+# A URL pointing into a bundled archive rather than at one document.
+_ARCHIVE = (".tar", ".tar.gz", ".zip", "/tar/")
+
+# India Code moved to indiacode.gov.in in 2026 and renumbered every handle,
+# so the stored nic.in URLs return 404. Verified 2026-09-01. Repairing them
+# means re-mapping 35,601 section handles against the new REST API; until
+# that runs, the link is withheld rather than shown broken.
+_DEAD_HOSTS = ("indiacode.nic.in",)
+
+
+def _sources(cited: list[str], evidence: list[Evidence]) -> tuple[SourceLink, ...]:
+    """A link per cited id, from the evidence that carried it."""
+    by_id = {item.document_id: item for item in evidence if item.document_id}
+    links = []
+    for document_id in cited:
+        item = by_id.get(document_id)
+        if item is None:
+            continue
+        url = item.provenance.source.url or ""
+        links.append(SourceLink(
+            document_id=document_id,
+            title=item.title or "",
+            citation=item.citation,
+            court=item.court,
+            url=url or None,
+            openable=bool(url)
+            and not any(mark in url for mark in _ARCHIVE)
+            and not any(host in url for host in _DEAD_HOSTS),
+        ))
+    return tuple(links)
 
 
 def render(answer: DraftAnswer) -> str:

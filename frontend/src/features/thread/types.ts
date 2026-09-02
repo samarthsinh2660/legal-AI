@@ -84,6 +84,20 @@ export type Claim = z.infer<typeof ClaimSchema>;
  * claim as a refuted one -- or, the other way round, hands a reader a
  * refutation dressed as an open question.
  */
+/** A cited document and how to open it. `openable` false means the stored
+ *  URL is a bundled archive rather than the document -- SC and HC
+ *  judgments came from year tars, so those show their citation instead. */
+export const SourceLinkSchema = z.object({
+  document_id: z.string(),
+  title: z.string(),
+  citation: z.string().nullable().optional(),
+  court: z.string().nullable().optional(),
+  url: z.string().nullable().optional(),
+  openable: z.boolean(),
+});
+
+export type SourceLink = z.infer<typeof SourceLinkSchema>;
+
 export const AnswerSchema = z.object({
   question: z.string(),
   lede: z.string(),
@@ -101,6 +115,7 @@ export const AnswerSchema = z.object({
    *  statement about our shelf, not about the law. */
   coverage_note: z.string().default(""),
   citations: z.array(z.string()),
+  sources: z.array(SourceLinkSchema).default([]),
   disclaimer: z.string(),
 });
 
