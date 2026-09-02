@@ -57,7 +57,12 @@ class ResearchResult:
         return len(self.angles)
 
 
-def _search(query: str, limit: int, filters: MetadataFilters | None = None) -> list[Evidence]:
+def _search(
+    query: str,
+    limit: int,
+    filters: MetadataFilters | None = None,
+    also: str | None = None,
+) -> list[Evidence]:
     """One search. No model call.
 
     Calls hybrid_search directly, at the width it will return. That is
@@ -69,9 +74,12 @@ def _search(query: str, limit: int, filters: MetadataFilters | None = None) -> l
     Deliberately not search_statutes: that over-fetches five-fold and then
     filters by document type, which is right for a caller browsing statutes
     and wrong here.
+
+    `also` is the reader's own wording, searched alongside the statutory
+    query and fused by rank.
     """
     try:
-        return list(hybrid_search(query, limit=limit, filters=filters))
+        return list(hybrid_search(query, limit=limit, filters=filters, also=also))
     except Exception:
         return []
 
@@ -182,7 +190,14 @@ def research(
     per_angle: list[list[Evidence]] = []
     dropped: list[tuple[str, str]] = []
     for angle in angles:
-        result = validate(_search(angle.query, limit=limit, filters=filters), conn=conn)
+        # The statutory query and the reader's own words find different
+        # things, so both are searched and fused -- MRR 0.469 against 0.311
+        # for the question alone and 0.350 for the rewrite alone. See
+        # retrieval.hybrid._fused_order.
+        result = validate(
+            _search(angle.query, limit=limit, filters=filters, also=question),
+            conn=conn,
+        )
         dropped.extend(result.dropped)
         per_angle.append(result.kept)
 

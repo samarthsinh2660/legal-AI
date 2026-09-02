@@ -227,3 +227,30 @@ def test_a_reply_with_no_claims_still_reports_its_lede(monkeypatch):
 
     assert result.claims == ()
     assert result.lede == "The material does not answer this."
+
+
+def test_a_judgment_extract_is_not_truncated_to_one_passage_in_the_prompt():
+    """`build_evidence` carries several passages of a judgment; a render cap
+    of 700 chars would show the model the first one and throw the rest away."""
+    from legal_ai.agents.analyst import _render_evidence
+    from legal_ai.retrieval.evidence_builder import ELLIPSIS, EXTRACT_CHARS
+
+    extract = ("Held on the first point. " * 40) + f"\n{ELLIPSIS}\n" + \
+              ("Held on the second point. " * 40)
+    item = Evidence(
+        document_id="judgment:x",
+        document_type="judgment",
+        title="X v. Y",
+        content=extract,
+        provenance=Provenance(
+            source=SourceRef(name="SCI", url="https://x", source_type="primary"),
+            retrieved_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            licence="GoI",
+            attribution_required=False,
+        ),
+    )
+
+    rendered = _render_evidence([item])
+
+    assert "second point" in rendered
+    assert len(extract) <= EXTRACT_CHARS

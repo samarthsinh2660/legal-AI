@@ -6,8 +6,8 @@ Two shapes, and the difference matters:
 a specific document by id (get_section, get_judgment), where the whole thing
 is the answer.
 
-`build_evidence` carries the passage that matched. A search result should
-return the paragraph that matched, not the head of a 40,000-character
+`build_evidence` carries the passages that matched. A search result should
+return the paragraphs that matched, not the head of a 40,000-character
 judgment that may be about something else. This is tier 1 of the
 progressive disclosure in PHASE_3 §7: search returns small, get_* returns
 whole, the source panel's Open returns the PDF.
@@ -43,6 +43,21 @@ SECTION_CHARS = 4000
 # characters, and one carried whole would spend the entire prompt.
 _WHOLE_TEXT_TYPES = frozenset({"section"})
 
+# A document too long to carry whole is carried as its nearest few chunks
+# rather than its single nearest one. The median judgment we hold is 15,196
+# chars across 18 chunks, so one chunk was ~5% of the judgment the analyst
+# was citing; the holding and the reasoning it rests on are rarely in the
+# same chunk. Three is what the budget buys: chunks run 1,303 chars at the
+# median and 1,507 at the 95th percentile, so 4,000 fits three of almost any
+# of them. The budget matches SECTION_CHARS, which caps the prompt at the
+# same 48,000 chars (12 items) that sections could already reach.
+MAX_PASSAGES = 3
+EXTRACT_CHARS = 4000
+
+# Marks where text was dropped between two passages that are not adjacent in
+# the document. Without it the model reads two distant paragraphs as one.
+ELLIPSIS = "[...]"
+
 
 def to_evidence(doc: CanonicalDocument, content: str | None = None,
                 location: Location | None = None) -> Evidence:
@@ -75,26 +90,55 @@ def _location(label: str | None) -> Location | None:
 
 def _matched_passages(
     conn: psycopg.Connection, query: str, document_ids: list[str]
-) -> dict[str, tuple[str, str | None]]:
-    """Nearest passage per document as {document_id: (text, label)}."""
+) -> dict[str, list[tuple[int, str, str | None]]]:
+    """Nearest passages per document as {document_id: [(ordinal, text, label)]},
+    nearest first."""
     if not document_ids:
         return {}
 
     query_embedding = embed(query)
+    passages: dict[str, list[tuple[int, str, str | None]]] = {}
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT document_id, text, label FROM (
-              SELECT document_id, left(text, %s) AS text, label,
+            SELECT document_id, ordinal, text, label FROM (
+              SELECT document_id, ordinal, left(text, %s) AS text, label,
                      row_number() OVER (PARTITION BY document_id
                                         ORDER BY embedding <=> %s::vector) AS rn
               FROM document_chunks
               WHERE embedding IS NOT NULL AND document_id = ANY(%s)
-            ) t WHERE rn = 1
+            ) t WHERE rn <= %s ORDER BY document_id, rn
             """,
-            (PASSAGE_CHARS, query_embedding, document_ids),
+            (PASSAGE_CHARS, query_embedding, document_ids, MAX_PASSAGES),
         )
-        return {row[0]: (row[1], row[2]) for row in cur.fetchall()}
+        for document_id, ordinal, text, label in cur.fetchall():
+            passages.setdefault(document_id, []).append((ordinal, text, label))
+    return passages
+
+
+def _extract(passages: list[tuple[int, str, str | None]]) -> tuple[str, str | None]:
+    """One extract from the nearest passages, as (text, label of its start).
+
+    Passages are chosen nearest-first until the budget is spent, then laid out
+    in document order: a judgment read in similarity order reverses cause and
+    holding. `ELLIPSIS` separates passages that were not adjacent, so the
+    reader is never shown a gap as continuous text.
+    """
+    kept = [passages[0]]
+    used = len(passages[0][1])
+    for passage in passages[1:]:
+        cost = len(passage[1]) + len(ELLIPSIS) + 2
+        if used + cost > EXTRACT_CHARS:
+            break
+        kept.append(passage)
+        used += cost
+
+    kept.sort(key=lambda p: p[0])
+    parts = [kept[0][1]]
+    for previous, current in zip(kept, kept[1:]):
+        parts.append("" if current[0] == previous[0] + 1 else ELLIPSIS)
+        parts.append(current[1])
+    return "\n".join(part for part in parts if part)[:EXTRACT_CHARS], kept[0][2]
 
 
 def build_evidence(
@@ -104,9 +148,13 @@ def build_evidence(
 ) -> list[Evidence]:
     """Fetch documents for `document_ids`, preserving that order.
 
-    With `query`, each result carries the passage that best matches it and
-    the location of that passage. Without one, the whole document is carried
-    -- callers that resolve a known id want the document itself.
+    With `query`, each result carries the passages that best match it.
+    Without one, the whole document is carried -- callers that resolve a
+    known id want the document itself.
+
+    `location` marks where the extract *begins* -- the label of its first
+    passage in document order. It does not describe the whole extract, which
+    may skip forward past `ELLIPSIS`; there is no single marker that would.
 
     Ids with no stored document are skipped rather than raising: the graph
     can hold a node whose Postgres row was never stored.
@@ -129,11 +177,11 @@ def build_evidence(
             continue
 
         matched = passages.get(document_id)
-        if matched is None:
+        if not matched:
             # No chunk: the document was short enough to embed whole, so its
             # own text is the passage. Truncated to the same budget.
             evidence.append(to_evidence(doc, content=doc.full_text[:PASSAGE_CHARS]))
         else:
-            text, label = matched
+            text, label = _extract(matched)
             evidence.append(to_evidence(doc, content=text, location=_location(label)))
     return evidence

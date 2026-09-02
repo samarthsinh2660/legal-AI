@@ -61,6 +61,7 @@ def chunk_and_store(
     text: str,
     document_type: str,
     max_chars: int = DEFAULT_MAX_CHARS,
+    title: str | None = None,
 ) -> int:
     """Chunk `text` if it is too long to embed whole, and store the pieces.
 
@@ -69,6 +70,12 @@ def chunk_and_store(
 
     Used both by the bulk builder and at ingest time, so a newly stored
     document is never left in the truncated state chunking exists to fix.
+
+    `title` is embedded with every chunk but not stored in it. A section's
+    title is its semantic handle -- "Dishonour of cheque for insufficiency
+    of funds" -- and none of it appears in the body, so without this the
+    section could not be retrieved by its own name. Keeping it out of the
+    stored text avoids repeating it in every passage shown to the model.
     """
     from legal_ai.knowledge.static.embeddings import embed_many
     from legal_ai.retrieval.chunking.judgment import chunk_judgment
@@ -82,7 +89,10 @@ def chunk_and_store(
     if not chunks:
         return 0
 
-    upsert_chunks(conn, document_id, chunks, embed_many([c.text for c in chunks]))
+    prefix = f"{title}\n" if title else ""
+    upsert_chunks(
+        conn, document_id, chunks, embed_many([prefix + c.text for c in chunks])
+    )
 
     # The parent's own vector covers only the first max_chars, so drop it:
     # the document is now represented by its chunks, exactly once.
@@ -111,14 +121,14 @@ def delete_chunks(conn: psycopg.Connection, document_id: str) -> None:
 
 def documents_needing_chunks(
     conn: psycopg.Connection, min_chars: int, limit: int | None = None
-) -> list[tuple[str, str, str]]:
-    """Long documents that have no chunks yet, as (document_id, text, type).
+) -> list[tuple[str, str, str, str]]:
+    """Long documents with no chunks yet, as (id, text, type, title).
 
     Asking the database what is still missing is what makes the build
     resumable: an interrupted run is continued by running it again.
     """
     sql = """
-        SELECT d.document_id, d.full_text, d.document_type
+        SELECT d.document_id, d.full_text, d.document_type, coalesce(d.title, '')
         FROM documents d
         WHERE d.document_type = ANY(%s)
           AND length(d.full_text) > %s

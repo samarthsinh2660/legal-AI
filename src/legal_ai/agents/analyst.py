@@ -35,6 +35,7 @@ from legal_ai.context.models import DocumentFacts
 from legal_ai.llm.client import generate
 from legal_ai.schemas.answer import AnalysisResult
 from legal_ai.schemas.evidence import Evidence
+from legal_ai.retrieval.evidence_builder import EXTRACT_CHARS
 from legal_ai.schemas.verification import Claim
 
 # Provisions put in front of the model. Beyond this the tail is the least
@@ -45,11 +46,10 @@ MAX_EVIDENCE_SHOWN = 12
 # without pasting an entire Act into the prompt.
 _UNAVAILABLE = "Retrieved {n} provisions; analysis was unavailable."
 
-PASSAGE_CHARS = 700
-
-# A statute section arrives whole from `retrieval.evidence_builder`, and the
-# passage cap would cut its provisos back off. Judgments are unaffected:
-# their content is already a passage of at most `passage_chars`.
+# Evidence arrives already budgeted by `retrieval.evidence_builder` -- a
+# section whole, anything longer as its nearest few passages. A smaller cap
+# here would only undo that: it used to be 700, which showed the model the
+# first passage of a multi-passage judgment extract and dropped the rest.
 SECTION_CHARS = 4000
 
 # Said when the planner found no legal issue to search for. Carries no
@@ -91,7 +91,7 @@ Return ONLY JSON:
 def _render_evidence(evidence: list[Evidence]) -> str:
     return "\n\n".join(
         f"[{item.document_id}] {item.title or ''}\n"
-        f"{item.content[:SECTION_CHARS if (item.document_type or '') == 'section' else PASSAGE_CHARS]}"
+        f"{item.content[:max(SECTION_CHARS, EXTRACT_CHARS)]}"
         for item in evidence[:MAX_EVIDENCE_SHOWN]
         if item.document_id
     )

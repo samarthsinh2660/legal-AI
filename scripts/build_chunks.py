@@ -41,8 +41,10 @@ def build(conn, max_chars: int, min_chars: int, limit: int | None) -> int:
     done = 0
     chunk_total = 0
     started = time.time()
-    for document_id, text, document_type in pending:
-        written = chunk_and_store(conn, document_id, text, document_type, max_chars=max_chars)
+    for document_id, text, document_type, title in pending:
+        written = chunk_and_store(
+            conn, document_id, text, document_type, max_chars=max_chars, title=title
+        )
         if not written:
             continue
 

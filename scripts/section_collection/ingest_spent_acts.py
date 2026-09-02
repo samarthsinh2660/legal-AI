@@ -176,7 +176,10 @@ def run() -> None:
             )
             section_vector = embed(section_doc.full_text)
             upsert_document(conn, section_doc, embedding=section_vector)
-            chunk_and_store(conn, section_doc.document_id, section_doc.full_text, section_doc.document_type)
+            chunk_and_store(
+                conn, section_doc.document_id, section_doc.full_text,
+                section_doc.document_type, title=section_doc.title,
+            )
             write_act_section(driver, act_doc, section_doc)
             filled += 1
 

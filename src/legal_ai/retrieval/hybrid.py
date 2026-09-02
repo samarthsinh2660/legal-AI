@@ -61,6 +61,28 @@ def _with_floor(conn, ranked_ids: list[str], limit: int, enabled: bool) -> list[
     return apply_type_floor(ranked_ids, dict(rows), limit)
 
 
+def _fused_order(query: str, also: str | None, search_once) -> list[str]:
+    """Document ids for `query`, fused with those for `also`.
+
+    The reader's own wording and the statutory rewrite find different
+    things: measured over evals/datasets/retrieval.json, rewriting alone
+    rescued three questions that missed and broke eight that worked.
+    Fusing both scored MRR 0.469 against 0.311 raw and 0.350 rewritten,
+    and recall@1 36% against 16%.
+
+    Fusion is by rank, so the two lists' incomparable scores never meet.
+    """
+    first = search_once(query)
+    if not also or also.strip() == query.strip():
+        return first
+    second = search_once(also)
+    fused = reciprocal_rank_fusion([
+        [(document_id, 0.0) for document_id in first],
+        [(document_id, 0.0) for document_id in second],
+    ])
+    return [document_id for document_id, _score in fused]
+
+
 def hybrid_search(
     query: str,
     limit: int = 10,
@@ -71,8 +93,15 @@ def hybrid_search(
     expand_graph: bool = False,
     rerank: bool = True,
     type_floor: bool | None = None,
+    also: str | None = None,
 ) -> list[Evidence]:
     """Retrieve the most relevant stored documents for `query`.
+
+    `also` is a second phrasing of the same question -- typically the
+    statutory rewrite where `query` is the reader's own words. Both are
+    searched and the results fused by rank; see `_fused_order` for the
+    numbers. It costs a second retrieval, so pass it only where the
+    rewrite already exists.
 
     Searches only what is already stored; fetching new judgments from live
     sources is legal_ai.tools.judgments.search_judgments.
@@ -125,37 +154,41 @@ def hybrid_search(
 
     conn = get_connection()
     try:
-        signal_results = [
-            search_keyword(conn, query, limit=fetch, filters=filters),
-            search_vector(conn, query, limit=fetch, filters=filters),
-            search_metadata(conn, query, limit=fetch, filters=filters),
-        ]
-        fused = reciprocal_rank_fusion(signal_results)
+        def search_once(one: str) -> list[str]:
+            signal_results = [
+                search_keyword(conn, one, limit=fetch, filters=filters),
+                search_vector(conn, one, limit=fetch, filters=filters),
+                search_metadata(conn, one, limit=fetch, filters=filters),
+            ]
+            fused = reciprocal_rank_fusion(signal_results)
 
-        if expand_graph and fused:
-            seeds = [document_id for document_id, _score in fused[:limit]]
-            driver = get_driver()
-            try:
-                expanded = expand_via_graph(driver, seeds, limit=fetch)
-            finally:
-                driver.close()
-            if expanded:
-                fused = reciprocal_rank_fusion([fused, expanded])
+            if expand_graph and fused:
+                seeds = [document_id for document_id, _score in fused[:limit]]
+                driver = get_driver()
+                try:
+                    expanded = expand_via_graph(driver, seeds, limit=fetch)
+                finally:
+                    driver.close()
+                if expanded:
+                    fused = reciprocal_rank_fusion([fused, expanded])
 
-        if rerank and fused:
-            shortlist = [document_id for document_id, _score in fused[:RERANK_CANDIDATES]]
-            passages = best_passages(conn, query, shortlist)
-            # Rerank the whole shortlist, not the top `limit`: the statute
-            # the floor promotes is usually below the cut, and truncating
-            # first would leave nothing to promote.
-            reranked = rerank_candidates(query, passages, limit=len(shortlist))
-            if reranked:
-                order = [document_id for document_id, _score in reranked]
-                return build_evidence(
-                    conn, _with_floor(conn, order, limit, type_floor), query=query
-                )
+            if rerank and fused:
+                shortlist = [
+                    document_id for document_id, _score in fused[:RERANK_CANDIDATES]
+                ]
+                passages = best_passages(conn, one, shortlist)
+                # Rerank the whole shortlist, not the top `limit`: the
+                # statute the floor promotes is usually below the cut, and
+                # truncating first would leave nothing to promote.
+                reranked = rerank_candidates(one, passages, limit=len(shortlist))
+                if reranked:
+                    return [document_id for document_id, _score in reranked]
 
-        order = [document_id for document_id, _score in fused]
-        return build_evidence(conn, _with_floor(conn, order, limit, type_floor), query=query)
+            return [document_id for document_id, _score in fused]
+
+        order = _fused_order(query, also, search_once)
+        return build_evidence(
+            conn, _with_floor(conn, order, limit, type_floor), query=query
+        )
     finally:
         conn.close()

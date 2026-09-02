@@ -85,7 +85,10 @@ def ingest_india_code(
         for doc in all_docs:
             vector = embed(doc.full_text) if doc.full_text.strip() else None
             if upsert_document(conn, doc, embedding=vector):
-                chunk_and_store(conn, doc.document_id, doc.full_text, doc.document_type)
+                chunk_and_store(
+                    conn, doc.document_id, doc.full_text, doc.document_type,
+                    title=doc.title,
+                )
                 store_writes += 1
         for act, section in act_sections:
             write_act_section(driver, act, section)

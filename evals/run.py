@@ -25,9 +25,20 @@ def run_question(
     question: EvalQuestion, limit: int, rerank: bool, rewrite: bool = False,
     expand_graph: bool = False,
     type_floor: bool = True,
+    fused: bool = False,
 ) -> int | None:
     text = question.question
-    if rewrite:
+    also = None
+    if fused:
+        # What the agent actually does: search the statutory rewrite AND
+        # the reader's own words, then fuse. Without this the harness
+        # measures a path the product does not take.
+        from legal_ai.agents.research_plan import plan_research
+
+        angles = plan_research(question.question, max_angles=1)
+        if angles:
+            text, also = angles[0].query, question.question
+    elif rewrite:
         # The same call the agent makes -- plan_research emits angles and
         # their statutory queries together. Taking its first query is the
         # rewrite-only baseline, measured at MRR 0.670, and it comes from
@@ -37,7 +48,7 @@ def run_question(
         text = plan_research(text, max_angles=1)[0].query
     evidence = hybrid_search(
         text, limit=limit, rerank=rerank, expand_graph=expand_graph,
-        type_floor=type_floor,
+        type_floor=type_floor, also=also,
     )
     ranked_ids = [item.document_id for item in evidence if item.document_id]
     return first_relevant_rank(ranked_ids, question.expected)
@@ -47,12 +58,13 @@ def run_dataset(
     questions: list[EvalQuestion], limit: int, rerank: bool, rewrite: bool = False,
     expand_graph: bool = False,
     type_floor: bool = True,
+    fused: bool = False,
 ) -> list[int | None]:
     ranks: list[int | None] = []
     for question in questions:
         rank = run_question(
             question, limit=limit, rerank=rerank, rewrite=rewrite,
-            expand_graph=expand_graph, type_floor=type_floor,
+            expand_graph=expand_graph, type_floor=type_floor, fused=fused,
         )
         ranks.append(rank)
         print(f"  {question.id:<32} {'miss' if rank is None else f'rank {rank}'}", flush=True)
@@ -72,6 +84,10 @@ def main() -> None:
         help="do not guarantee a statute a place in the results",
     )
     parser.add_argument(
+        "--fused", action="store_true",
+        help="the shipped path: statutory rewrite and the question, fused",
+    )
+    parser.add_argument(
         "--expand-graph", action="store_true",
         help="expand the fused result set over the knowledge graph before reranking",
     )
@@ -82,12 +98,13 @@ def main() -> None:
 
     print(
         f"{len(questions)} questions, limit={args.limit}, "
-        f"rerank={rerank}, rewrite={args.rewrite}, "
+        f"rerank={rerank}, rewrite={args.rewrite}, fused={args.fused}, "
         f"expand_graph={args.expand_graph}\n"
     )
     ranks = run_dataset(
         questions, limit=args.limit, rerank=rerank, rewrite=args.rewrite,
         expand_graph=args.expand_graph, type_floor=not args.no_type_floor,
+        fused=args.fused,
     )
 
     print(

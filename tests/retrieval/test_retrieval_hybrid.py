@@ -160,3 +160,66 @@ def test_reranking_widens_the_candidate_pool_it_is_given(conn):
         hybrid_module.search_vector = original
 
     assert captured["limit"] >= RERANK_CANDIDATES
+
+
+# --- the user's words and the statutory rewrite, fused ---------------------
+#
+# Measured 2026-09-02 over evals/datasets/retrieval.json:
+#
+#             MRR    r@1   r@5   r@10
+#   raw       0.311  16%   54%   68%
+#   rewritten 0.350  18%   58%   70%
+#   fused     0.469  36%   64%   70%
+#
+# Rewriting alone is a trade: it rescued three questions that missed and
+# broke eight that worked, because it discards the reader's own wording.
+# Searching both and fusing by rank keeps each one's wins.
+
+def test_searching_both_phrasings_keeps_what_each_finds():
+    import legal_ai.retrieval.hybrid as H
+
+    calls = []
+
+    def fake_once(query, **kw):
+        calls.append(query)
+        return {
+            "cheque bounce": ["judgment:a", "judgment:b"],
+            "dishonour of cheque": ["act:2189:sec-138", "judgment:a"],
+        }[query]
+
+    ids = H._fused_order("cheque bounce", "dishonour of cheque", fake_once)
+
+    assert calls == ["cheque bounce", "dishonour of cheque"]
+    # Present in both, so it leads; each list's unique hit survives.
+    assert ids[0] == "judgment:a"
+    assert "act:2189:sec-138" in ids
+    assert "judgment:b" in ids
+
+
+def test_one_phrasing_alone_is_returned_unchanged():
+    """No second query means no fusion, and no second retrieval paid for."""
+    import legal_ai.retrieval.hybrid as H
+
+    calls = []
+
+    def fake_once(query, **kw):
+        calls.append(query)
+        return ["act:1:sec-1"]
+
+    assert H._fused_order("q", None, fake_once) == ["act:1:sec-1"]
+    assert calls == ["q"]
+
+
+def test_an_identical_rewrite_is_not_searched_twice():
+    """The planner often returns the question unchanged for an already
+    statutory query. Paying for the same retrieval twice buys nothing."""
+    import legal_ai.retrieval.hybrid as H
+
+    calls = []
+
+    def fake_once(query, **kw):
+        calls.append(query)
+        return ["act:1:sec-1"]
+
+    H._fused_order("same words", "same words", fake_once)
+    assert calls == ["same words"]
