@@ -1,11 +1,13 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
+import Link from "next/link";
+import { Paperclip, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { useAskForm } from "../hooks/useAskForm";
+import { VerificationToggle } from "./verification-toggle";
 
 /** The examples are prompts, not data -- they seed the box and nothing
  *  more, so they belong here rather than behind a request. */
@@ -16,8 +18,10 @@ const EXAMPLES = [
 
 /** Organism: uses `useAskForm`, so it owns the submitting and error state. */
 export function AskBox({ caseId }: { caseId?: string }) {
-  const { question, error, isCreating, handleChange, handleSubmit } =
-    useAskForm(caseId);
+  const {
+    question, error, isCreating, verification, setVerification,
+    handleChange, handleSubmit,
+  } = useAskForm(caseId);
 
   return (
     <Card className="gap-0 p-6 shadow-1 transition-colors duration-[120ms] ease-out focus-within:border-primary">
@@ -60,6 +64,26 @@ export function AskBox({ caseId }: { caseId?: string }) {
               {example}
             </button>
           ))}
+
+        {/* Uploads belong to a case, not to a thread -- that is what the
+            API stores against, and it is what lets one bundle serve every
+            question about the same matter. Without this the upload screen
+            is real and unreachable from where a reader looks for it. */}
+        {!caseId && (
+          <Link
+            href="/cases"
+            className="inline-flex items-center gap-1.5 rounded-sm border border-line bg-surface-card px-2.5 py-1 text-xs font-medium text-ink-variant transition-colors duration-[120ms] ease-out hover:border-line-strong hover:bg-surface-sunken"
+          >
+            <Paperclip className="size-3.5" />
+            Attach documents
+          </Link>
+        )}
+
+        <VerificationToggle
+          value={verification}
+          onChange={setVerification}
+          disabled={isCreating}
+        />
 
         <Button
           className="ml-auto"

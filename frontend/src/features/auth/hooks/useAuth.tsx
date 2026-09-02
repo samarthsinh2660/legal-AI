@@ -14,102 +14,87 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { RequestError } from "@/lib/api";
-import { TOKEN_KEY } from "@/types/constant";
 import type { Credentials } from "@/types/auth";
 import * as authService from "../services";
+import * as session from "../session";
 import type { User } from "../types";
 
 type AuthContextValue = {
   user: User | null;
-  /** True until the stored token has been checked. Guards render on it --
-   *  routing on `!user` before this settles bounces a signed-in user to
-   *  the login screen on every refresh. */
+  /** True for the first client render only. localStorage is unreadable
+   *  during the server render, so the first paint cannot know whether
+   *  anyone is signed in -- and routing on `!user` before this settles
+   *  bounces a signed-in user to the login screen on every refresh. */
   isLoading: boolean;
-  /** Set when a stored token could not be checked because the server was
-   *  unreachable. The session may be perfectly good, so this is not the
-   *  same as being signed out and must not be treated as it. */
-  unreachable: boolean;
   signIn: (credentials: Credentials) => Promise<void>;
   signUp: (credentials: Credentials) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Patches the stored session after a profile edit, so the sidebar
+   *  updates immediately rather than at the next sign-in. */
+  setName: (name: string) => void;
+  setEmail: (email: string) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [unreachable, setUnreachable] = useState(false);
   const queryClient = useQueryClient();
   const router = useRouter();
 
+  // localStorage is an external store, so it is read through the hook made
+  // for one. No request: `/auth/login` already returned the identity, and
+  // the token carries its own expiry, so restoring a session is entirely
+  // local. Asking the server cost a round trip on every page load to learn
+  // what was already on disk.
+  //
+  // What this gives up is revocation: an account deleted server-side still
+  // renders as signed in until its token expires. With no denylist behind
+  // it (docs/API.md §9) the old `/auth/me` check could not detect a revoked
+  // token either, so nothing real is lost.
+  const user = useSyncExternalStore(
+    session.subscribe,
+    session.read,
+    session.serverSnapshot,
+  );
+  const hydrated = useSyncExternalStore(
+    session.subscribe,
+    () => true,
+    () => false,
+  );
+
   const clear = useCallback(() => {
-    window.localStorage.removeItem(TOKEN_KEY);
-    setUser(null);
+    session.clear();
     // Everything cached was fetched as the previous user.
     queryClient.clear();
   }, [queryClient]);
 
-  // On mount, ask the server who the stored token belongs to. Decoding it
-  // here instead would trust a value the user can edit, and would still
-  // miss a token whose account was deleted.
-  //
-  // Every setState is in a callback, never in the effect body: a
-  // synchronous one cascades a second render before paint, and React
-  // Compiler's lint rejects it. `cancelled` covers unmount and StrictMode's
-  // double-invoke in development.
-  useEffect(() => {
-    let cancelled = false;
-    const token = window.localStorage.getItem(TOKEN_KEY);
-
-    // No token is a settled answer, not a request worth making.
-    const identify = token ? authService.me() : Promise.resolve(null);
-
-    identify
-      .then((identity) => {
-        if (!cancelled) setUser(identity);
-      })
-      .catch((error) => {
-        // A 401 means the token is spent: drop it. Anything else (server
-        // down, offline) must not sign the user out -- their token may be
-        // perfectly good.
-        if (cancelled) return;
-        if (error instanceof RequestError && error.status === 401) {
-          clear();
-          return;
-        }
-        // The token is still theirs. Say the server is unreachable rather
-        // than showing them the signed-out screen.
-        setUnreachable(true);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [clear]);
-
   const signIn = useCallback(
     async (credentials: Credentials) => {
-      const session = await authService.login(credentials);
-      window.localStorage.setItem(TOKEN_KEY, session.access_token);
-      setUnreachable(false);
-      // Read the identity back rather than assuming it from the form, so
-      // `user.email` is the stored, lower-cased one.
-      setUser(await authService.me());
+      // One call. The identity comes back with the token, and it is the
+      // stored, lower-cased email rather than whatever the form held.
+      const { access_token, user_id, email, name } = await authService.login(
+        credentials,
+      );
+      session.save(access_token, { user_id, email, name: name ?? null });
     },
     [],
   );
+
+  const setName = useCallback((name: string) => {
+    session.rename(name);
+  }, []);
+
+  // The token still works -- it carries a user id, not an address -- so
+  // only the stored identity needs replacing.
+  const setEmail = useCallback((email: string) => {
+    session.setEmail(email);
+  }, []);
 
   const signUp = useCallback(
     async (credentials: Credentials) => {
@@ -126,8 +111,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clear, router]);
 
   const value = useMemo(
-    () => ({ user, isLoading, unreachable, signIn, signUp, signOut }),
-    [user, isLoading, unreachable, signIn, signUp, signOut],
+    () => ({
+      user, isLoading: !hydrated, signIn, signUp, signOut, setName, setEmail,
+    }),
+    [user, hydrated, signIn, signUp, signOut, setName, setEmail],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

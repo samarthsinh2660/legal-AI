@@ -161,7 +161,34 @@ describe("a code the corpus does not hold", () => {
 });
 
 describe("citations", () => {
-  it("links a statute to its neighbourhood so the reader can open it", () => {
+  it("opens the real source when the answer carried a URL for it", () => {
+    // The graph shows what a provision connects to; it is not where the
+    // provision is read. A citation must open the source itself.
+    render(
+      <AnswerView
+        answer={answer({
+          key_elements: [{ text: "Claim.", evidence_ids: ["act:2189:sec-138"] }],
+          sources: [{
+            document_id: "act:2189:sec-138",
+            title: "Dishonour of cheque",
+            url: "https://indiacode.gov.in/handle/123456789/535750",
+            openable: true,
+          }],
+        })}
+      />,
+    );
+    const link = screen.getByTitle("Dishonour of cheque");
+    expect(link).toHaveAttribute(
+      "href",
+      "https://indiacode.gov.in/handle/123456789/535750",
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("falls back to the graph when there is no openable source", () => {
+    // IPC sections all point at one raw JSON dataset, which is real
+    // provenance and not a page anyone can read. The graph at least shows
+    // the document and what cites it.
     render(
       <AnswerView
         answer={answer({
@@ -169,8 +196,7 @@ describe("citations", () => {
         })}
       />,
     );
-    const link = screen.getByTitle("act:2158:sec-18");
-    expect(link).toHaveAttribute(
+    expect(screen.getByTitle(/act:2158:sec-18/)).toHaveAttribute(
       "href",
       "/graph?anchor=act%3A2158%3Asec-18",
     );
@@ -197,7 +223,7 @@ describe("sources", () => {
     expect(link).toHaveAttribute("target", "_blank");
   });
 
-  it("offers no link when the stored url is a bundled archive", () => {
+  it("sends the reader to the graph when the stored url is a bundled archive", () => {
     render(
       <AnswerView
         answer={answer({
@@ -212,10 +238,17 @@ describe("sources", () => {
         })}
       />,
     );
-    expect(screen.queryByRole("link", { name: /A v\. B/i })).not.toBeInTheDocument();
+    // Never the archive itself -- a several-hundred-megabyte tar is not
+    // "open this judgment". But not a dead end either: the graph shows the
+    // document and what cites it, and the inline citation chip for the same
+    // source already linked there, so printing plain text here made one
+    // source a link in one place and not in another.
+    const link = screen.getByRole("link", { name: /A v\. B/i });
+    expect(link).toHaveAttribute("href", "/graph?anchor=judgment%3Aescr01");
+    expect(link.getAttribute("href")).not.toContain(".tar");
     // The citation is what the reader uses instead, so it must be shown.
     expect(screen.getByText(/2020\] 8 S\.C\.R\. 1057/)).toBeInTheDocument();
-    expect(screen.getByText(/no direct link/i)).toBeInTheDocument();
+    expect(screen.getByText(/no public page for this one/i)).toBeInTheDocument();
   });
 });
 

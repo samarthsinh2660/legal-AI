@@ -1,4 +1,5 @@
 import { ResearchThread } from "@/features/thread/component/research-thread";
+import { Verification } from "@/features/thread/types";
 
 /**
  * Screen 3, in its first form: the conversation and the progress pane.
@@ -12,12 +13,13 @@ export default async function ResearchPage(
   props: PageProps<"/research/[threadId]">,
 ) {
   const { threadId } = await props.params;
-  const { ask } = await props.searchParams;
+  const { ask, mode } = await props.searchParams;
 
   return (
     <ResearchThread
       threadId={threadId}
       initialQuestion={typeof ask === "string" ? ask : undefined}
+      initialMode={mode === "verified" ? Verification.Verified : Verification.Quick}
     />
   );
 }

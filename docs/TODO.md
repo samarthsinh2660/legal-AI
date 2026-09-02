@@ -105,6 +105,59 @@ looking. That is a real gap before anyone outside sees the product.
 
 ---
 
+## 2b. Citation edges do not reach the newly ingested codes
+
+Measured 2026-09-03:
+
+    NI Act   207 judgments cite its sections
+    IPC        0
+    BNS        0
+
+`CITES_SECTION` edges are written when a judgment is ingested, matching
+against the Acts held at that moment. The IPC, CrPC and Evidence Act
+arrived afterwards, and the BNS was never linked either -- so a judgment
+about murder has no edge to IPC s.302 or BNS s.103, and the graph's statute
+views for those Acts draw unconnected nodes.
+
+Of 36,887 sections in the graph, **2,295** are cited by a judgment we hold.
+The graph screen now reports the slice total and says why a slice may draw
+no edges, rather than showing loose dots.
+
+`scripts/rebuild_citation_edges.py` does **not** fix this -- it recomputes
+judgment-to-judgment `CITES` only, and says so. The fix is a new pass doing
+for `CITES_SECTION` what that script does for `CITES`: re-extract section
+references from all 13,130 stored judgments against the current Act list.
+Nothing else depends on it: retrieval does not use these edges, and
+`find_act_by_name` already resolves the new codes for future ingests.
+
+## 2c. Judgments have no openable link
+
+Every judgment in the corpus says **"No direct link — look it up by the
+citation above."** That is honest and it is not good enough: a reader cannot
+check an authority they cannot open.
+
+The cause is provenance, not a bug. Judgments were ingested from Supreme
+Court year archives, so `provenance.source.url` is a several-hundred-megabyte
+`.tar`. `agents/draft._ARCHIVE` withholds it deliberately — offering that as
+"open this judgment" is worse than offering nothing. The IPC, CrPC and
+Evidence Act have the same shape for a different reason: all 575 IPC sections
+share one raw `.json` dataset URL.
+
+What would fix it, in order of effort:
+
+1. **Statutes** — resolve the named codes on India Code the way
+   `scripts/repair_india_code_urls.py` resolved the numbered Acts. The NI Act
+   already works (`indiacode.gov.in/handle/123456789/535750` for s.138), so
+   the machinery exists; the codes ingested in September were never run
+   through it.
+2. **Judgments** — resolve a reporter citation to a public URL. `[2012] 7
+   S.C.R. 469` is a stable handle, and the SCR volumes are published as PDFs
+   on the Supreme Court's own site. This is a lookup table keyed by
+   `(year, volume, page)`, built once.
+
+Until then the citation itself is what a reader looks up, and the graph is
+the fallback the citation chip links to.
+
 ## 3. Corpus gaps
 
 **State-made rules.** None held -- the corpus is central legislation only.

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useLoginForm } from "../hooks/useLoginForm";
+import { NAME_MAX_LENGTH } from "../types";
 
 /** Organism: it uses a hook, so it owns the submitting and error states.
  *  Both screens are the same two fields, so they are one component. */
@@ -23,6 +24,21 @@ export function LoginForm({ mode }: { mode: "signIn" | "signUp" }) {
         void handleSubmit();
       }}
     >
+      {isSignUp && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="name">Name</Label>
+          <Input
+            id="name"
+            autoComplete="name"
+            maxLength={NAME_MAX_LENGTH}
+            value={form.name ?? ""}
+            onChange={(event) => handleChange("name", event.target.value)}
+            className={cn(errors.name && "border-danger")}
+          />
+          {errors.name && <p className="text-sm text-danger">{errors.name}</p>}
+        </div>
+      )}
+
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="email">Email</Label>
         <Input

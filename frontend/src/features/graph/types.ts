@@ -34,6 +34,9 @@ export const NeighbourhoodSchema = z.object({
    *  missing half its edges is a picture that lies about how connected
    *  something is. */
   truncated: z.boolean(),
+  /** Nodes in the whole slice. Sent on the first batch only, so a reader
+   *  can tell 100 of 36,887 from 100 of 100. */
+  total: z.number().nullable().optional(),
 });
 
 export type GraphNode = z.infer<typeof GraphNodeSchema>;
@@ -42,15 +45,20 @@ export type Neighbourhood = z.infer<typeof NeighbourhoodSchema>;
 
 /** Backend caps (`src/api/graph/repository.py`). Mirrored so the controls
  *  cannot offer a value the server will silently clamp. */
-export const MAX_HOPS = 2;
 export const MAX_NODES = 120;
 
-export const SearchHitSchema = z.object({
-  document_id: z.string(),
-  kind: z.string(),
-  title: z.string(),
-  citation: z.string().nullable().optional(),
-  court: z.string().nullable().optional(),
-});
+/** Nodes per batch. The graph is 50,890 nodes; a force layout stops being
+ *  readable long before that, so the reader asks for the next hundred
+ *  rather than being handed everything. */
+export const BATCH = 100;
 
-export type SearchHit = z.infer<typeof SearchHitSchema>;
+/** The slices a reader can ask for. `view` is either one of these or an
+ *  Act id, which shows that Act's own sections. */
+export const VIEWS = [
+  { id: "judgments", label: "Judgments" },
+  { id: "statutes", label: "Statutes" },
+  { id: "act:ipc-1860", label: "Indian Penal Code" },
+  { id: "act:crpc-1973", label: "CrPC" },
+  { id: "act:iea-1872", label: "Evidence Act" },
+  { id: "act:20062", label: "Bharatiya Nyaya Sanhita" },
+] as const;

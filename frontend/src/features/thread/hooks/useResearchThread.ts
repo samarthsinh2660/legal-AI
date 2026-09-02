@@ -17,10 +17,10 @@ export function useResearchThread(threadId: string) {
   const queryClient = useQueryClient();
 
   const [draft, setDraft] = useState("");
-  // Verified by default. The quick mode is the one that withholds a
-  // check, so choosing it should be the deliberate act, not the accident.
+  // Quick by default, matching the ask box. `send` takes an explicit mode
+  // so the first turn runs the way the reader chose on the way in.
   const [verification, setVerification] = useState<Verification>(
-    Verification.Verified,
+    Verification.Quick,
   );
   const [steps, setSteps] = useState<ProgressStep[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -34,7 +34,7 @@ export function useResearchThread(threadId: string) {
   const messageKey = [...threadKeys.all, threadId, "messages"] as const;
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, mode?: Verification) => {
       const asked = text.trim();
       if (!asked || isSending) return;
 
@@ -62,7 +62,7 @@ export function useResearchThread(threadId: string) {
         for await (const event of streamMessage(
           threadId,
           asked,
-          verification,
+          mode ?? verification,
           controller.signal,
         )) {
           if (event.type === "step") {

@@ -1,6 +1,7 @@
 "use client";
 
 import { Send } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/molecules/empty-state";
 import { PageLoader } from "@/components/molecules/loading";
 import { useResearchThread } from "../hooks/useResearchThread";
+import type { Verification } from "../types";
 import { MessageBubble } from "./message-bubble";
 import { ProgressSteps } from "./progress-steps";
 import { ThreadCaseBanner } from "./thread-case-banner";
@@ -24,9 +26,13 @@ import { VerificationToggle } from "./verification-toggle";
 export function ResearchThread({
   threadId,
   initialQuestion,
+  initialMode,
 }: {
   threadId: string;
   initialQuestion?: string;
+  /** The mode the question was asked in on the dashboard, carried through
+   *  the URL so the first turn runs the way the reader chose. */
+  initialMode?: Verification;
 }) {
   const {
     messages,
@@ -42,14 +48,26 @@ export function ResearchThread({
     send,
   } = useResearchThread(threadId);
 
-  // Fire the handed-over question once. StrictMode mounts effects twice in
-  // development, and without this guard that is two research runs.
+  // Fire the handed-over question once, then take it out of the URL.
+  //
+  // The ref alone was not enough. It guards one mount, and `?ask=` stayed
+  // in the address bar for good -- so a reload, a back-navigation or a
+  // fast-refresh mounted this again and asked the same question a second
+  // and third time. The thread had already answered it, so the replay came
+  // back in under a second and the reader saw their one question three
+  // times over. Observed on thread 6aff1ac2, 2026-09-03.
+  //
+  // `replace`, not `push`: the asked-with-a-question URL must not become a
+  // back-button destination that re-asks on arrival.
+  const router = useRouter();
   const asked = useRef(false);
   useEffect(() => {
     if (asked.current || !initialQuestion || isLoading) return;
     asked.current = true;
-    void send(initialQuestion);
-  }, [initialQuestion, isLoading, send]);
+    if (initialMode) setVerification(initialMode);
+    router.replace(`/research/${threadId}`, { scroll: false });
+    void send(initialQuestion, initialMode);
+  }, [initialQuestion, initialMode, isLoading, send, setVerification, router, threadId]);
 
   const foot = useRef<HTMLDivElement>(null);
   useEffect(() => {

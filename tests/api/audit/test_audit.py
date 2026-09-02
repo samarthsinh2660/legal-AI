@@ -300,13 +300,14 @@ def test_a_document_upload_is_indexed_under_its_case(client):
 
 
 def test_an_account_route_records_no_bogus_resource_id(client):
-    """`/auth/me` was storing resource_id="me", which is a path segment, not
-    an id, and it landed in the resource index beside real ones."""
-    client.get("/auth/me", headers=_auth())
+    """An account route was storing its own path segment as resource_id,
+    which is not an id, and it landed in the resource index beside real
+    ones. Checked on /auth/logout since /auth/me no longer exists."""
+    client.post("/auth/logout", headers=_auth())
 
     with connection() as conn:
         events = events_for(conn, USER, limit=10)
-    assert all(e.resource_id != "me" for e in events)
+    assert all(e.resource_id != "logout" for e in events)
 
 
 def test_a_handler_that_raises_is_still_recorded(client, monkeypatch):

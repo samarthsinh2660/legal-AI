@@ -111,15 +111,15 @@ def strict_client():
 
 def test_the_app_answers_429_past_the_ceiling(strict_client):
     for _ in range(2):
-        strict_client.get("/auth/me")
-    response = strict_client.get("/auth/me")
+        strict_client.get("/threads")
+    response = strict_client.get("/threads")
     assert response.status_code == 429
     assert response.json()["error"]["code"] == "rate_limited"
 
 
 def test_the_429_carries_retry_after(strict_client):
     for _ in range(3):
-        response = strict_client.get("/auth/me")
+        response = strict_client.get("/threads")
     assert int(response.headers["Retry-After"]) > 0
 
 
@@ -138,7 +138,7 @@ def test_an_unknown_path_is_counted_too(strict_client):
 
 def test_the_error_body_leaks_nothing(strict_client):
     for _ in range(3):
-        response = strict_client.get("/auth/me")
+        response = strict_client.get("/threads")
     body = response.text.lower()
     for forbidden in ("traceback", "postgres", "psycopg", "secret", "/home/"):
         assert forbidden not in body

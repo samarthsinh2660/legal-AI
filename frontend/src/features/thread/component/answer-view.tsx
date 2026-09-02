@@ -34,6 +34,8 @@ function provenances(answer: Answer) {
  */
 export function AnswerView({ answer }: { answer: Answer }) {
   const marks = provenances(answer);
+  // Every citation marker needs its source's URL to link to the real thing.
+  const byId = new Map(answer.sources.map((s) => [s.document_id, s]));
 
   return (
     <div className="space-y-5">
@@ -69,7 +71,7 @@ export function AnswerView({ answer }: { answer: Answer }) {
                 {claim.evidence_ids.length > 0 && (
                   <span className="ml-1.5 inline-flex flex-wrap gap-1 align-middle">
                     {claim.evidence_ids.map((id) => (
-                      <CitationRef key={id} id={id} />
+                      <CitationRef key={id} id={id} source={byId.get(id)} />
                     ))}
                   </span>
                 )}
@@ -104,7 +106,7 @@ export function AnswerView({ answer }: { answer: Answer }) {
           <span className="caps text-ink-muted">Sources</span>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {[...answer.applicable_law, ...answer.key_judgments].map((id) => (
-              <CitationRef key={id} id={id} />
+              <CitationRef key={id} id={id} source={byId.get(id)} />
             ))}
           </div>
         </section>

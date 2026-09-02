@@ -18,10 +18,37 @@ class RegisterRequest(BaseModel):
 
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=12, max_length=1024)
+    # Optional: the accounts that predate names have none, and a
+    # registration that fails on a blank name helps nobody.
+    name: str | None = Field(default=None, max_length=80)
 
 
 class RegisterResponse(BaseModel):
     user_id: str
+
+
+class RenameRequest(BaseModel):
+    """The one editable field. See `controller.rename` for why it is one."""
+
+    name: str = Field(min_length=1, max_length=80)
+
+
+class ChangeEmailRequest(BaseModel):
+    """A new address, and the current password proving it is really them.
+
+    The password is not optional: an address is the account's sign-in handle,
+    so a borrowed token must not be able to move it.
+    """
+
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class ProfileResponse(BaseModel):
+    user_id: str
+    email: str
+    name: str | None = None
+    created_at: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -37,12 +64,19 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """A bearer token. Send it as `Authorization: Bearer <access_token>`."""
+    """A bearer token, and who it belongs to.
+
+    The identity rides along because the client needs both and asking for
+    them separately cost a second round trip on every sign-in. It is also
+    what lets a client restore a session on boot without a call at all:
+    the token carries its own `exp`, so a stored pair is checkable offline.
+
+    Sent by the same route that just checked the password, so it is the
+    server's word on who this is -- not a claim the client decoded.
+    """
 
     access_token: str
     token_type: Literal["bearer"] = "bearer"
-
-
-class MeResponse(BaseModel):
     user_id: str
     email: str
+    name: str | None = None
