@@ -6,7 +6,7 @@
  *  variable exists so a deploy can set it in CI instead of editing this
  *  file, which was the only way to point the app at anything but
  *  localhost. */
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || " https://40.90.225.254:8001";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "https://api.uniun.in:8001";
 
 /** Where the access token is kept. One name, so nothing goes stale in a
  *  second place when logout clears it. */
