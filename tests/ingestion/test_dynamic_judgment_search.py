@@ -127,3 +127,72 @@ def test_a_short_procedural_order_still_passes():
     )
     assert len(order) >= 200
     assert _text_check(_doc(order))
+
+
+# --- Supreme Court PDF URLs: added 2026-09-04 ----------------------------
+#
+# Every stored Supreme Court judgment pointed at its year's bundled tar
+# rather than its own PDF, even though the archive gives a per-document
+# path for SCI rows exactly as it does for High Court ones
+# (bharat_courts.archive.schema maps parquet column "path" onto
+# Judgment.pdf_path for both). Nothing here had tried it. Verified against
+# the live bucket: 33 real paths across 1950-2026, all 200.
+
+from dataclasses import dataclass
+
+from legal_ai.ingestion.judgments.dynamic_search import _archive_pdf_url
+
+
+@dataclass
+class _FakeCourt:
+    court_type: object
+
+
+@dataclass
+class _FakeJudgment:
+    court: object
+    year: int
+    pdf_path: str | None = None
+    court_code: str | None = None
+    bench: str | None = None
+
+
+def _sci_court():
+    from bharat_courts.models import CourtType
+
+    return _FakeCourt(court_type=CourtType.SUPREME_COURT)
+
+
+def test_a_supreme_court_judgment_with_a_path_gets_its_own_pdf_url():
+    judgment = _FakeJudgment(court=_sci_court(), year=2020, pdf_path="2020_4_552_564")
+    url, is_single_doc = _archive_pdf_url(judgment)
+    assert is_single_doc is True
+    assert url == (
+        "https://indian-supreme-court-judgments.s3.ap-south-1.amazonaws.com"
+        "/data/pdf/year=2020/english/2020_4_552_564_EN.pdf"
+    )
+
+
+def test_the_url_uses_the_partition_year_not_a_year_embedded_in_the_path():
+    # A judgment decided in December can land in the following year's
+    # partition -- confirmed against real rows in year=1965's parquet
+    # whose own path starts with "1966".
+    judgment = _FakeJudgment(court=_sci_court(), year=1965, pdf_path="1966_1_335_344")
+    url, _ = _archive_pdf_url(judgment)
+    assert "year=1965/" in url
+    assert "1966_1_335_344_EN.pdf" in url
+
+
+def test_an_older_s_prefixed_path_is_used_verbatim():
+    judgment = _FakeJudgment(court=_sci_court(), year=1995, pdf_path="S_1995_6_616_617")
+    url, _ = _archive_pdf_url(judgment)
+    assert url.endswith("S_1995_6_616_617_EN.pdf")
+
+
+def test_a_supreme_court_judgment_with_no_path_falls_back_to_the_bundle():
+    # Defensive: nothing observed in the archive has an empty path, but a
+    # malformed URL (an empty filename) is worse than the honest fallback.
+    judgment = _FakeJudgment(court=_sci_court(), year=2020, pdf_path=None)
+    url, is_single_doc = _archive_pdf_url(judgment)
+    assert is_single_doc is False
+    assert url.endswith("/data/tar/year=2020/english/english.tar")

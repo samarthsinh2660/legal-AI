@@ -130,33 +130,31 @@ references from all 13,130 stored judgments against the current Act list.
 Nothing else depends on it: retrieval does not use these edges, and
 `find_act_by_name` already resolves the new codes for future ingests.
 
-## 2c. Judgments have no openable link
+## 2c. Judgments had no openable link — fixed 2026-09-04
 
-Every judgment in the corpus says **"No direct link — look it up by the
-citation above."** That is honest and it is not good enough: a reader cannot
-check an authority they cannot open.
+Every judgment used to say **"No direct link — look it up by the citation
+above."** All 13,140 now open directly.
 
-The cause is provenance, not a bug. Judgments were ingested from Supreme
-Court year archives, so `provenance.source.url` is a several-hundred-megabyte
-`.tar`. `agents/draft._ARCHIVE` withholds it deliberately — offering that as
-"open this judgment" is worse than offering nothing. The IPC, CrPC and
-Evidence Act have the same shape for a different reason: all 575 IPC sections
-share one raw `.json` dataset URL.
+The 6,277 High Court judgments always had a working per-document PDF URL;
+they were correctly marked openable and this was never actually broken for
+them. The 6,822 Supreme Court judgments were the real gap: ingested against
+the year-bundled `.tar` because `_archive_pdf_url` in
+`legal_ai/ingestion/judgments/dynamic_search.py` only ever built that URL
+for SCI rows — even though the archive gives a per-document path for SCI
+exactly as it does for HC (`bharat_courts.archive.schema` maps parquet
+column `path` onto `Judgment.pdf_path` for both). Verified against the live
+bucket before touching anything: 33 real paths across 1950-2026, all 200.
 
-What would fix it, in order of effort:
+Fixed at the source (future ingests build the per-document URL directly)
+and backfilled (`scripts/repair_sci_judgment_urls.py`, CNR is an exact join
+key — our `document_id` already *is* `judgment:` + the lowercased CNR, so
+no fuzzy matching). Ran locally: 6,822 of 6,822 matched and repointed, spot
+checks and the real `agents.draft._sources` path both confirm
+`openable=True`. Not yet run against the deployed server.
 
-1. **Statutes** — resolve the named codes on India Code the way
-   `scripts/repair_india_code_urls.py` resolved the numbered Acts. The NI Act
-   already works (`indiacode.gov.in/handle/123456789/535750` for s.138), so
-   the machinery exists; the codes ingested in September were never run
-   through it.
-2. **Judgments** — resolve a reporter citation to a public URL. `[2012] 7
-   S.C.R. 469` is a stable handle, and the SCR volumes are published as PDFs
-   on the Supreme Court's own site. This is a lookup table keyed by
-   `(year, volume, page)`, built once.
-
-Until then the citation itself is what a reader looks up, and the graph is
-the fallback the citation chip links to.
+Statute links (India Code) are a separate, smaller gap: the codes ingested
+in September were never run through `scripts/repair_india_code_urls.py`,
+which already works — the NI Act's links prove the machinery.
 
 ## 3. Corpus gaps
 
