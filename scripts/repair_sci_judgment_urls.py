@@ -1,6 +1,10 @@
 # scripts/repair_sci_judgment_urls.py
 """Repoint stored Supreme Court judgment provenance at the per-document PDF.
 
+Run: .venv/bin/pip install -e '.[scripts]'   (adds duckdb, not a core dep)
+     .venv/bin/python -m scripts.repair_sci_judgment_urls fetch
+     .venv/bin/python -m scripts.repair_sci_judgment_urls apply
+
 Every SC judgment was ingested with `provenance.source.url` pointing at its
 year's bundled tar, because `_archive_pdf_url` only ever built that URL for
 SCI rows -- even though the archive gives a per-document path for SCI
