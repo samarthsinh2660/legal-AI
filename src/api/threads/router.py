@@ -183,9 +183,12 @@ async def post_message_streaming(request: Request, thread_id: str, body: Message
     the product looks broken.
 
     Events:
-        step  {"node": "research", "label": "Searching statutes and judgments"}
-        done  the same body POST /messages returns
-        error {"code": ..., "message": ...}
+        step          {"node": "research", "label": "Searching statutes and judgments"}
+        answer_chunk  {"text": "a few words "}  -- the lede, in pieces, once
+                       it is final (i.e. past verification); not raw model
+                       tokens. See controller.stream_message.
+        done          the same body POST /messages returns
+        error         {"code": ..., "message": ...}
 
     SSE rather than WebSockets: the traffic is one-way, and a plain POST
     still exists for clients that would rather wait.

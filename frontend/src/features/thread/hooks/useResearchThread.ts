@@ -23,6 +23,11 @@ export function useResearchThread(threadId: string) {
     Verification.Quick,
   );
   const [steps, setSteps] = useState<ProgressStep[]>([]);
+  // The lede, revealed piece by piece as answer_chunk events arrive. Reset
+  // per turn; MessageBubble takes over once the real message lands via
+  // the invalidated query, so this never has to be cleared by anything
+  // but the next send().
+  const [streamingLede, setStreamingLede] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -41,6 +46,7 @@ export function useResearchThread(threadId: string) {
       setDraft("");
       setSendError(null);
       setSteps([]);
+      setStreamingLede("");
       setIsSending(true);
 
       // Show the question immediately. A negative id cannot collide with a
@@ -67,6 +73,8 @@ export function useResearchThread(threadId: string) {
         )) {
           if (event.type === "step") {
             setSteps((previous) => [...previous, event.step]);
+          } else if (event.type === "answer_chunk") {
+            setStreamingLede((previous) => previous + event.text);
           } else if (event.type === "error") {
             setSendError(event.message);
           }
@@ -87,6 +95,7 @@ export function useResearchThread(threadId: string) {
       } finally {
         setIsSending(false);
         setSteps([]);
+        setStreamingLede("");
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,6 +111,7 @@ export function useResearchThread(threadId: string) {
     verification,
     setVerification,
     steps,
+    streamingLede,
     isSending,
     sendError,
     send,

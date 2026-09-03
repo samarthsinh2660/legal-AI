@@ -63,6 +63,7 @@ export async function* streamMessage(
   signal?: AbortSignal,
 ): AsyncGenerator<
   | { type: "step"; step: ProgressStep }
+  | { type: "answer_chunk"; text: string }
   | { type: "done"; reply: Reply }
   | { type: "error"; message: string }
 > {
@@ -110,6 +111,9 @@ export async function* streamMessage(
       const parsed: unknown = JSON.parse(data);
       if (event === "step") {
         yield { type: "step", step: parsed as ProgressStep };
+      } else if (event === "answer_chunk") {
+        const { text } = parsed as { text: string };
+        yield { type: "answer_chunk", text };
       } else if (event === "done") {
         yield { type: "done", reply: ReplySchema.parse(parsed) };
       } else if (event === "error") {

@@ -43,6 +43,7 @@ export function ResearchThread({
     verification,
     setVerification,
     steps,
+    streamingLede,
     isSending,
     sendError,
     send,
@@ -91,6 +92,32 @@ export function ResearchThread({
           <MessageBubble key={message.message_id} message={message} />
         ))}
         {isSending && <ProgressSteps steps={steps} />}
+        {/* The question is now stored before research runs, so a thread
+            can be reopened with the last message from the user and no
+            reply after it -- a run that a refresh, a closed tab, or a
+            timeout interrupted (docs/TODO.md #4's "Cancellation": the
+            run itself keeps going server-side regardless; the fix is a
+            job queue and is not this). This says so, rather than sitting
+            there silently as though nothing had ever been asked. */}
+        {!isSending &&
+          messages.length > 0 &&
+          messages[messages.length - 1].role === "user" && (
+            <p className="text-sm text-ink-muted">
+              This didn&apos;t finish. Ask it again below.
+            </p>
+          )}
+        {/* The lede, revealed as it streams in. Same typography as
+            AnswerView's own lede paragraph, so the swap to the finished
+            message -- once the query invalidation lands it -- is not a
+            visible jump. Everything else (claims, sources, badges) still
+            arrives at once with the final message; only the one paragraph
+            a reader reads first benefits from streaming. See
+            docs/SPEED_2026_09_03.md #1. */}
+        {isSending && streamingLede && (
+          <article className="rounded-md border border-line bg-surface-card p-6">
+            <p className="text-lg leading-[1.7] text-ink">{streamingLede}</p>
+          </article>
+        )}
         {sendError && <p className="text-sm text-danger">{sendError}</p>}
         <div ref={foot} />
       </div>

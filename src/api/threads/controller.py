@@ -15,6 +15,7 @@ rewrite the user's own history at them.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from api.threads.repository import (
@@ -272,6 +273,24 @@ async def stream_message(
         }
         return
 
+    # Stored now, not after the run. A researched turn takes 30-130s, and a
+    # tab closed or refreshed anywhere in that window used to lose the
+    # question outright -- nothing was written until the very end, so a
+    # disconnect left the thread looking exactly like nobody had asked
+    # anything. The reader had no way to tell "still running" from
+    # "vanished". Reproduced live 2026-09-03: refreshing mid-research on
+    # thread 714851b0 landed on "Ask your first question below."
+    #
+    # This does not make the run itself survive a disconnect -- the
+    # research call keeps going in its worker thread regardless (Python
+    # cannot interrupt it), and still spends model budget for a client
+    # nobody reads. That half of the problem needs a job queue and is
+    # docs/TODO.md #4's "Cancellation", still unstarted. What this fixes is
+    # the question being provably gone rather than just its answer.
+    add_message(conn, thread_id, "user", message)
+    if thread.title == DEFAULT_TITLE:
+        set_title(conn, thread_id, user_id, message[:TITLE_CHARS])
+
     state = None
     async for kind, payload in research_with_progress({
         "question": rewrite_question(message, history),
@@ -282,8 +301,9 @@ async def stream_message(
         if kind == "step":
             yield "step", {"node": payload, "label": STEP_LABELS.get(payload, payload)}
         elif kind == "timeout":
-            # Nothing is stored: a half-turn would be resolved against by the
-            # next rewrite as though it were an answer.
+            # The question survives (stored above); no assistant reply is
+            # written, so there is nothing here for a later rewrite to
+            # mistake for an answer.
             yield "error", {
                 "code": "timeout",
                 "message": "Research did not finish within the time limit.",
@@ -302,10 +322,28 @@ async def stream_message(
     if clarification and not answer:
         text = clarification
 
-    add_message(conn, thread_id, "user", message)
+    # The lede in small pieces, ahead of "done". Not a token stream from
+    # the model -- the lede is already final at this point, past
+    # verification, which is the one thing that may still move a claim
+    # between buckets. Streaming raw generation from the analyst call
+    # would show a reader prose that verification could go on to flag,
+    # which is exactly the false reassurance the three-state pattern
+    # exists to prevent (CLAUDE.md #2). Chunking a *finished* answer for
+    # progressive reveal is the safe version of the same UX win --
+    # measured elsewhere at ~40% faster *perceived* even at identical
+    # wall-clock time, because the reader starts reading before the rest
+    # of the pane (claims, sources) has rendered. See docs/SPEED_2026_09_03.md #1.
+    lede = (answer or {}).get("lede") if answer else None
+    if lede:
+        for chunk in _chunk_words(lede):
+            yield "answer_chunk", {"text": chunk}
+            # A small pause between frames. Chunks would otherwise leave
+            # this generator microseconds apart and arrive as one write on
+            # a fast connection, defeating the point. 30ms x ~10 chunks for
+            # a typical lede adds well under a second to a 30-130s turn.
+            await asyncio.sleep(_CHUNK_DELAY_SECONDS)
+
     add_message(conn, thread_id, "assistant", text or "", answer=answer)
-    if thread.title == DEFAULT_TITLE:
-        set_title(conn, thread_id, user_id, message[:TITLE_CHARS])
     if thread.case_id and answer is not None:
         _remember(conn, thread.case_id, message, answer)
 
@@ -313,6 +351,22 @@ async def stream_message(
         "text": text, "answer": answer, "clarification_needed": clarification,
         "route": route.value, "verification_level": verification_level,
     }
+
+
+# Words per SSE frame. Small enough to read as a stream rather than a dump;
+# large enough that a 40-word lede is not 40 separate HTTP frames.
+_CHUNK_WORDS = 4
+_CHUNK_DELAY_SECONDS = 0.03
+
+
+def _chunk_words(text: str) -> list[str]:
+    """`text` split on whitespace into `_CHUNK_WORDS`-word pieces, each
+    carrying a trailing space so the client can just concatenate them."""
+    words = text.split()
+    return [
+        " ".join(words[i : i + _CHUNK_WORDS]) + " "
+        for i in range(0, len(words), _CHUNK_WORDS)
+    ]
 
 
 def _permitted_documents(conn, case_id: str | None, requested) -> list[str]:
