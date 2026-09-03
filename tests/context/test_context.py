@@ -38,6 +38,40 @@ def test_build_leaves_jurisdiction_unset_rather_than_guessing():
 
 def test_build_flags_questions_asking_for_the_current_position():
     assert build_thread_context("is section 66A still good law").needs_current_law
+
+
+# --- relevant_date_from --------------------------------------------------
+#
+# Until 2026-09-04 this field had no writer anywhere: declared on
+# ThreadContext, read by the clarification gate, never assigned. A
+# limitation-period question therefore asked "when did this happen?" and,
+# whatever the reader answered, asked it again -- forever, since the field
+# that would have satisfied the gate never moved off None. Reproduced live
+# on the deployed app, thread 56545ff6, three different phrasings of the
+# same date, three identical repeats of the question.
+
+
+def test_build_extracts_a_date_from_the_question():
+    ctx = build_thread_context(
+        "The debt was due on 1 January 2022 and has not been repaid."
+    )
+    assert ctx.relevant_date_from == date(2022, 1, 1)
+
+
+def test_build_leaves_the_date_unset_when_the_question_names_none():
+    ctx = build_thread_context("what is the punishment for murder")
+    assert ctx.relevant_date_from is None
+
+
+def test_a_rewritten_follow_up_carries_the_date_through():
+    # rewrite_question folds a follow-up answer into a self-contained
+    # question -- this is what the graph actually sees on a second turn,
+    # not the bare "1 January 2022" the reader typed.
+    ctx = build_thread_context(
+        "What is the limitation period for filing a suit for recovery of "
+        "money? The debt was due on 1 January 2022 and has not been repaid."
+    )
+    assert ctx.relevant_date_from == date(2022, 1, 1)
     assert build_thread_context("what is the current position on bail").needs_current_law
     assert not build_thread_context("what is the punishment for theft").needs_current_law
 

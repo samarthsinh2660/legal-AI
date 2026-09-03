@@ -9,3 +9,8 @@ data/
 problems.md
 .claude/
 backups/
+
+# Resumable fetch caches for one-off repair scripts -- regenerate with the
+# script's own `fetch` phase rather than versioning a megabyte of derived
+# archive metadata.
+scripts/sci_pdf_paths.json

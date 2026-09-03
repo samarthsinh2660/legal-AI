@@ -138,15 +138,42 @@ def _check_db(query: str, limit: int = 1) -> list[CanonicalDocument]:
     return found
 
 
+
+# The SCI bucket keeps individual PDFs alongside the year tars, at
+# data/pdf/year={year}/english/{path}_EN.pdf -- {path} is the archive's own
+# "path" column (bharat_courts.archive.schema maps it straight onto
+# Judgment.pdf_path, same as it does HC's "pdf_link"), keyed by the year
+# *partition*, not any year embedded in {path} itself: a judgment decided
+# in December can land in the following partition, and a handful of older
+# rows carry a "S_" prefix. Verified against the live bucket 2026-09-04 --
+# 33 samples across 1950-2026, including both of those shapes, all 200.
+# Until this fix every Supreme Court judgment (the majority of the corpus)
+# pointed at the year bundle instead, correctly, since nothing here had
+# tried the per-document path.
+SCI_PDF_HTTPS = (
+    "https://{bucket}.s3.{region}.amazonaws.com"
+    "/data/pdf/year={year}/english/{path}_EN.pdf"
+)
+
+
 def _archive_pdf_url(judgment) -> tuple[str, bool]:
     """Public HTTPS URL for a judgment's PDF, plus whether it is a
     single-document link (True) or a bundled archive containing it
-    (False -- SCI ships one tar per year, with no per-document URL).
+    (False -- only when the archive gave no per-document path at all).
     """
-    from bharat_courts.archive.endpoints import HC_PDF_HTTPS, SCI_TAR_HTTPS
+    from bharat_courts.archive.endpoints import HC_PDF_HTTPS, REGION, SCI_BUCKET, SCI_TAR_HTTPS
     from bharat_courts.models import CourtType
 
     if judgment.court and judgment.court.court_type == CourtType.SUPREME_COURT:
+        if judgment.pdf_path:
+            return (
+                SCI_PDF_HTTPS.format(
+                    bucket=SCI_BUCKET, region=REGION, year=judgment.year, path=judgment.pdf_path
+                ),
+                True,
+            )
+        # No path on this row -- fall back to the bundle rather than build
+        # a URL with an empty filename.
         return SCI_TAR_HTTPS.format(year=judgment.year, lang_dir="english"), False
 
     court_partition = (judgment.court_code or "").replace("~", "_")

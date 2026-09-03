@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
+from legal_ai.case.timeline import parse_date
 from legal_ai.context.models import (
     DocumentFacts,
     EstablishedFinding,
@@ -68,6 +69,10 @@ def build_thread_context(
             state=state.title() if state else None,
         ),
         needs_current_law=bool(_CURRENT_LAW.search(question)),
+        # rewrite_question folds a follow-up's date into a self-contained
+        # question, the same way it folds a state name in. Reuses
+        # case.timeline.parse_date rather than a new regex.
+        relevant_date_from=parse_date(question),
     )
 
 
