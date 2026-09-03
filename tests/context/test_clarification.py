@@ -45,6 +45,32 @@ def test_a_limitation_question_with_a_date_does_not_ask():
     assert clarification_needed(ctx) is None
 
 
+def test_answering_the_date_question_actually_satisfies_the_gate():
+    """The end-to-end path a real second turn takes: the answer folded into
+    a self-contained question by the rewriter, not a hand-built context.
+    This is the exact case that looped forever before 2026-09-04 -- every
+    phrasing of the date satisfied nothing, because build_thread_context
+    never wrote relevant_date_from at all."""
+    first = build_thread_context(
+        "What is the limitation period for filing a suit for recovery of money?"
+    )
+    assert clarification_needed(first) == DATE_QUESTION
+
+    rewritten = build_thread_context(
+        "What is the limitation period for filing a suit for recovery of "
+        "money? The debt was due on 1 January 2022 and has not been repaid."
+    )
+    assert clarification_needed(rewritten) is None
+
+
+def test_a_date_supplied_a_second_way_also_satisfies_the_gate():
+    rewritten = build_thread_context(
+        "What is the limitation period for filing a suit for recovery of "
+        "money? The cause of action arose on 1 January 2022."
+    )
+    assert clarification_needed(rewritten) is None
+
+
 def test_only_one_question_is_asked_even_when_two_gaps_exist():
     # A gate that asks everything at once is a form, and forms get abandoned.
     ctx = build_thread_context("how long do i have to sue the builder over possession")
