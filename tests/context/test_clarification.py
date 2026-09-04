@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from legal_ai.context.builder import build_thread_context
 from legal_ai.context.clarification import (
     DATE_QUESTION,
@@ -90,3 +92,52 @@ def test_the_graph_proceeds_to_an_answer_when_nothing_is_blocking():
     result = build_research_graph().invoke({"question": "what is the punishment for murder"})
     assert result["clarification_needed"] is None
     assert result["answer"]
+
+
+# --- the state gate must be answerable from any state -----------------------
+#
+# Reported from the live deploy: a user in Uttarakhand answered "my state is
+# uttarakhand" and was asked the identical question again, without end. The
+# table held eight states, and the gate re-asks while jurisdiction.state is
+# unset. The earlier QA pass had cleared this gate after testing Maharashtra,
+# which is one of the eight that worked.
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "Uttarakhand", "Uttar Pradesh", "Bihar", "Punjab", "Haryana",
+        "Madhya Pradesh", "Odisha", "Telangana", "Assam", "Goa", "Jharkhand",
+        "Chhattisgarh", "Himachal Pradesh", "Tripura", "Sikkim", "Manipur",
+        "Meghalaya", "Nagaland", "Mizoram", "Arunachal Pradesh",
+        "Andhra Pradesh", "Jammu and Kashmir", "Ladakh", "Puducherry",
+        "Chandigarh", "Maharashtra", "Kerala", "Gujarat", "Karnataka",
+        "Tamil Nadu", "West Bengal", "Rajasthan", "Delhi",
+    ],
+)
+def test_naming_any_state_answers_the_state_question(state):
+    from legal_ai.context.builder import build_thread_context
+
+    context = build_thread_context(f"mutation of my land in {state}")
+
+    assert context.jurisdiction.state is not None, state
+    assert context.jurisdiction.court is not None, state
+    assert clarification_needed(context) is None, state
+
+
+def test_a_state_name_is_not_matched_inside_a_longer_word():
+    """"goa" sits inside "Goalpara", which is in Assam."""
+    from legal_ai.context.builder import build_thread_context
+
+    context = build_thread_context("mutation of my land in Goalpara district")
+
+    assert context.jurisdiction.state != "Goa"
+
+
+def test_the_state_name_is_rendered_as_it_is_written():
+    from legal_ai.context.builder import build_thread_context
+
+    context = build_thread_context("rent dispute in Jammu and Kashmir")
+
+    assert context.jurisdiction.state == "Jammu and Kashmir"
+

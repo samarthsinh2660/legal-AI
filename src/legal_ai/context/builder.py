@@ -21,19 +21,71 @@ from legal_ai.context.models import (
 )
 from legal_ai.retrieval.metadata import MetadataFilters
 
-# States whose High Court a matter would normally be heard in. Not
-# exhaustive -- it covers what the corpus can currently answer for, and an
-# unmatched state simply leaves jurisdiction unset rather than guessing.
+# Every state and union territory, with the High Court a matter there is
+# normally heard in. Several courts serve more than one region, which is why
+# this is a table and not a suffix rule.
+#
+# It was eight entries until 2026-09-04, and the twenty missing states were
+# not a degraded answer but a dead end: the clarification gate asks "which
+# state is this in?" for anything state-wise (rent, mutation, stamp duty),
+# and re-asks while `jurisdiction.state` is unset. A user in Uttarakhand
+# answering correctly, every time, was asked again forever. Reported from
+# the live deploy. The earlier QA pass had cleared this gate after testing
+# Maharashtra, which is one of the eight that worked.
 _STATE_COURTS: dict[str, str] = {
+    "andhra pradesh": "Andhra Pradesh High Court",
+    "arunachal pradesh": "Gauhati High Court",
+    "assam": "Gauhati High Court",
+    "bihar": "Patna High Court",
+    "chhattisgarh": "Chhattisgarh High Court",
+    "goa": "Bombay High Court",
     "gujarat": "Gujarat High Court",
-    "maharashtra": "Bombay High Court",
-    "delhi": "Delhi High Court",
+    "haryana": "Punjab and Haryana High Court",
+    "himachal pradesh": "Himachal Pradesh High Court",
+    "jharkhand": "Jharkhand High Court",
     "karnataka": "Karnataka High Court",
-    "tamil nadu": "Madras High Court",
-    "west bengal": "Calcutta High Court",
-    "rajasthan": "Rajasthan High Court",
     "kerala": "Kerala High Court",
+    "madhya pradesh": "Madhya Pradesh High Court",
+    "maharashtra": "Bombay High Court",
+    "manipur": "Manipur High Court",
+    "meghalaya": "Meghalaya High Court",
+    "mizoram": "Gauhati High Court",
+    "nagaland": "Gauhati High Court",
+    "odisha": "Orissa High Court",
+    "punjab": "Punjab and Haryana High Court",
+    "rajasthan": "Rajasthan High Court",
+    "sikkim": "Sikkim High Court",
+    "tamil nadu": "Madras High Court",
+    "telangana": "Telangana High Court",
+    "tripura": "Tripura High Court",
+    "uttar pradesh": "Allahabad High Court",
+    "uttarakhand": "Uttarakhand High Court",
+    "west bengal": "Calcutta High Court",
+    # Union territories.
+    "andaman and nicobar": "Calcutta High Court",
+    "chandigarh": "Punjab and Haryana High Court",
+    "dadra and nagar haveli": "Bombay High Court",
+    "daman and diu": "Bombay High Court",
+    "delhi": "Delhi High Court",
+    "jammu and kashmir": "High Court of Jammu & Kashmir and Ladakh",
+    "ladakh": "High Court of Jammu & Kashmir and Ladakh",
+    "lakshadweep": "Kerala High Court",
+    "puducherry": "Madras High Court",
+    # Former names, still what people type.
+    "orissa": "Orissa High Court",
+    "pondicherry": "Madras High Court",
+    "uttaranchal": "Uttarakhand High Court",
 }
+
+# Longest first, so "uttar pradesh" cannot be shadowed by a shorter name
+# that happens to sit earlier, and on word boundaries, so "goa" does not
+# match inside "Goalpara".
+_STATE_PATTERN = re.compile(
+    r"\b(" + "|".join(
+        re.escape(name) for name in sorted(_STATE_COURTS, key=len, reverse=True)
+    ) + r")\b",
+    re.IGNORECASE,
+)
 
 # Phrases that ask for the position as it stands now rather than at some
 # past date. See ThreadContext.needs_current_law.
@@ -42,6 +94,13 @@ _CURRENT_LAW = re.compile(
     r"still valid|recent(ly)?|now)\b",
     re.IGNORECASE,
 )
+
+
+def _display(state: str) -> str:
+    """The state's name as it is written -- "Jammu and Kashmir", not "And"."""
+    return " ".join(
+        word if word == "and" else word.title() for word in state.split()
+    )
 
 
 def build_thread_context(
@@ -57,7 +116,8 @@ def build_thread_context(
     a grievance without saying where they are.
     """
     haystack = " ".join([question] + [_document_text(d) for d in documents]).lower()
-    state = next((name for name in _STATE_COURTS if name in haystack), None)
+    found = _STATE_PATTERN.search(haystack)
+    state = found.group(1) if found else None
 
     return ThreadContext(
         question=question.strip(),
@@ -66,7 +126,7 @@ def build_thread_context(
         document_ids=tuple(d.document_id for d in documents),
         jurisdiction=Jurisdiction(
             court=_STATE_COURTS[state] if state else None,
-            state=state.title() if state else None,
+            state=_display(state) if state else None,
         ),
         needs_current_law=bool(_CURRENT_LAW.search(question)),
         # rewrite_question folds a follow-up's date into a self-contained
