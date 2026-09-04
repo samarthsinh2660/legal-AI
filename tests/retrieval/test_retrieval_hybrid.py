@@ -196,6 +196,38 @@ def test_searching_both_phrasings_keeps_what_each_finds():
     assert "judgment:b" in ids
 
 
+def test_an_exact_statutory_match_leads_whatever_the_ranking_said():
+    """A resolved reference is ground truth, not a candidate. The reranker
+    scored s.138 at 43 for a question about dates rather than substance."""
+    import legal_ai.retrieval.hybrid as H
+
+    ranked = ["judgment:a", "judgment:b", "act:2189:sec-138", "judgment:c"]
+
+    assert H._exact_first(ranked, ["act:2189:sec-138"])[0] == "act:2189:sec-138"
+
+
+def test_an_exact_match_the_ranking_lost_entirely_is_still_returned():
+    import legal_ai.retrieval.hybrid as H
+
+    ids = H._exact_first(["judgment:a"], ["act:2189:sec-138"])
+
+    assert ids == ["act:2189:sec-138", "judgment:a"]
+
+
+def test_pinning_keeps_every_other_result_and_drops_no_duplicates():
+    import legal_ai.retrieval.hybrid as H
+
+    ids = H._exact_first(["a", "b"], ["b", "b", "c"])
+
+    assert ids == ["b", "c", "a"]
+
+
+def test_nothing_is_pinned_when_the_query_names_no_section():
+    import legal_ai.retrieval.hybrid as H
+
+    assert H._exact_first(["a", "b"], []) == ["a", "b"]
+
+
 def test_one_phrasing_alone_is_returned_unchanged():
     """No second query means no fusion, and no second retrieval paid for."""
     import legal_ai.retrieval.hybrid as H

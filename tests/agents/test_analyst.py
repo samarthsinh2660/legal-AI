@@ -119,6 +119,17 @@ def test_the_case_documents_reach_the_prompt(monkeypatch):
     assert "possession by 30 June 2021" in seen["prompt"]
 
 
+def test_the_case_description_reaches_the_prompt(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(analyst, "generate",
+                        lambda p, **kw: seen.update(prompt=p) or '{"claims": []}')
+    analyst.analyse(
+        "q", EVIDENCE,
+        case_description="Notice sent 2 August 2026, no payment within 15 days.",
+    )
+    assert "Notice sent 2 August 2026" in seen["prompt"]
+
+
 def test_evidence_shown_to_the_model_is_capped(monkeypatch):
     seen = {}
     monkeypatch.setattr(analyst, "generate",
@@ -173,6 +184,30 @@ def test_an_empty_search_still_reports_a_thin_corpus():
     result = analyse("a real legal question", [], searched=True)
 
     assert "No supporting provisions were retrieved." in result.lede
+
+
+def test_a_document_question_with_no_legal_angle_still_answers_from_the_case(monkeypatch):
+    # A pure document-content question ("what is the cheque number") has no
+    # statutory angle, so the planner returns none and evidence is empty --
+    # same shape as "write me a poem". The case's own material is what
+    # distinguishes the two: only true emptiness is out of scope.
+    from legal_ai.context.models import DocumentFacts
+
+    _stub(monkeypatch, {"lede": "The cheque number is 0472913.", "claims": []})
+    result = analyse(
+        "what is the cheque number", [], searched=False,
+        documents=(DocumentFacts(document_id="doc-1", clauses=("cheque no. 0472913",)),),
+    )
+    assert result.lede == "The cheque number is 0472913."
+
+
+def test_a_case_description_alone_also_avoids_the_out_of_scope_refusal(monkeypatch):
+    _stub(monkeypatch, {"lede": "The amount in dispute is Rs. 5,00,000.", "claims": []})
+    result = analyse(
+        "what is the amount in dispute", [], searched=False,
+        case_description="Cheque for Rs. 5,00,000 was dishonoured.",
+    )
+    assert result.lede == "The amount in dispute is Rs. 5,00,000."
 
 
 def test_a_whole_statute_section_is_not_truncated_in_the_prompt():

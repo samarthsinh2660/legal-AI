@@ -43,6 +43,11 @@ the statutes themselves, so a query phrased as a grievance will not match.
 "builder did not hand over my flat" must be phrased as "promoter fails to
 give possession return of amount".
 
+Carry over every number the question states -- a period, a deadline, an
+amount -- exactly as given. Do not substitute a different figure from
+memory of the general rule; a wrong number in the query searches for the
+wrong provision.
+
 Return ONLY a JSON array of {{"angle": "...", "query": "..."}}."""
 
 

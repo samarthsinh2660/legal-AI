@@ -295,7 +295,7 @@ async def stream_message(
     async for kind, payload in research_with_progress({
         "question": rewrite_question(message, history),
         "case_id": thread.case_id,
-        "document_ids": list(document_ids or []),
+        "document_ids": _permitted_documents(conn, thread.case_id, document_ids),
         "verification_level": verification_level,
     }):
         if kind == "step":
@@ -375,13 +375,18 @@ def _permitted_documents(conn, case_id: str | None, requested) -> list[str]:
     `get_case_file_text` looks a document up by id alone, with no owner and
     no case filter, so anything not checked here is readable by anyone who
     has ever seen the id.
+
+    An empty `requested` defaults to every file the case holds, rather than
+    to none: the chat composer sends no per-message document_ids on a case
+    thread, so a case's own uploaded file must otherwise be reached some
+    other way.
     """
-    if not requested:
-        return []
     if case_id is None:
         # A thread outside a case has no files it may read.
         return []
     from legal_ai.case.files import list_case_files
 
     allowed = {document_id for document_id, _filename in list_case_files(conn, case_id)}
+    if not requested:
+        return list(allowed)
     return [document_id for document_id in requested if document_id in allowed]
