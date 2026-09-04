@@ -50,6 +50,26 @@ def reciprocal_rank_fusion(
     return sorted(fused.items(), key=lambda item: (-item[1], item[0]))
 
 
+def _exact_first(ranked_ids: list[str], exact_ids: list[str]) -> list[str]:
+    """`ranked_ids` with exact statutory matches moved to the front.
+
+    A reference resolved to a document id is ground truth, not a candidate:
+    search_metadata returns it or nothing. Ranking it against the other
+    signals loses it twice over. RRF deliberately damps a single signal's
+    rank-1 vote, so two signals agreeing on a near-miss outscore it; and the
+    cross-encoder then scores the section's text against the question, which
+    for a question about dates rather than substance reads as a poor match.
+    Measured on evals/datasets/retrieval_citations.json: "Section 138 ...
+    has the 15-day period expired" resolved s.138 at rank 1, which became
+    rank 43 after reranking and rank 75 after fusing both passes.
+    """
+    if not exact_ids:
+        return ranked_ids
+    pinned = list(dict.fromkeys(exact_ids))
+    seen = set(pinned)
+    return pinned + [document_id for document_id in ranked_ids if document_id not in seen]
+
+
 def _with_floor(conn, ranked_ids: list[str], limit: int, enabled: bool) -> list[str]:
     """`ranked_ids` cut to `limit`, keeping one statute in view when asked."""
     if not enabled or not ranked_ids:
@@ -186,9 +206,20 @@ def hybrid_search(
 
             return [document_id for document_id, _score in fused]
 
+        # Resolved before fusion so a match survives it. Both phrasings are
+        # tried: the planner's statutory rewrite drops the "Section N of the
+        # X Act" word order the parser needs, so on the rewrite alone the
+        # lookup is silent.
+        exact_ids = [document_id for document_id, _score in
+                     search_metadata(conn, query, limit=fetch, filters=filters)]
+        if also:
+            exact_ids += [document_id for document_id, _score in
+                          search_metadata(conn, also, limit=fetch, filters=filters)]
+
         order = _fused_order(query, also, search_once)
+        ordered = _with_floor(conn, order, limit, type_floor)
         return build_evidence(
-            conn, _with_floor(conn, order, limit, type_floor), query=query
+            conn, _exact_first(ordered, exact_ids)[:limit], query=query
         )
     finally:
         conn.close()

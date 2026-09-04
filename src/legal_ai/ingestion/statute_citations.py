@@ -20,9 +20,17 @@ from dataclasses import dataclass
 # "Section 18 of the Real Estate (Regulation and Development) Act, 2016"
 # "Sections 3 and 4 of the Indian Easements Act"
 # "S. 138 of the Negotiable Instruments Act, 1881"
+# "Section 302 of the Indian Penal Code"
+# "Section 154 of the Code of Criminal Procedure, 1973"
+#
+# Codes as well as Acts: the IPC, CrPC, CPC and IBC are 1,553 sectioned
+# documents this could not name, and between them they are most of Indian
+# criminal and procedural practice. A name may end in "Code" or open with
+# it ("Code of Criminal Procedure"), so both shapes are matched.
 _SECTION_OF_ACT = re.compile(
     r"(?:Section|Sections|S\.)\s+(\d+[A-Za-z]?)(?:\(\d+\))?\s+of\s+(?:the\s+)?"
-    r"([A-Z][A-Za-z,\.\(\)&'\-\s]{3,90}?Act)(?:,?\s*(\d{4}))?",
+    r"(Code\s+of\s+[A-Z][A-Za-z,\.\(\)&'\-\s]{3,60}?(?=,|\s+\d{4}|$|\s+[a-z])"
+    r"|[A-Z][A-Za-z,\.\(\)&'\-\s]{3,90}?(?:Act|Code))(?:,?\s*(\d{4}))?",
 )
 
 # "Section 420 IPC", "u/s 302 IPC", "S.138 NI Act"

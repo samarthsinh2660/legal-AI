@@ -1,0 +1,146 @@
+[
+  {
+    "id": "ni-138-notice-period-expiry",
+    "question": "Under Section 138 of the Negotiable Instruments Act, 1881, has the 15-day notice period expired as of today for a demand notice sent and received on 2 August 2026?",
+    "expected": ["act:2189:sec-138"],
+    "note": "The QA reproduction: a fact-led question that names the section. Retrieved at rank 75 before exact matches were protected."
+  },
+  {
+    "id": "ni-138-punishment",
+    "question": "What is the punishment under Section 138 of the Negotiable Instruments Act?",
+    "expected": ["act:2189:sec-138"],
+    "note": "The same section asked so that the section's own text reads like the answer. Worked before the fix; guards against a regression."
+  },
+  {
+    "id": "ni-142-cognizance-window",
+    "question": "My client's cheque bounced in July. What does Section 142 of the Negotiable Instruments Act say about the time limit for filing?",
+    "expected": ["act:2189:sec-142"],
+    "note": "Cognizance of offences - the one-month filing window."
+  },
+  {
+    "id": "ni-141-company-directors",
+    "question": "Can the directors be prosecuted under Section 141 of the Negotiable Instruments Act when the cheque was signed by the company?",
+    "expected": ["act:2189:sec-141"],
+    "note": "Offences by companies."
+  },
+  {
+    "id": "ni-143a-interim-compensation",
+    "question": "Section 143A of the Negotiable Instruments Act interim compensation - how much can the court order?",
+    "expected": ["act:2189:sec-143A"],
+    "note": "Alphanumeric section number, which the reference parser must handle."
+  },
+  {
+    "id": "ni-147-compounding",
+    "question": "Is an offence under Section 147 of the Negotiable Instruments Act compoundable?",
+    "expected": ["act:2189:sec-147"],
+    "note": "Offences to be compoundable."
+  },
+  {
+    "id": "ni-139-presumption",
+    "question": "What presumption does Section 139 of the Negotiable Instruments Act raise in favour of the holder?",
+    "expected": ["act:2189:sec-139"],
+    "note": "Presumption in favour of holder."
+  },
+  {
+    "id": "rera-18-refund",
+    "question": "The builder handed over 14 months late. What relief does Section 18 of the Real Estate (Regulation and Development) Act give my client?",
+    "expected": ["act:2158:sec-18"],
+    "note": "Fact-led shape, section named second. Same shape as the failing QA turn."
+  },
+  {
+    "id": "rera-3-registration",
+    "question": "Does Section 3 of the Real Estate (Regulation and Development) Act require registration for a project of six apartments?",
+    "expected": ["act:2158:sec-3"],
+    "note": "Prior registration - the five-hundred-square-metre and eight-apartment threshold."
+  },
+  {
+    "id": "rera-5-deemed-registration",
+    "question": "Under Section 5 of the Real Estate (Regulation and Development) Act, what happens if the Authority does not decide within thirty days?",
+    "expected": ["act:2158:sec-5"],
+    "note": "Grant of registration - deemed registration on the Authority's silence."
+  },
+  {
+    "id": "sra-6-dispossession",
+    "question": "My client was thrown out of the property without a court order last month. Can we use Section 6 of the Specific Relief Act?",
+    "expected": ["act:2263:sec-6"],
+    "note": "Suit by person dispossessed - the six-month summary remedy."
+  },
+  {
+    "id": "ibc-9-operational-creditor",
+    "question": "What must an operational creditor file under Section 9 of the Insolvency and Bankruptcy Code?",
+    "expected": ["act:2154:sec-9"],
+    "note": "Application for initiation of CIRP by an operational creditor."
+  },
+  {
+    "id": "ibc-7-financial-creditor",
+    "question": "Section 7 of the Insolvency and Bankruptcy Code - who can initiate the process and on what default?",
+    "expected": ["act:2154:sec-7"],
+    "note": "Initiation of CIRP by a financial creditor."
+  },
+  {
+    "id": "arb-34-setting-aside",
+    "question": "The award went against us in March. On what grounds can we apply under Section 34 of the Arbitration and Conciliation Act?",
+    "expected": ["act:1978:sec-34"],
+    "note": "Setting aside arbitral awards. Fact-led shape."
+  },
+  {
+    "id": "arb-11-appointment",
+    "question": "The other side will not agree on an arbitrator. What does Section 11 of the Arbitration and Conciliation Act provide?",
+    "expected": ["act:1978:sec-11"],
+    "note": "Appointment of arbitrators."
+  },
+  {
+    "id": "consumer-35-complaint",
+    "question": "How is a complaint to be made under Section 35 of the Consumer Protection Act?",
+    "expected": ["act:15256:sec-35"],
+    "note": "Manner in which complaint shall be made."
+  },
+  {
+    "id": "companies-149-board",
+    "question": "What does Section 149 of the Companies Act require about the composition of the Board?",
+    "expected": ["act:2114:sec-149"],
+    "note": "Company to have Board of Directors."
+  },
+  {
+    "id": "it-66-computer-offences",
+    "question": "Section 66 of the Information Technology Act - what conduct does it make an offence and what is the penalty?",
+    "expected": ["act:1999:sec-66"],
+    "note": "Computer related offences."
+  },
+  {
+    "id": "rti-8-exemption",
+    "question": "The department refused our RTI citing Section 8 of the Right to Information Act. What does that section exempt?",
+    "expected": ["act:2065:sec-8"],
+    "note": "Exemption from disclosure of information. Fact-led shape."
+  },
+  {
+    "id": "ipc-420-cheating",
+    "question": "What are the ingredients of the offence under Section 420 of the Indian Penal Code?",
+    "expected": ["act:ipc-1860:sec-420"],
+    "note": "A statute named Code, not Act - unparseable until the reference pattern took both."
+  },
+  {
+    "id": "ipc-302-murder",
+    "question": "Section 302 of the Indian Penal Code - what is the punishment prescribed?",
+    "expected": ["act:ipc-1860:sec-302"],
+    "note": "The most-cited provision in Indian criminal practice."
+  },
+  {
+    "id": "crpc-154-fir",
+    "question": "The police refused to register our complaint. What does Section 154 of the Code of Criminal Procedure require?",
+    "expected": ["act:crpc-1973:sec-154"],
+    "note": "A name that opens with Code rather than ending in it."
+  },
+  {
+    "id": "crpc-438-anticipatory-bail",
+    "question": "Section 438 of the Code of Criminal Procedure, 1973 - on what conditions is anticipatory bail granted?",
+    "expected": ["act:crpc-1973:sec-438"],
+    "note": "Direction for grant of bail to a person apprehending arrest."
+  },
+  {
+    "id": "cpc-order-9-ex-parte",
+    "question": "An ex parte decree was passed against my client. What relief does Section 96 of the Code of Civil Procedure give?",
+    "expected": ["act:2191:sec-96"],
+    "note": "Appeal from original decree. Fact-led shape, Code-named statute."
+  }
+]
