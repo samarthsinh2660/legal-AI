@@ -151,6 +151,7 @@ def analyst(state: ResearchState) -> dict:
         list(state.get("findings") or []),
         documents=tuple(context.documents) if context is not None else (),
         searched=state.get("searched", True),
+        case_description=context.case_description if context is not None else None,
     )
     return {"claims": list(result.claims), "analysis": result}
 

@@ -413,6 +413,26 @@ def test_documents_are_filtered_to_the_threads_own_case():
     assert allowed == ["doc:mine"]
 
 
+def test_no_requested_documents_defaults_to_the_whole_case():
+    from api.threads.controller import _permitted_documents
+    from legal_ai.case.files import ensure_case_file_schema, store_case_file
+    from legal_ai.case.store import create_case, ensure_case_schema
+
+    with connection() as conn:
+        ensure_case_schema(conn)
+        ensure_case_file_schema(conn)
+        conn.execute("DELETE FROM cases WHERE case_id LIKE 'test-perm-%'")
+        conn.commit()
+        create_case(conn, case_id="test-perm-default", title="Default")
+        store_case_file(conn, "test-perm-default", "doc:notice", "notice.txt", "text")
+
+        allowed = _permitted_documents(conn, "test-perm-default", None)
+        conn.execute("DELETE FROM cases WHERE case_id LIKE 'test-perm-%'")
+        conn.commit()
+
+    assert allowed == ["doc:notice"]
+
+
 def test_a_thread_outside_a_case_may_read_no_files():
     from api.threads.controller import _permitted_documents
 

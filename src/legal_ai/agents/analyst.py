@@ -97,10 +97,18 @@ def _render_evidence(evidence: list[Evidence]) -> str:
     )
 
 
-def _render_case(documents: tuple[DocumentFacts, ...]) -> str:
-    if not documents:
+def _render_case(
+    documents: tuple[DocumentFacts, ...], case_description: str | None = None
+) -> str:
+    if not documents and not case_description:
         return ""
-    lines = ["THE CLIENT'S OWN DOCUMENTS SAY"]
+    lines = []
+    if case_description:
+        # Reaches the planner via context.serialization.render; this is the
+        # only other place it needs to reach, since this node writes the answer.
+        lines.append(f"THE MATTER (as the user described it): {case_description[:600]}")
+    if documents:
+        lines.append("THE CLIENT'S OWN DOCUMENTS SAY")
     for facts in documents:
         for label, values in (
             ("parties", facts.parties),
@@ -132,6 +140,7 @@ def analyse(
     evidence: list[Evidence],
     documents: tuple[DocumentFacts, ...] = (),
     searched: bool = True,
+    case_description: str | None = None,
 ) -> AnalysisResult:
     """Claims for `question`, each grounded in retrieved Evidence.
 
@@ -140,13 +149,17 @@ def analyse(
     answer that says nothing, which a reader can see; a fabricated one
     would not be visible at all.
     """
-    if not evidence:
+    if not evidence and not documents and not case_description:
         # Two different facts. `searched=False` means no angle was planned,
         # so nothing was looked for; reporting that as an empty corpus
         # would tell the reader we looked.
         if not searched:
             return AnalysisResult(lede=OUT_OF_SCOPE)
         return AnalysisResult(lede="No supporting provisions were retrieved.")
+    # A document-content question ("what is the cheque number") has no
+    # statutory angle, so the planner rightly returns none and evidence is
+    # empty -- but the case's own material can still answer it. Only true
+    # emptiness (no evidence, no case, no documents) is out of scope.
 
     available = {item.document_id for item in evidence if item.document_id}
 
@@ -155,7 +168,7 @@ def analyse(
             generate(
                 PROMPT.format(
                     question=question,
-                    case=_render_case(documents),
+                    case=_render_case(documents, case_description),
                     evidence=_render_evidence(evidence),
                 ),
                 max_output_tokens=DEFAULT_CONFIG.summary_model_max_tokens,
