@@ -93,15 +93,15 @@ nobody can open cannot be checked, which is most of its value.
 
 ---
 
-## 2. Nothing has ever been seen in a browser
+## 2. Most of the UI has still never been looked at
 
-The Chrome extension has never connected in this environment
-(`list_connected_browsers` returns empty on every attempt). Unverified by
-eye: the provenance badges, the four evidence blocks, the graph's hover-dim
-and drag, the confirm dialogs, and every focus state.
+Partly closed. The dashboard, a research thread, the composer and the
+drafting card have now been driven in a browser and a client demo ran
+against the deployed app. Still unverified by eye: the provenance badges,
+the four evidence blocks, the graph's hover-dim and drag, the confirm
+dialogs, and every focus state.
 
-Everything is verified by test and by API; none of it is verified by
-looking. That is a real gap before anyone outside sees the product.
+Those are verified by test and by API and by nothing else.
 
 ---
 
@@ -130,32 +130,6 @@ references from all 13,130 stored judgments against the current Act list.
 Nothing else depends on it: retrieval does not use these edges, and
 `find_act_by_name` already resolves the new codes for future ingests.
 
-## 2c. Judgments had no openable link — fixed 2026-09-04
-
-Every judgment used to say **"No direct link — look it up by the citation
-above."** All 13,140 now open directly.
-
-The 6,277 High Court judgments always had a working per-document PDF URL;
-they were correctly marked openable and this was never actually broken for
-them. The 6,822 Supreme Court judgments were the real gap: ingested against
-the year-bundled `.tar` because `_archive_pdf_url` in
-`legal_ai/ingestion/judgments/dynamic_search.py` only ever built that URL
-for SCI rows — even though the archive gives a per-document path for SCI
-exactly as it does for HC (`bharat_courts.archive.schema` maps parquet
-column `path` onto `Judgment.pdf_path` for both). Verified against the live
-bucket before touching anything: 33 real paths across 1950-2026, all 200.
-
-Fixed at the source (future ingests build the per-document URL directly)
-and backfilled (`scripts/repair_sci_judgment_urls.py`, CNR is an exact join
-key — our `document_id` already *is* `judgment:` + the lowercased CNR, so
-no fuzzy matching). Ran locally: 6,822 of 6,822 matched and repointed, spot
-checks and the real `agents.draft._sources` path both confirm
-`openable=True`. Not yet run against the deployed server.
-
-Statute links (India Code) are a separate, smaller gap: the codes ingested
-in September were never run through `scripts/repair_india_code_urls.py`,
-which already works — the NI Act's links prove the machinery.
-
 ## 3. Corpus gaps
 
 **State-made rules.** None held -- the corpus is central legislation only.
@@ -174,9 +148,23 @@ tuned.
 
 ## 4. Smaller, known
 
-- **Cancellation.** A client that disconnects mid-research leaves the run
-  going and spending model budget. Needs a job queue; Python cannot
-  interrupt the blocking call.
+- **Live progress after a reconnect.** A reopened tab gets the answer but
+  not the steps. The answer is safe and the thread now says "Still
+  researching" rather than claiming the run failed; what is missing is the
+  progress itself, because the event queue is created per HTTP connection,
+  holds no history and is addressable by nothing.
+
+  Phase 1 of `docs/RELIABILITY_ARCHITECTURE.md` is the fix: `run_events`
+  with a sequence number, replayed on `Last-Event-ID`. Shared storage, not
+  an in-process registry -- a registry finds nothing when the reconnect
+  lands on the other worker.
+
+- **Cancellation, and surviving a deploy.** A disconnect no longer loses
+  the answer, but nothing stops the run either -- a reader who has gone
+  still spends the full model budget, and an in-memory task dies with the
+  process on every rebuild. Both are Phase 2 of
+  `docs/RELIABILITY_ARCHITECTURE.md`; Python cannot interrupt the blocking
+  call, but a worker can decline to start the next step.
 - **No landing page.** An unauthenticated visitor gets the login screen
   with no explanation of what the product is.
 - **Account recovery.** No password change, reset or email verification. A

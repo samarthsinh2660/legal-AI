@@ -6,8 +6,8 @@ draws whatever sections it returns. There is no document type to pick.
 
 import json
 
-from legal_ai import drafting
-from legal_ai.drafting import draft
+from legal_ai.agents import drafter
+from legal_ai.agents.drafter import draft
 
 RETRIEVED = {"act:2189:sec-138", "act:2189:sec-142"}
 
@@ -30,7 +30,7 @@ REPLY = {
 
 def _stub(monkeypatch, payload):
     monkeypatch.setattr(
-        drafting, "generate",
+        drafter, "generate",
         lambda prompt, **kw: json.dumps(payload) if isinstance(payload, dict) else payload,
     )
 
@@ -70,7 +70,7 @@ def test_a_conversation_that_settled_nothing_never_reaches_the_model(monkeypatch
     def boom(prompt, **kw):
         raise AssertionError("must not draft from a conversation with no law")
 
-    monkeypatch.setattr(drafting, "generate", boom)
+    monkeypatch.setattr(drafter, "generate", boom)
     result = draft("m", "c", "l", set())
 
     assert result.structure is None
@@ -95,7 +95,7 @@ def test_an_unreachable_model_is_reported_not_raised(monkeypatch):
     def boom(prompt, **kw):
         raise RuntimeError("503")
 
-    monkeypatch.setattr(drafting, "generate", boom)
+    monkeypatch.setattr(drafter, "generate", boom)
     result = _draft()
 
     assert result.structure is None
@@ -105,7 +105,7 @@ def test_an_unreachable_model_is_reported_not_raised(monkeypatch):
 def test_one_model_call_per_document(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        drafting, "generate",
+        drafter, "generate",
         lambda prompt, **kw: calls.append(1) or json.dumps(REPLY),
     )
     _draft()
@@ -116,7 +116,7 @@ def test_one_model_call_per_document(monkeypatch):
 def test_the_draft_budget_is_its_own_not_the_summary_budget(monkeypatch):
     seen = {}
     monkeypatch.setattr(
-        drafting, "generate",
+        drafter, "generate",
         lambda prompt, **kw: seen.update(kw) or json.dumps(REPLY),
     )
     _draft()

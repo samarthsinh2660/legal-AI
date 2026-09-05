@@ -8,7 +8,7 @@ stored in the thread rather than retrieved afresh.
 from dataclasses import dataclass
 from datetime import date
 
-from legal_ai.drafting.source import (
+from api.drafts.source import (
     thread_authorities,
     thread_conversation,
 )

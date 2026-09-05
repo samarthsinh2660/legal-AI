@@ -10,8 +10,8 @@ from datetime import date
 
 from docx import Document
 
-from legal_ai.drafting.models import DraftStructure, Paragraph, Section
-from legal_ai.drafting.render import render
+from legal_ai.schemas.draft import DraftStructure, Paragraph, Section
+from legal_ai.agents.drafter import render
 
 
 def _draft(**overrides) -> DraftStructure:
@@ -99,7 +99,7 @@ def test_the_date_is_the_day_it_was_drafted():
 
 
 def test_every_document_carries_the_draft_footer():
-    from legal_ai.drafting.render import FOOTER
+    from legal_ai.agents.drafter import FOOTER
 
     data = render(_draft())
     footer = Document(io.BytesIO(data)).sections[0].footer.paragraphs[0].text
