@@ -133,7 +133,7 @@ def test_another_users_draft_is_invisible():
 
 def test_a_thread_with_no_established_law_cannot_be_drafted_from():
     """Nothing to cite means the drafter would have to invent law."""
-    from legal_ai.drafting.source import thread_authorities
+    from api.drafts.source import thread_authorities
     from api.threads.repository import list_messages
 
     with connection() as conn:

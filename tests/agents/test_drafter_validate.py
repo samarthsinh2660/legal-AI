@@ -4,8 +4,8 @@ Deterministic on purpose: every defect here is mechanical, and a regex
 catches it every time where a review call catches it most of the time.
 """
 
-from legal_ai.drafting.models import DraftStructure, Paragraph, Section
-from legal_ai.drafting.validate import validate
+from legal_ai.schemas.draft import DraftStructure, Paragraph, Section
+from legal_ai.agents.drafter import validate
 
 RETRIEVED = {"act:2189:sec-138", "act:ipc-1860:sec-120A"}
 

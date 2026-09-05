@@ -79,9 +79,9 @@ async def _draft_and_store(
     Its own connection: the request's went back to the pool when the reply
     was sent, and this outlives that.
     """
-    from legal_ai.drafting import draft as run_draft
-    from legal_ai.drafting.render import render_with_citations
-    from legal_ai.drafting.source import (
+    from legal_ai.agents.drafter import draft as run_draft
+    from legal_ai.agents.drafter import render_with_citations
+    from api.drafts.source import (
         render_law,
         thread_authorities,
         thread_conversation,
