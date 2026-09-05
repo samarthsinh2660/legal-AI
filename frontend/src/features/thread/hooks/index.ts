@@ -94,6 +94,10 @@ export function useMessages(threadId: string) {
     // therefore has an answer coming and only has to wait for it.
     refetchInterval: (query) =>
       awaitingAnswer(query.state.data ?? []) ? POLL_MS : false,
+    // Polling stops on an unfocused tab by default, and waiting out a
+    // two-minute answer in another tab is exactly what people do -- the
+    // answer then landed only once they came back and looked.
+    refetchIntervalInBackground: true,
   });
   return {
     messages: data ?? [],
