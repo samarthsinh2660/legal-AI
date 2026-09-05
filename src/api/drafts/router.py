@@ -15,19 +15,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
 from api.databases.postgres import connection
-from api.drafts.controller import (
-    download,
-    draftable,
-    get_draft,
-    list_drafts,
-    start_draft,
-)
-from api.drafts.schemas import (
-    DocumentTypeModel,
-    DraftModel,
-    NewDraftRequest,
-    StartedDraftModel,
-)
+from api.drafts.controller import download, get_draft, list_drafts, start_draft
+from api.drafts.schemas import DraftModel, StartedDraftModel
 from api.schemas import ErrorResponse, Success
 from api.utils.errors import Failure
 from api.utils.response import respond, success
@@ -45,17 +34,18 @@ DOCX_MEDIA_TYPE = (
     response_model=Success[StartedDraftModel],
     responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
 )
-async def new_draft(request: Request, thread_id: str, body: NewDraftRequest):
+async def new_draft(request: Request, thread_id: str):
     """Draft a document from this conversation.
+
+    Nothing is chosen: the model reads what was asked and what was settled
+    and produces the document that follows from it.
 
     Returns at once with an id. The document takes a model call and a
     render, so the reader polls `status` and the file appears -- the same
     shape a researched answer takes, and for the same reason.
     """
     with connection() as conn:
-        result = await start_draft(
-            conn, request.state.user_id, thread_id, body.document_type
-        )
+        result = await start_draft(conn, request.state.user_id, thread_id)
     if isinstance(result, Failure):
         return respond(result)
     return success(StartedDraftModel(**result.value))
@@ -73,24 +63,6 @@ async def thread_drafts(request: Request, thread_id: str):
     if isinstance(result, Failure):
         return respond(result)
     return success([DraftModel.of(row) for row in result.value.items])
-
-
-@router.get(
-    "/threads/{thread_id}/draft-types",
-    response_model=Success[list[DocumentTypeModel]],
-    responses={404: {"model": ErrorResponse}},
-)
-async def draft_types(request: Request, thread_id: str):
-    """The documents this thread has established the law for.
-
-    Offering one it has not is how a reader on a conspiracy thread was
-    shown a cheque-bounce notice and given a failure for it.
-    """
-    with connection() as conn:
-        result = draftable(conn, request.state.user_id, thread_id)
-    if isinstance(result, Failure):
-        return respond(result)
-    return success([DocumentTypeModel(**row) for row in result.value])
 
 
 @router.get(

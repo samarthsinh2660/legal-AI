@@ -1,13 +1,20 @@
 """What a drafted document is, before it is a file.
 
-The model returns this shape and nothing else. Everything a reader sees --
-the letterhead, the formal opening, the clause numbering, the signature
-block -- lives in the .docx template, so the model is asked only for the
-parts that differ between two matters.
+Deliberately one shape for every document. An earlier version carried a
+type per instrument -- a s.138 demand notice, with its own template, its own
+prompt and a rule deciding which conversations it fitted. That does not
+scale past the first document: Indian practice has hundreds, and a registry
+of them answers "no document fits this thread" to almost every question
+anyone asks.
+
+So a document here is a title and a list of sections, and the sections are
+whatever this conversation needs. A demand notice, an opinion, a reply, a
+memo -- all of them are headings with numbered paragraphs under them, and
+the model decides which headings this matter calls for.
 
 `warnings` and `needs_input` are not decoration. A draft is a document
-someone may sign and send, so a draft that is the wrong instrument for the
-matter, or that cannot be sent until an advocate supplies their enrolment
+someone may sign and send, so one that is the wrong instrument for the
+matter, or that cannot be used until an advocate supplies their enrolment
 number, must say so where the reader cannot miss it. Same rule the rest of
 the system follows: a thing we could not settle never renders like a thing
 we settled.
@@ -19,55 +26,49 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
-class Party:
-    name: str
-    address: str = ""
+class Paragraph:
+    """One numbered paragraph, with the law it rests on.
 
-
-@dataclass(frozen=True)
-class Ground:
-    """One thing the law provides, with the identifier it rests on.
-
-    `authority` is a document id from the corpus, validated against what was
-    actually retrieved. An invented citation in a notice that gets sent is
-    the worst failure this feature has.
+    `authorities` are document ids from the corpus, checked against what the
+    conversation actually retrieved. An invented citation in a document that
+    gets sent is the worst failure this feature has.
     """
 
     text: str
-    authority: str
+    authorities: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
-class Demand:
-    what: str
-    within_days: int = 15
-    # Left as words rather than a date: the clock runs from receipt, which
-    # nobody knows on the day of drafting.
-    from_when: str = "receipt of this notice"
+class Section:
+    """A heading and the paragraphs under it.
+
+    The heading is the model's, because what a document needs is a fact
+    about the document -- "FACTS", "THE POSITION", "DEMAND", "PRAYER" --
+    and fixing the list here is what made the last design specific to one
+    instrument.
+    """
+
+    heading: str
+    paragraphs: tuple[Paragraph, ...] = ()
 
 
 @dataclass(frozen=True)
 class DraftStructure:
-    document_type: str
-    subject: str
-    recipient: Party
-    sender: Party
-    facts: tuple[str, ...] = ()
-    grounds: tuple[Ground, ...] = ()
-    demand: Demand | None = None
-    consequence: str = ""
+    # What the document is called at the top of the page, e.g. "LEGAL
+    # OPINION" or "NOTICE UNDER SECTION 138 OF THE NEGOTIABLE INSTRUMENTS
+    # ACT, 1881". The model names it, because naming it is choosing it.
+    title: str
+    subject: str = ""
 
-    # An opinion ends in one; a notice makes a demand instead.
-    conclusion: str = ""
-    annexures: tuple[str, ...] = ()
+    # Who it is addressed to, where the document is addressed to anyone. An
+    # opinion has a client; a notice has a recipient; a memo has neither.
+    addressed_to: str = ""
+    on_behalf_of: str = ""
 
-    # What an advocate must supply before this can be sent.
+    sections: tuple[Section, ...] = ()
+
+    # What an advocate must supply before this can be used.
     needs_input: tuple[str, ...] = ()
 
     # Why this draft may be the wrong document, or unsafe to send as it is.
     warnings: tuple[str, ...] = ()
-
-    # Filled from the record, never by the model: the amount demanded must
-    # equal the cheque exactly, and a rupee's difference invalidates the
-    # notice (Kaveri Plastics v Mahdoom Bawa, SC 2025).
-    values: dict[str, str] = field(default_factory=dict)

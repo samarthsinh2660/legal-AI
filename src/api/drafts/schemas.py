@@ -14,19 +14,6 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
-class DocumentTypeModel(BaseModel):
-    """A document this thread can actually be drafted into."""
-
-    value: str
-    label: str
-
-
-class NewDraftRequest(BaseModel):
-    # Validated against the templates that exist, in the controller. A list
-    # here would drift from the folder.
-    document_type: str = "s138_demand_notice"
-
-
 class StartedDraftModel(BaseModel):
     draft_id: str
     status: str
@@ -35,6 +22,7 @@ class StartedDraftModel(BaseModel):
 class DraftModel(BaseModel):
     draft_id: str
     thread_id: str
+    # What the model decided to draft. Empty while it is still deciding.
     document_type: str
     # running | done | failed
     status: str

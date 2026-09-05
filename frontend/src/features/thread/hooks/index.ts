@@ -8,7 +8,6 @@ import type { Page } from "@/types/common";
 import {
   createThread,
   deleteThread,
-  fetchDraftTypes,
   fetchDrafts,
   fetchMessages,
   fetchThread,
@@ -181,23 +180,14 @@ export function useDrafts(threadId: string) {
     refetchIntervalInBackground: true,
   });
 
-  // Which documents this conversation can support. Refetched when the
-  // messages change, since answering a question can make one offerable.
-  const { data: types } = useQuery({
-    queryKey: [...threadKeys.all, threadId, "draft-types"],
-    queryFn: () => fetchDraftTypes(threadId),
-    enabled: Boolean(threadId),
-  });
-
   const { mutateAsync, isPending, error } = useMutation({
-    mutationFn: (documentType: string) => startDraft(threadId, documentType),
+    mutationFn: () => startDraft(threadId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
   });
 
   const drafts = data ?? [];
   return {
     drafts,
-    types: types ?? [],
     isLoading,
     preparing: drafts.some((draft) => draft.status === "running") || isPending,
     startDraft: mutateAsync,

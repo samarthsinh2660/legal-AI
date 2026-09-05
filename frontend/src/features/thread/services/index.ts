@@ -4,13 +4,11 @@ import { apiClient, readToken } from "@/lib/api";
 import { paged, type Page } from "@/types/common";
 import { API_BASE_URL } from "@/types/constant";
 import {
-  DocumentTypeSchema,
   DraftSchema,
   MessageSchema,
   StartedDraftSchema,
   ReplySchema,
   ThreadSchema,
-  type DocumentType,
   type Draft,
   type Message,
   type ProgressStep,
@@ -143,11 +141,8 @@ export async function deleteThread(threadId: string): Promise<void> {
 
 export async function startDraft(
   threadId: string,
-  documentType: string,
 ): Promise<{ draft_id: string; status: string }> {
-  const data = await apiClient.post<unknown>(`/threads/${threadId}/drafts`, {
-    document_type: documentType,
-  });
+  const data = await apiClient.post<unknown>(`/threads/${threadId}/drafts`, {});
   return StartedDraftSchema.parse(data);
 }
 
@@ -178,7 +173,3 @@ export async function downloadDraft(draft: Draft): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-export async function fetchDraftTypes(threadId: string): Promise<DocumentType[]> {
-  const data = await apiClient.get<unknown>(`/threads/${threadId}/draft-types`);
-  return z.array(DocumentTypeSchema).parse(data);
-}

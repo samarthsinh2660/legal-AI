@@ -151,17 +151,3 @@ export const StartedDraftSchema = z.object({
   status: z.string(),
 });
 
-/**
- * A document this thread can be drafted into.
- *
- * Fetched per thread rather than listed here: a document type is offerable
- * only where the conversation established the law it rests on, and a
- * hardcoded list offered a cheque-bounce notice on a criminal conspiracy
- * thread.
- */
-export const DocumentTypeSchema = z.object({
-  value: z.string(),
-  label: z.string(),
-});
-
-export type DocumentType = z.infer<typeof DocumentTypeSchema>;
