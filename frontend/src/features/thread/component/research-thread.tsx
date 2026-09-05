@@ -2,7 +2,7 @@
 
 import { Loader2, Send } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,6 +58,26 @@ export function ResearchThread({
   // is reopened tomorrow.
   const { drafts, preparing, startDraft, startError } = useDrafts(threadId);
 
+  // One conversation, in the order it happened. A draft carries its own
+  // created_at, so it takes its place among the messages rather than after
+  // all of them -- the optimistic message inserted on send has a negative
+  // id and a fresh timestamp, so it still lands last.
+  const entries = useMemo(
+    () => [
+      ...messages.map((message) => ({
+        kind: "message" as const,
+        at: message,
+        when: message.created_at,
+      })),
+      ...drafts.map((drafted) => ({
+        kind: "draft" as const,
+        at: drafted,
+        when: drafted.created_at,
+      })),
+    ].sort((a, b) => a.when.localeCompare(b.when)),
+    [messages, drafts],
+  );
+
   // Fire the handed-over question once, then take it out of the URL.
   //
   // The ref alone was not enough. It guards one mount, and `?ask=` stayed
@@ -82,7 +102,7 @@ export function ResearchThread({
   const foot = useRef<HTMLDivElement>(null);
   useEffect(() => {
     foot.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, steps.length]);
+  }, [entries.length, steps.length]);
 
   if (isLoading) return <PageLoader />;
   if (loadError) {
@@ -97,12 +117,17 @@ export function ResearchThread({
         {messages.length === 0 && !isSending && (
           <EmptyState message="Ask your first question below." />
         )}
-        {messages.map((message) => (
-          <MessageBubble key={message.message_id} message={message} />
-        ))}
-        {drafts.map((drafted) => (
-          <DraftCard key={drafted.draft_id} draft={drafted} />
-        ))}
+        {/* Messages and drafts are two lists of one conversation, so they
+            are merged by time rather than rendered one after the other.
+            Rendered in sequence, a document drafted mid-thread sat below
+            every later answer instead of where it was asked for. */}
+        {entries.map((entry) =>
+          entry.kind === "message" ? (
+            <MessageBubble key={`m${entry.at.message_id}`} message={entry.at} />
+          ) : (
+            <DraftCard key={`d${entry.at.draft_id}`} draft={entry.at} />
+          ),
+        )}
         {startError && <p className="text-sm text-danger">{startError}</p>}
         {isSending && <ProgressSteps steps={steps} />}
         {/* The question is stored before research runs, so a reopened
