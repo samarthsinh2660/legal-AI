@@ -107,6 +107,11 @@ class Configuration(BaseModel):
     summary_model_max_tokens: int = 2048
     extraction_model_max_tokens: int = 4096
 
+    # A document, not an answer. A s.138 notice measured ~520 words of
+    # structure, and a longer instrument is the point of having the ceiling
+    # separate -- drafting must not have to borrow the summary budget.
+    draft_model_max_tokens: int = 8192
+
     # ------------------------------------------------------------ fan-out
     # Research angles the supervisor may fan out to for one question.
     # open_deep_research defaults to 5; 3 here because the free tier

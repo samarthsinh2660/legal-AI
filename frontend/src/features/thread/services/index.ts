@@ -4,9 +4,14 @@ import { apiClient, readToken } from "@/lib/api";
 import { paged, type Page } from "@/types/common";
 import { API_BASE_URL } from "@/types/constant";
 import {
+  DocumentTypeSchema,
+  DraftSchema,
   MessageSchema,
+  StartedDraftSchema,
   ReplySchema,
   ThreadSchema,
+  type DocumentType,
+  type Draft,
   type Message,
   type ProgressStep,
   type Reply,
@@ -134,4 +139,46 @@ export async function renameThread(
 
 export async function deleteThread(threadId: string): Promise<void> {
   await apiClient.delete(`/threads/${threadId}`);
+}
+
+export async function startDraft(
+  threadId: string,
+  documentType: string,
+): Promise<{ draft_id: string; status: string }> {
+  const data = await apiClient.post<unknown>(`/threads/${threadId}/drafts`, {
+    document_type: documentType,
+  });
+  return StartedDraftSchema.parse(data);
+}
+
+export async function fetchDrafts(threadId: string): Promise<Draft[]> {
+  const data = await apiClient.get<unknown>(`/threads/${threadId}/drafts`);
+  return z.array(DraftSchema).parse(data);
+}
+
+/**
+ * Download the .docx.
+ *
+ * Not `apiClient`: that unwraps a JSON envelope, and this route returns
+ * the file itself. The bearer token still has to go with it, so the
+ * browser cannot simply follow a link.
+ */
+export async function downloadDraft(draft: Draft): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/drafts/${draft.draft_id}/download`,
+    { headers: { Authorization: `Bearer ${readToken() ?? ""}` } },
+  );
+  if (!response.ok) throw new Error("Could not download the document.");
+
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = draft.filename || "document.docx";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function fetchDraftTypes(threadId: string): Promise<DocumentType[]> {
+  const data = await apiClient.get<unknown>(`/threads/${threadId}/draft-types`);
+  return z.array(DocumentTypeSchema).parse(data);
 }

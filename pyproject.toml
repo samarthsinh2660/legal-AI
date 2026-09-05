@@ -10,6 +10,7 @@ dependencies = [
     "pyarrow>=17.0",
     "pypdf>=4.3",
     "python-docx>=1.1",
+    "docxtpl>=0.20",
     "python-dotenv>=1.0",
     "psycopg[binary]>=3.1",
     "psycopg_pool>=3.2",
