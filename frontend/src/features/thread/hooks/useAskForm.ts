@@ -19,6 +19,10 @@ import { RequestError } from "@/lib/api";
 import { useCreateThread } from "./index";
 import { QUESTION_MAX_LENGTH, Verification } from "../types";
 
+/** Matches api.threads.controller.TITLE_CHARS. A sidebar of full questions
+ *  is unreadable, and a nowrap title that long distorts the grid holding it. */
+const TITLE_CHARS = 60;
+
 export function useAskForm(caseId?: string) {
   const [question, setQuestion] = useState("");
   // Quick by default. It still checks every citation exists; what it
@@ -52,9 +56,10 @@ export function useAskForm(caseId?: string) {
     try {
       // The question doubles as the title: the backend renames the thread
       // from the first exchange anyway, and an untitled row in the sidebar
-      // is useless until it does.
+      // is useless until it does. Cut to the same length the backend uses
+      // (TITLE_CHARS), since a title set here is one it will not replace.
       const thread = await threadCreate({
-        title: asked.slice(0, 200),
+        title: asked.slice(0, TITLE_CHARS),
         caseId,
       });
       router.push(

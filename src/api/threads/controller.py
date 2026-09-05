@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from api.databases.postgres import connection
 from api.threads.repository import (
     DEFAULT_TITLE,
     recent_answers,
@@ -53,6 +54,23 @@ def _history(conn, thread_id: str, user_id: str) -> list[Turn]:
         Turn(role=message.role, content=message.content)
         for message in recent_turns(conn, thread_id, user_id, HISTORY_TURNS)
     ]
+
+
+def _already_clarified(history: list[Turn]) -> bool:
+    """Whether this thread has already put a clarifying question.
+
+    Asked once, then proceed whatever came back. The gate re-asks while the
+    fact it wants is unset, and an answer it cannot parse -- a district, a
+    spelling, a state the table does not carry -- leaves it unset forever.
+    Researching without the fact gives a weaker answer; asking a fourth time
+    gives none at all.
+    """
+    from legal_ai.context.clarification import DATE_QUESTION, STATE_QUESTION
+
+    asked = {STATE_QUESTION, DATE_QUESTION}
+    return any(
+        turn.role == "assistant" and turn.content.strip() in asked for turn in history
+    )
 
 
 # What an ANSWER turn says when the thread cannot answer the question.
@@ -145,6 +163,7 @@ async def send_message(
                 "case_id": thread.case_id,
                 "document_ids": _permitted_documents(conn, thread.case_id, document_ids),
                 "verification_level": verification_level,
+                "clarification_asked": _already_clarified(history),
             }
         )
         if isinstance(result, Failure):
@@ -260,7 +279,9 @@ async def stream_message(
         return
 
     history = _history(conn, thread_id, user_id)
-    route = route_message(message, history)
+    # Off the loop for the same reason as the rewrite below: a follow-up
+    # routes by asking a model, and that call blocked every other request.
+    route = await asyncio.to_thread(route_message, message, history)
 
     if route is Route.ANSWER:
         # No steps to report on: it never touched the corpus.
@@ -280,77 +301,147 @@ async def stream_message(
     # anything. The reader had no way to tell "still running" from
     # "vanished". Reproduced live 2026-09-03: refreshing mid-research on
     # thread 714851b0 landed on "Ask your first question below."
-    #
-    # This does not make the run itself survive a disconnect -- the
-    # research call keeps going in its worker thread regardless (Python
-    # cannot interrupt it), and still spends model budget for a client
-    # nobody reads. That half of the problem needs a job queue and is
-    # docs/TODO.md #4's "Cancellation", still unstarted. What this fixes is
-    # the question being provably gone rather than just its answer.
     add_message(conn, thread_id, "user", message)
     if thread.title == DEFAULT_TITLE:
         set_title(conn, thread_id, user_id, message[:TITLE_CHARS])
 
+    events: asyncio.Queue = asyncio.Queue()
+    run = asyncio.create_task(_research_and_store(
+        thread_id=thread_id,
+        case_id=thread.case_id,
+        message=message,
+        history=history,
+        document_ids=_permitted_documents(conn, thread.case_id, document_ids),
+        verification_level=verification_level,
+        events=events,
+    ))
+    # Held so the loop cannot collect a run mid-flight; asyncio keeps only a
+    # weak reference to a task nobody awaits.
+    _RUNS.add(run)
+    run.add_done_callback(_RUNS.discard)
+
+    # From here this only watches. Whatever happens to the connection, the
+    # run above owns the answer and will store it.
+    while True:
+        event = await events.get()
+        if event is None:
+            return
+        yield event
+
+
+# In-flight detached runs, by task. See `_research_and_store`.
+_RUNS: set[asyncio.Task] = set()
+
+
+async def _research_and_store(
+    thread_id: str,
+    case_id: str | None,
+    message: str,
+    history: list[Turn],
+    document_ids: list[str],
+    verification_level: str,
+    events: asyncio.Queue,
+) -> None:
+    """Run one turn and store its answer, read or not.
+
+    Detached from the request on purpose. The write used to sit at the tail
+    of the SSE generator, so a closed tab threw away a finished answer and
+    the model budget behind it -- the run itself carried on regardless,
+    since Python cannot interrupt it. The client now watches this rather
+    than driving it, and a refresh costs the progress view, nothing else.
+
+    `events` is unbounded and never awaited on the put side, so a reader
+    that goes away cannot stall the run.
+    """
+    from api.threads.graph import STEP_LABELS, research_with_progress
+
     state = None
-    async for kind, payload in research_with_progress({
-        "question": rewrite_question(message, history),
-        "case_id": thread.case_id,
-        "document_ids": _permitted_documents(conn, thread.case_id, document_ids),
-        "verification_level": verification_level,
-    }):
-        if kind == "step":
-            yield "step", {"node": payload, "label": STEP_LABELS.get(payload, payload)}
-        elif kind == "timeout":
-            # The question survives (stored above); no assistant reply is
-            # written, so there is nothing here for a later rewrite to
-            # mistake for an answer.
-            yield "error", {
-                "code": "timeout",
-                "message": "Research did not finish within the time limit.",
-            }
-            return
-        elif kind == "error":
-            log.warning("research failed mid-stream", exc_info=payload)
-            yield "error", {"code": "internal_error", "message": "Research failed."}
-            return
-        else:
-            state = payload
+    try:
+        # Off the event loop: this is a blocking model call inside an async
+        # handler, and while one ran inline every other request waited on
+        # it -- including /health and the auth check.
+        question = await asyncio.to_thread(rewrite_question, message, history)
 
-    text = (state or {}).get("answer")
-    answer = _as_dict((state or {}).get("draft_answer"))
-    clarification = (state or {}).get("clarification_needed")
-    if clarification and not answer:
-        text = clarification
+        async for kind, payload in research_with_progress({
+            "question": question,
+            "case_id": case_id,
+            "document_ids": document_ids,
+            "verification_level": verification_level,
+            "clarification_asked": _already_clarified(history),
+        }):
+            if kind == "step":
+                events.put_nowait(
+                    ("step", {"node": payload, "label": STEP_LABELS.get(payload, payload)})
+                )
+            elif kind == "timeout":
+                # The question survives; no assistant reply is written, so
+                # there is nothing here for a later rewrite to mistake for
+                # an answer.
+                events.put_nowait(("error", {
+                    "code": "timeout",
+                    "message": "Research did not finish within the time limit.",
+                }))
+                return
+            elif kind == "error":
+                log.warning("research failed mid-stream", exc_info=payload)
+                events.put_nowait(
+                    ("error", {"code": "internal_error", "message": "Research failed."})
+                )
+                return
+            else:
+                state = payload
 
-    # The lede in small pieces, ahead of "done". Not a token stream from
-    # the model -- the lede is already final at this point, past
-    # verification, which is the one thing that may still move a claim
-    # between buckets. Streaming raw generation from the analyst call
-    # would show a reader prose that verification could go on to flag,
-    # which is exactly the false reassurance the three-state pattern
-    # exists to prevent (CLAUDE.md #2). Chunking a *finished* answer for
-    # progressive reveal is the safe version of the same UX win --
-    # measured elsewhere at ~40% faster *perceived* even at identical
-    # wall-clock time, because the reader starts reading before the rest
-    # of the pane (claims, sources) has rendered. See docs/SPEED_2026_09_03.md #1.
-    lede = (answer or {}).get("lede") if answer else None
-    if lede:
-        for chunk in _chunk_words(lede):
-            yield "answer_chunk", {"text": chunk}
-            # A small pause between frames. Chunks would otherwise leave
-            # this generator microseconds apart and arrive as one write on
-            # a fast connection, defeating the point. 30ms x ~10 chunks for
-            # a typical lede adds well under a second to a 30-130s turn.
-            await asyncio.sleep(_CHUNK_DELAY_SECONDS)
+        text = (state or {}).get("answer")
+        answer = _as_dict((state or {}).get("draft_answer"))
+        clarification = (state or {}).get("clarification_needed")
+        if clarification and not answer:
+            text = clarification
 
-    add_message(conn, thread_id, "assistant", text or "", answer=answer)
-    if thread.case_id and answer is not None:
-        _remember(conn, thread.case_id, message, answer)
+        # The lede in small pieces, ahead of "done". Not a token stream from
+        # the model -- the lede is already final at this point, past
+        # verification, which is the one thing that may still move a claim
+        # between buckets. Streaming raw generation from the analyst call
+        # would show a reader prose that verification could go on to flag,
+        # which is exactly the false reassurance the three-state pattern
+        # exists to prevent (CLAUDE.md #2). Chunking a *finished* answer for
+        # progressive reveal is the safe version of the same UX win --
+        # measured elsewhere at ~40% faster *perceived* even at identical
+        # wall-clock time, because the reader starts reading before the rest
+        # of the pane (claims, sources) has rendered. See docs/SPEED_2026_09_03.md #1.
+        lede = (answer or {}).get("lede") if answer else None
+        if lede:
+            for chunk in _chunk_words(lede):
+                events.put_nowait(("answer_chunk", {"text": chunk}))
+                # A small pause between frames. Chunks would otherwise leave
+                # this generator microseconds apart and arrive as one write
+                # on a fast connection, defeating the point. 30ms x ~10
+                # chunks for a typical lede adds well under a second.
+                await asyncio.sleep(_CHUNK_DELAY_SECONDS)
 
-    yield "done", {
-        "text": text, "answer": answer, "clarification_needed": clarification,
-        "route": route.value, "verification_level": verification_level,
-    }
+        # Its own connection. The request's went back to the pool the moment
+        # the client left, and this write has to outlive that.
+        #
+        # A run that produced nothing writes nothing: an empty assistant row
+        # reads to the next rewrite as an answer that was given, which is
+        # the same reason the timeout branch above stores none.
+        if text or answer:
+            with connection() as conn:
+                add_message(conn, thread_id, "assistant", text or "", answer=answer)
+                if case_id and answer is not None:
+                    _remember(conn, case_id, message, answer)
+
+        events.put_nowait(("done", {
+            "text": text, "answer": answer, "clarification_needed": clarification,
+            "route": Route.RESEARCH.value, "verification_level": verification_level,
+        }))
+    except Exception:
+        # Nobody is left to raise to: this runs outside the request.
+        log.exception("detached run failed for thread %s", thread_id)
+        events.put_nowait(
+            ("error", {"code": "internal_error", "message": "Research failed."})
+        )
+    finally:
+        events.put_nowait(None)
 
 
 # Words per SSE frame. Small enough to read as a stream rather than a dump;

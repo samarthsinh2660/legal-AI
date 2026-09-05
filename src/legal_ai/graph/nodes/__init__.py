@@ -107,6 +107,10 @@ def clarification(state: ResearchState) -> dict:
     context = state.get("context")
     if context is None:
         return {"clarification_needed": None}
+    # Asked once already. Re-asking is a dead end when the answer is one the
+    # gate cannot parse -- see api.threads.controller._already_clarified.
+    if state.get("clarification_asked"):
+        return {"clarification_needed": None}
     return {"clarification_needed": clarification_needed(context)}
 
 
