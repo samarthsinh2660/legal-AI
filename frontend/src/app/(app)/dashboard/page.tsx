@@ -21,12 +21,16 @@ export default async function DashboardPage(props: PageProps<"/dashboard">) {
       <Greeting />
       <AskBox caseId={attachTo} />
 
+      {/* min-w-0 on both columns, or neither truncates. A grid item sizes
+          to its content by default, and a nowrap title's min-content width
+          is the whole title -- so one long question widened the research
+          column and squeezed the actions beside it out of shape. */}
       <div className="mt-10 grid gap-8 lg:grid-cols-[1.6fr_1fr]">
-        <section>
+        <section className="min-w-0">
           <SectionHead>Recent research</SectionHead>
           <RecentThreads />
         </section>
-        <section>
+        <section className="min-w-0">
           <SectionHead>Quick actions</SectionHead>
           <QuickActions />
         </section>

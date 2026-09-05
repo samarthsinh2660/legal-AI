@@ -19,10 +19,14 @@ export function QuickActions() {
         <Link
           key={label}
           href={href}
-          className="flex flex-col items-center gap-2 rounded-md border border-line bg-surface-card p-5 text-center transition-colors duration-[120ms] ease-out hover:border-primary hover:bg-surface-tint"
+          className="flex min-w-0 flex-col items-center gap-2 rounded-md border border-line bg-surface-card p-5 text-center transition-colors duration-[120ms] ease-out hover:border-primary hover:bg-surface-tint"
         >
-          <Icon className="size-5 text-primary" />
-          <span className="text-sm font-medium text-ink-variant">{label}</span>
+          <Icon className="size-5 shrink-0 text-primary" />
+          {/* Wraps inside the tile rather than spilling past its border:
+              these labels are two words and the column is narrow. */}
+          <span className="w-full text-sm font-medium leading-tight text-balance break-words text-ink-variant">
+            {label}
+          </span>
         </Link>
       ))}
     </div>
