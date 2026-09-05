@@ -8,12 +8,15 @@ import type { Page } from "@/types/common";
 import {
   createThread,
   deleteThread,
+  fetchDraftTypes,
+  fetchDrafts,
   fetchMessages,
   fetchThread,
   fetchThreads,
   renameThread,
+  startDraft,
 } from "../services";
-import type { Message, Thread } from "../types";
+import type { Draft, Message, Thread } from "../types";
 
 export const threadKeys = {
   all: ["threads"] as const,
@@ -154,4 +157,50 @@ export function useDeleteThread() {
   });
 
   return { threadDelete: mutateAsync, isDeleting: isPending };
+}
+
+/**
+ * Documents drafted from this thread.
+ *
+ * Polls while one is being prepared, for the same reason the messages do:
+ * the run is detached from the request, so it finishes and stores the file
+ * whether or not this tab is watching.
+ */
+export function useDrafts(threadId: string) {
+  const queryClient = useQueryClient();
+  const key = [...threadKeys.all, threadId, "drafts"] as const;
+
+  const { data, isLoading } = useQuery({
+    queryKey: key,
+    queryFn: () => fetchDrafts(threadId),
+    enabled: Boolean(threadId),
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((draft) => draft.status === "running")
+        ? POLL_MS
+        : false,
+    refetchIntervalInBackground: true,
+  });
+
+  // Which documents this conversation can support. Refetched when the
+  // messages change, since answering a question can make one offerable.
+  const { data: types } = useQuery({
+    queryKey: [...threadKeys.all, threadId, "draft-types"],
+    queryFn: () => fetchDraftTypes(threadId),
+    enabled: Boolean(threadId),
+  });
+
+  const { mutateAsync, isPending, error } = useMutation({
+    mutationFn: (documentType: string) => startDraft(threadId, documentType),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
+  });
+
+  const drafts = data ?? [];
+  return {
+    drafts,
+    types: types ?? [],
+    isLoading,
+    preparing: drafts.some((draft) => draft.status === "running") || isPending,
+    startDraft: mutateAsync,
+    startError: error instanceof Error ? error.message : null,
+  };
 }

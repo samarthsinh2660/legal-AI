@@ -31,12 +31,14 @@ from api.databases.postgres import connection
 from api.graph.router import router as graph_router
 from api.search.router import router as search_router
 from api.documents.router import router as documents_router
+from api.drafts.router import router as drafts_router
 from api.audit.repository import ensure_audit_schema
 from api.audit.router import router as audit_router
 from api.middleware.audit import AuditMiddleware
 from api.middleware.auth import AuthMiddleware
 from api.middleware.rate_limit import RateLimiter, RateLimitMiddleware
 from api.schemas import HealthResponse, Success
+from api.drafts.repository import ensure_draft_schema
 from api.threads.repository import ensure_thread_schema
 from api.threads.router import router as threads_router
 from api.utils.errors import Ok, Result, invalid_request, service_unavailable
@@ -176,6 +178,7 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
                 ensure_case_schema(conn)
                 ensure_case_file_schema(conn)
                 ensure_thread_schema(conn)
+                ensure_draft_schema(conn)
                 ensure_audit_schema(conn)
         except Exception:
             # A database that is down must not stop the process starting --
@@ -187,6 +190,7 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
     application.include_router(threads_router)
     application.include_router(cases_router)
     application.include_router(documents_router)
+    application.include_router(drafts_router)
     application.include_router(search_router)
     application.include_router(graph_router)
     return application

@@ -120,3 +120,48 @@ export const AnswerSchema = z.object({
 });
 
 export type Answer = z.infer<typeof AnswerSchema>;
+
+/**
+ * A document drafted from a thread. Mirrors `DraftModel` in
+ * `src/api/drafts/schemas.py`.
+ *
+ * `warnings` and `needs_input` sit on the model rather than inside the
+ * stored structure because they are what the reader has to act on -- a
+ * draft that may be the wrong instrument, or one that cannot be sent until
+ * an advocate supplies their enrolment number.
+ */
+export const DraftSchema = z.object({
+  draft_id: z.string(),
+  thread_id: z.string(),
+  document_type: z.string(),
+  status: z.enum(["running", "done", "failed"]),
+  filename: z.string(),
+  error: z.string().nullable().default(null),
+  created_at: z.string(),
+  finished_at: z.string().nullable().default(null),
+  has_file: z.boolean().default(false),
+  warnings: z.array(z.string()).default([]),
+  needs_input: z.array(z.string()).default([]),
+});
+
+export type Draft = z.infer<typeof DraftSchema>;
+
+export const StartedDraftSchema = z.object({
+  draft_id: z.string(),
+  status: z.string(),
+});
+
+/**
+ * A document this thread can be drafted into.
+ *
+ * Fetched per thread rather than listed here: a document type is offerable
+ * only where the conversation established the law it rests on, and a
+ * hardcoded list offered a cheque-bounce notice on a criminal conspiracy
+ * thread.
+ */
+export const DocumentTypeSchema = z.object({
+  value: z.string(),
+  label: z.string(),
+});
+
+export type DocumentType = z.infer<typeof DocumentTypeSchema>;

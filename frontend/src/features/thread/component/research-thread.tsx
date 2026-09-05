@@ -8,8 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/molecules/empty-state";
 import { PageLoader } from "@/components/molecules/loading";
+import { useDrafts } from "../hooks";
 import { useResearchThread } from "../hooks/useResearchThread";
 import type { Verification } from "../types";
+import { DraftButton } from "./draft-button";
+import { DraftCard } from "./draft-card";
 import { MessageBubble } from "./message-bubble";
 import { ProgressSteps } from "./progress-steps";
 import { ThreadCaseBanner } from "./thread-case-banner";
@@ -49,6 +52,12 @@ export function ResearchThread({
     sendError,
     send,
   } = useResearchThread(threadId);
+
+  // Documents drafted from this conversation. Its own hook because a draft
+  // outlives the turn that prompted it -- it is still there when the thread
+  // is reopened tomorrow.
+  const { drafts, types, preparing, startDraft, startError } =
+    useDrafts(threadId);
 
   // Fire the handed-over question once, then take it out of the URL.
   //
@@ -92,6 +101,10 @@ export function ResearchThread({
         {messages.map((message) => (
           <MessageBubble key={message.message_id} message={message} />
         ))}
+        {drafts.map((drafted) => (
+          <DraftCard key={drafted.draft_id} draft={drafted} />
+        ))}
+        {startError && <p className="text-sm text-danger">{startError}</p>}
         {isSending && <ProgressSteps steps={steps} />}
         {/* The question is stored before research runs, so a reopened
             thread can end on a question with no reply yet. The run is
@@ -152,6 +165,11 @@ export function ResearchThread({
               value={verification}
               onChange={setVerification}
               disabled={isSending}
+            />
+            <DraftButton
+              types={types}
+              onSelect={(documentType) => void startDraft(documentType)}
+              disabled={isSending || preparing || messages.length === 0}
             />
             <Button
               size="icon"
