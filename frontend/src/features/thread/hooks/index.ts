@@ -13,7 +13,7 @@ import {
   fetchThreads,
   renameThread,
 } from "../services";
-import type { Thread } from "../types";
+import type { Message, Thread } from "../types";
 
 export const threadKeys = {
   all: ["threads"] as const,
@@ -72,13 +72,35 @@ export function useThread(threadId: string) {
   return { thread, error, isLoading };
 }
 
+/** How long a researched turn may take before we stop waiting for it. */
+const RUN_CEILING_MS = 5 * 60 * 1000;
+const POLL_MS = 3000;
+
+/** Whether the thread ends on a question nobody has answered yet. */
+function awaitingAnswer(messages: Message[]): boolean {
+  const last = messages[messages.length - 1];
+  if (last?.role !== "user") return false;
+  const asked = new Date(last.created_at).getTime();
+  return Number.isFinite(asked) && Date.now() - asked < RUN_CEILING_MS;
+}
+
 export function useMessages(threadId: string) {
   const { data, error, isLoading } = useQuery({
     queryKey: [...threadKeys.all, threadId, "messages"],
     queryFn: () => fetchMessages(threadId),
     enabled: Boolean(threadId),
+    // The run is detached from the request, so it finishes and stores its
+    // answer whether or not this tab is still watching. A reopened thread
+    // therefore has an answer coming and only has to wait for it.
+    refetchInterval: (query) =>
+      awaitingAnswer(query.state.data ?? []) ? POLL_MS : false,
   });
-  return { messages: data ?? [], error, isLoading };
+  return {
+    messages: data ?? [],
+    error,
+    isLoading,
+    awaitingAnswer: awaitingAnswer(data ?? []),
+  };
 }
 
 export function useRenameThread() {

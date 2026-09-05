@@ -1,6 +1,6 @@
 "use client";
 
-import { Send } from "lucide-react";
+import { Loader2, Send } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
@@ -38,6 +38,7 @@ export function ResearchThread({
     messages,
     isLoading,
     loadError,
+    awaitingAnswer,
     draft,
     setDraft,
     verification,
@@ -92,20 +93,25 @@ export function ResearchThread({
           <MessageBubble key={message.message_id} message={message} />
         ))}
         {isSending && <ProgressSteps steps={steps} />}
-        {/* The question is now stored before research runs, so a thread
-            can be reopened with the last message from the user and no
-            reply after it -- a run that a refresh, a closed tab, or a
-            timeout interrupted (docs/TODO.md #4's "Cancellation": the
-            run itself keeps going server-side regardless; the fix is a
-            job queue and is not this). This says so, rather than sitting
-            there silently as though nothing had ever been asked. */}
+        {/* The question is stored before research runs, so a reopened
+            thread can end on a question with no reply yet. The run is
+            detached from the request and stores its answer either way, so
+            while one is still in flight this waits for it and polls; past
+            the ceiling it says the run did not finish instead. */}
         {!isSending &&
           messages.length > 0 &&
-          messages[messages.length - 1].role === "user" && (
+          messages[messages.length - 1].role === "user" &&
+          (awaitingAnswer ? (
+            <p className="flex items-center gap-2 text-sm text-ink-muted">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Still researching. This keeps running whether or not the page is
+              open &mdash; the answer will appear here.
+            </p>
+          ) : (
             <p className="text-sm text-ink-muted">
               This didn&apos;t finish. Ask it again below.
             </p>
-          )}
+          ))}
         {/* The lede, revealed as it streams in. Same typography as
             AnswerView's own lede paragraph, so the swap to the finished
             message -- once the query invalidation lands it -- is not a

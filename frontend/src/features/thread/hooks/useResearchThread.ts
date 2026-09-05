@@ -13,7 +13,12 @@ import { Verification, type Message, type ProgressStep } from "../types";
 import { threadKeys, useMessages } from "./index";
 
 export function useResearchThread(threadId: string) {
-  const { messages, error: loadError, isLoading } = useMessages(threadId);
+  const {
+    messages,
+    error: loadError,
+    isLoading,
+    awaitingAnswer,
+  } = useMessages(threadId);
   const queryClient = useQueryClient();
 
   const [draft, setDraft] = useState("");
@@ -106,6 +111,7 @@ export function useResearchThread(threadId: string) {
     messages,
     isLoading,
     loadError,
+    awaitingAnswer,
     draft,
     setDraft,
     verification,
