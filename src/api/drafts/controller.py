@@ -5,10 +5,13 @@ is: it takes a model call and a render, and a reader who closes the tab
 must not lose a document they already paid for. The request returns a
 draft_id at once; the reader watches `status` and the file appears.
 
+Nothing is chosen. The model reads what was asked and what the conversation
+settled, and produces the document that follows from it -- there was a
+document type to pick, and it could only offer the one instrument a
+template existed for.
+
 One draft at a time per thread. Two racing would leave the reader two cards
-and no way to tell which is the document they asked for -- the same
-guarantee the runs table will one day enforce with a unique index, done
-here with a check because the table does not exist yet.
+and no way to tell which is the document they asked for.
 """
 
 from __future__ import annotations
@@ -21,12 +24,12 @@ from datetime import date
 from api.databases.postgres import connection
 from api.drafts import repository
 from api.threads.repository import get_thread, list_messages
-from api.utils.errors import Ok, Result, conflict, invalid_request, not_found
+from api.utils.errors import Ok, Result, conflict, not_found
 
 log = logging.getLogger(__name__)
 
-# What a downloaded file is called. The thread's title is the reader's own
-# words, so it is what they will look for in a downloads folder.
+# What a downloaded file is called. The document's own title is what the
+# reader will look for in a downloads folder.
 FILENAME_CHARS = 60
 
 # In-flight drafts. Held so the loop cannot collect one mid-run; asyncio
@@ -34,28 +37,11 @@ FILENAME_CHARS = 60
 _RUNS: set[asyncio.Task] = set()
 
 
-async def start_draft(conn, user_id: str, thread_id: str, document_type: str) -> Result:
+async def start_draft(conn, user_id: str, thread_id: str) -> Result:
     """Begin a draft and return its id, without waiting for it."""
-    from legal_ai.drafting import DOCUMENT_TYPES, available_types
-    from legal_ai.drafting.source import thread_authorities
-
     thread = get_thread(conn, thread_id, user_id)
     if thread is None:
         return not_found("thread")
-
-    known = next((t for t in DOCUMENT_TYPES if t.value == document_type), None)
-    if known is None:
-        return invalid_request(f"No template for document type {document_type!r}.")
-
-    # Refused here rather than after a model call. A document type the
-    # conversation holds no law for can only come back empty, and the reader
-    # should be told why in their own terms rather than shown a validator's.
-    authorities = thread_authorities(list_messages(conn, thread_id, user_id))
-    if known not in available_types(authorities):
-        return invalid_request(
-            f"This conversation has not established the law a "
-            f"{known.label.lower()} rests on. Ask about that first, then draft."
-        )
 
     if repository.running_on(conn, thread_id):
         return conflict(
@@ -63,7 +49,7 @@ async def start_draft(conn, user_id: str, thread_id: str, document_type: str) ->
             "A document is already being prepared for this thread.",
         )
 
-    draft_id = repository.start(conn, thread_id, document_type)
+    draft_id = repository.start(conn, thread_id)
     conn.commit()
 
     run = asyncio.create_task(
@@ -72,7 +58,6 @@ async def start_draft(conn, user_id: str, thread_id: str, document_type: str) ->
             thread_id=thread_id,
             user_id=user_id,
             case_id=thread.case_id,
-            document_type=document_type,
             title=thread.title,
         )
     )
@@ -87,7 +72,6 @@ async def _draft_and_store(
     thread_id: str,
     user_id: str,
     case_id: str | None,
-    document_type: str,
     title: str,
 ) -> None:
     """Draft the document and store it, read or not.
@@ -108,22 +92,13 @@ async def _draft_and_store(
         with connection() as conn:
             messages = list_messages(conn, thread_id, user_id)
             authorities = thread_authorities(messages)
-            if not authorities:
-                repository.fail(
-                    conn,
-                    draft_id,
-                    "This conversation has not established any law yet. Ask a "
-                    "question first, then draft from the answer.",
-                )
-                return
-
             matter = thread_matter(conn, case_id, date.today())
             conversation = thread_conversation(messages)
             law = render_law(conn, authorities)
         # The model call runs with no connection held. CLAUDE.md section 8.
 
         result = await asyncio.to_thread(
-            run_draft, document_type, matter, conversation, law, authorities
+            run_draft, matter, conversation, law, authorities
         )
 
         with connection() as conn:
@@ -132,8 +107,11 @@ async def _draft_and_store(
                 return
             docx = render_with_citations(conn, result.structure)
             repository.finish(
-                conn, draft_id, _filename(document_type, title),
-                asdict(result.structure), docx,
+                conn,
+                draft_id,
+                _filename(result.structure.title, title),
+                asdict(result.structure),
+                docx,
             )
     except Exception:
         # Nobody is left to raise to: this runs outside the request.
@@ -158,24 +136,6 @@ def list_drafts(conn, user_id: str, thread_id: str) -> Result:
     return Ok(repository.for_thread(conn, thread_id, user_id))
 
 
-def draftable(conn, user_id: str, thread_id: str) -> Result:
-    """The document types this thread has established the law for.
-
-    Offering one it has not is how a reader on a conspiracy thread was
-    shown a cheque-bounce notice, waited for it, and got a failure.
-    """
-    from legal_ai.drafting import available_types
-    from legal_ai.drafting.source import thread_authorities
-
-    if get_thread(conn, thread_id, user_id) is None:
-        return not_found("thread")
-
-    authorities = thread_authorities(list_messages(conn, thread_id, user_id))
-    return Ok([
-        {"value": t.value, "label": t.label} for t in available_types(authorities)
-    ])
-
-
 def download(conn, user_id: str, draft_id: str) -> Result:
     found = repository.content(conn, draft_id, user_id)
     if found is None:
@@ -184,11 +144,16 @@ def download(conn, user_id: str, draft_id: str) -> Result:
     return Ok({"filename": filename, "content": data})
 
 
-def _filename(document_type: str, title: str) -> str:
-    """A name the reader will recognise in a downloads folder."""
+def _filename(document_title: str, thread_title: str) -> str:
+    """A name the reader will recognise in a downloads folder.
+
+    The document's own title first -- "legal opinion", "notice under section
+    138" -- since that is what they asked for; the thread's title only where
+    the draft came back without one.
+    """
     words = "".join(
         character if character.isalnum() or character in " -_" else " "
-        for character in (title or document_type)
+        for character in (document_title or thread_title)
     ).split()
     stem = "_".join(words)[:FILENAME_CHARS].strip("_").lower()
-    return f"{stem or document_type}.docx"
+    return f"{stem or 'draft'}.docx"

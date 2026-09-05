@@ -1,64 +1,130 @@
-"""Fill a template with a drafted structure and return a .docx.
+"""Turn a drafted structure into a .docx.
 
-A .docx rather than a PDF because what we produce is a draft, not a
-finished instrument: the advocate puts it on their letterhead, adds their
-enrolment number, settles the facts and signs. Word is the format of the
-drafting stage precisely because it can be edited; handing a lawyer a PDF
-hands them something to retype.
+Built directly with python-docx rather than filling a template file. There
+was a template per document type, and it went wrong twice over: the
+templates were binaries git never tracked, so the server pulled the feature
+and had nothing to render with; and a template per instrument is a promise
+to write one for every document Indian practice uses.
 
-docxtpl rather than building the document call by call, so the layout lives
-in a .docx a person can open in Word and change with no deployment. See
-scripts/build_draft_template.py.
+A document here is headings with numbered paragraphs under them, which is
+what every legal document is, so one renderer draws all of them. The
+headings come from the draft, not from this file.
 
-The amount is substituted here, not by the model. `Kaveri Plastics v
-Mahdoom Bawa` (SC, 2025) holds the sum demanded must equal the cheque
-exactly -- a rupee's difference invalidates the notice -- so the figure
-comes from the record and the drafter only ever writes a token.
+.docx and not PDF because what we produce is a draft: the advocate puts it
+on their letterhead, adds their enrolment number, settles the facts and
+signs. Word is the format of the drafting stage precisely because it can be
+edited; handing a lawyer a PDF hands them something to retype.
 """
 
 from __future__ import annotations
 
 import io
-import re
 from datetime import date
-from pathlib import Path
 
 from legal_ai.drafting.models import DraftStructure
 
-TEMPLATES = Path(__file__).parent / "templates"
+# Courts and opposing counsel read these on paper. 12pt serif with generous
+# leading is the register; a UI font reads as a printout of a web page.
+BODY_FONT = "Times New Roman"
+BODY_SIZE_PT = 12
 
-# What the advocate has to fill when we do not hold a value. Left visible in
-# the document on purpose: a blank reads as nothing missing.
+# What the advocate has to fill where we hold no value. Visible on purpose:
+# a blank space reads as nothing missing.
 UNFILLED = "__________"
 
-_TOKEN = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+FOOTER = (
+    "DRAFT prepared by Pramāṇa AI from this matter's own record, on the "
+    "authorities cited. To be settled and signed by an advocate. Verify "
+    "every fact and provision before relying on it."
+)
 
 
 def render(
-    draft: DraftStructure, *, today: date | None = None, citations: dict[str, str] | None = None
+    draft: DraftStructure,
+    *,
+    today: date | None = None,
+    citations: dict[str, str] | None = None,
 ) -> bytes:
     """The draft as a .docx, ready to download.
 
-    `citations` maps each authority id to how it should be cited. Without
-    it the body prints `act:2189:sec-138`, which is how this system
-    addresses a provision and not how a notice cites one -- see
-    drafting.citation, and prefer `render_with_citations`.
-
-    Raises FileNotFoundError when the document type has no template, which
-    is a programming error rather than a user's: the type is chosen from a
-    fixed list.
+    `citations` maps an authority id to how it should be cited. Without one
+    the body would print `act:2189:sec-138`, which is how this system
+    addresses a provision and not how a document cites one -- prefer
+    `render_with_citations`.
     """
-    from docxtpl import DocxTemplate
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Inches, Pt, RGBColor
 
-    path = TEMPLATES / f"{draft.document_type}.docx"
-    if not path.exists():
-        raise FileNotFoundError(f"no template for document type {draft.document_type!r}")
+    citations = citations or {}
+    document = Document()
 
-    template = DocxTemplate(str(path))
-    template.render(_context(draft, today or date.today(), citations or {}))
+    normal = document.styles["Normal"]
+    normal.font.name = BODY_FONT
+    normal.font.size = Pt(BODY_SIZE_PT)
+    normal.paragraph_format.space_after = Pt(10)
+    normal.paragraph_format.line_spacing = 1.4
+
+    section = document.sections[0]
+    section.left_margin = section.right_margin = Inches(1.1)
+    section.top_margin = section.bottom_margin = Inches(1.0)
+
+    def para(text="", *, bold=False, align=None):
+        paragraph = document.add_paragraph()
+        run = paragraph.add_run(text)
+        run.bold = bold
+        if align is not None:
+            paragraph.alignment = align
+        return paragraph
+
+    para(draft.title or "DRAFT", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+    if draft.subject:
+        para(draft.subject, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+    para(
+        f"Date: {(today or date.today()).strftime('%d %B %Y')}",
+        align=WD_ALIGN_PARAGRAPH.RIGHT,
+    )
+
+    if draft.addressed_to:
+        para("To,", bold=True)
+        para(draft.addressed_to)
+    if draft.on_behalf_of:
+        para(f"On behalf of: {draft.on_behalf_of}")
+
+    for block in draft.sections:
+        if block.heading:
+            para(block.heading.upper(), bold=True)
+        for number, paragraph in enumerate(block.paragraphs, start=1):
+            para(f"{number}. {_with_citations(paragraph, citations)}")
+
+    para()
+    para("_______________________________")
+    para("Advocate")
+    para("[Name, Bar Council enrolment number and address to be completed]")
+
+    # Everything the draft could not settle, kept together at the end so an
+    # advocate reads it once and deletes the block.
+    if draft.warnings or draft.needs_input:
+        document.add_page_break()
+        para("DRAFTING NOTES — DELETE BEFORE SENDING", bold=True)
+        if draft.warnings:
+            para("Resolve before this is used:", bold=True)
+            for warning in draft.warnings:
+                para(f"• {warning}")
+        if draft.needs_input:
+            para("To be supplied:", bold=True)
+            for item in draft.needs_input:
+                para(f"• {item}")
+
+    footer = section.footer.paragraphs[0]
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = footer.add_run(FOOTER)
+    run.font.size = Pt(8)
+    run.italic = True
+    run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
 
     buffer = io.BytesIO()
-    template.save(buffer)
+    document.save(buffer)
     return buffer.getvalue()
 
 
@@ -67,68 +133,24 @@ def render_with_citations(conn, draft: DraftStructure, *, today: date | None = N
     from legal_ai.drafting.citation import format_citation
 
     citations = {}
-    for ground in draft.grounds:
-        cited = format_citation(conn, ground.authority)
-        if cited is not None:
-            citations[ground.authority] = cited
+    for block in draft.sections:
+        for paragraph in block.paragraphs:
+            for authority in paragraph.authorities:
+                if authority not in citations:
+                    cited = format_citation(conn, authority)
+                    if cited is not None:
+                        citations[authority] = cited
     return render(draft, today=today, citations=citations)
 
 
-def _context(draft: DraftStructure, today: date, citations: dict[str, str]) -> dict:
-    demand = draft.demand
-    return {
-        "date": today.strftime("%d %B %Y"),
-        "subject": _fill(draft.subject, draft.values),
-        "recipient": {
-            "name": draft.recipient.name,
-            "address": _address(draft.recipient.address),
-        },
-        "sender": {
-            "name": draft.sender.name,
-            "address": _address(draft.sender.address),
-        },
-        "facts": [_fill(fact, draft.values) for fact in draft.facts],
-        # An id the corpus cannot place is dropped rather than printed. A
-        # raw identifier in the body reads as a bug to opposing counsel;
-        # the claim still stands on the text around it.
-        "grounds": [
-            {
-                "text": _fill(ground.text, draft.values),
-                "authority": citations.get(ground.authority, ""),
-            }
-            for ground in draft.grounds
-        ],
-        "demand": {
-            "what": _fill(demand.what, draft.values) if demand else "",
-            "within_days": demand.within_days if demand else 15,
-            "from_when": demand.from_when if demand else "receipt of this notice",
-        },
-        "consequence": _fill(draft.consequence, draft.values),
-        "conclusion": _fill(draft.conclusion, draft.values),
-        "annexures": list(draft.annexures),
-        "needs_input": list(draft.needs_input),
-        "warnings": list(draft.warnings),
-    }
+def _with_citations(paragraph, citations: dict[str, str]) -> str:
+    """The paragraph, with its authorities cited after it.
 
-
-def _fill(text: str, values: dict[str, str]) -> str:
-    """`text` with its tokens replaced from the record.
-
-    A token with no value becomes a visible blank rather than staying a
-    token: `{{amount}}` printed in a notice looks like a bug, while a ruled
-    blank looks like a field somebody has to complete -- which it is.
+    An id the corpus cannot place is dropped rather than printed: a raw
+    identifier reads as a bug to whoever receives the document, and the
+    proposition still stands on the text around it.
     """
-    return _TOKEN.sub(lambda m: values.get(m.group(1)) or UNFILLED, text or "")
-
-
-def _address(address: str) -> str:
-    """An address, or a blank the advocate must fill.
-
-    The drafter writes a placeholder when we hold no address; rendering that
-    placeholder into the notice would put "[Address not on file]" on a
-    document going to a court.
-    """
-    text = (address or "").strip()
-    if not text or text.startswith(("[", "{{")) or text.lower().startswith("address"):
-        return UNFILLED
-    return text
+    cited = [citations[a] for a in paragraph.authorities if a in citations]
+    if not cited:
+        return paragraph.text
+    return f"{paragraph.text} ({'; '.join(cited)})"

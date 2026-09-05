@@ -56,8 +56,7 @@ export function ResearchThread({
   // Documents drafted from this conversation. Its own hook because a draft
   // outlives the turn that prompted it -- it is still there when the thread
   // is reopened tomorrow.
-  const { drafts, types, preparing, startDraft, startError } =
-    useDrafts(threadId);
+  const { drafts, preparing, startDraft, startError } = useDrafts(threadId);
 
   // Fire the handed-over question once, then take it out of the URL.
   //
@@ -167,8 +166,7 @@ export function ResearchThread({
               disabled={isSending}
             />
             <DraftButton
-              types={types}
-              onSelect={(documentType) => void startDraft(documentType)}
+              onSelect={() => void startDraft()}
               disabled={isSending || preparing || messages.length === 0}
             />
             <Button

@@ -56,17 +56,19 @@ def ensure_draft_schema(conn: psycopg.Connection) -> None:
     conn.commit()
 
 
-def start(conn: psycopg.Connection, thread_id: str, document_type: str) -> str:
+def start(conn: psycopg.Connection, thread_id: str) -> str:
     """Record a draft as running and return its id.
 
     Written before the model is called, so a reader who reloads mid-run
     sees a document being prepared rather than nothing at all.
     """
     draft_id = uuid.uuid4().hex
+    # document_type is empty until the draft comes back: the model chooses
+    # what document this conversation calls for, so nobody knows yet.
     conn.execute(
         "INSERT INTO drafts (draft_id, thread_id, document_type, status) "
-        "VALUES (%s, %s, %s, 'running')",
-        (draft_id, thread_id, document_type),
+        "VALUES (%s, %s, '', 'running')",
+        (draft_id, thread_id),
     )
     conn.commit()
     return draft_id
@@ -84,8 +86,8 @@ def finish(
 
     conn.execute(
         "UPDATE drafts SET status = 'done', filename = %s, structure = %s, "
-        "docx = %s, finished_at = now() WHERE draft_id = %s",
-        (filename, Json(structure), docx, draft_id),
+        "docx = %s, document_type = %s, finished_at = now() WHERE draft_id = %s",
+        (filename, Json(structure), docx, structure.get("title", ""), draft_id),
     )
     conn.commit()
 
