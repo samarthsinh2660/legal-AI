@@ -35,6 +35,11 @@ class ResearchState(TypedDict, total=False):
     # sensibly start. A non-empty value halts the run for the user.
     clarification_needed: Optional[str]
 
+    # Whether this thread has already asked one. The gate asks once and then
+    # researches with whatever it has, since an answer it cannot parse would
+    # otherwise leave it asking the same question forever.
+    clarification_asked: bool
+
     # Whether any angle was planned. False means the planner found no legal
     # issue, so nothing was searched -- which the Analyst must not report as
     # an empty corpus.

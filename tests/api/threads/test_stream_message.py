@@ -207,3 +207,77 @@ async def test_the_thread_title_is_set_from_the_question_even_if_research_never_
         reloaded = get_thread(conn, thread.thread_id, USER)
 
     assert reloaded.title.startswith("what is the punishment for cheating")
+
+
+# --- the answer survives a disconnect too ----------------------------------
+#
+# The question surviving was only half of it. The write sat at the tail of
+# the SSE generator, so a closed tab discarded a finished answer and the
+# model budget behind it -- the run carried on regardless, since Python
+# cannot interrupt it. The run now owns the write and the client only
+# watches.
+
+
+async def _drain_detached_runs():
+    """Wait for the detached runs this test started."""
+    import asyncio
+
+    pending = list(thread_controller._RUNS)
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_the_answer_is_stored_even_when_the_reader_has_gone(monkeypatch):
+    import api.threads.graph as graph_module
+    from api.threads.repository import list_messages
+
+    lede = "A complaint may be filed once the fifteen days expire."
+    monkeypatch.setattr(
+        graph_module, "research_with_progress", _fake_research_with_progress(lede)
+    )
+    monkeypatch.setattr(thread_controller, "route_message", lambda *a, **k: Route.RESEARCH)
+    monkeypatch.setattr(thread_controller, "rewrite_question", lambda q, h, *a, **k: q)
+
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        gen = thread_controller.stream_message(
+            conn, USER, thread.thread_id, "can my client file a complaint"
+        )
+        await anext(gen)   # one event reaches the reader
+        await gen.aclose()  # the tab closes here
+
+        await _drain_detached_runs()
+        stored = list_messages(conn, thread.thread_id, USER)
+
+    roles = [message.role for message in stored]
+    assert roles == ["user", "assistant"]
+    assert lede in stored[1].content
+
+
+@pytest.mark.asyncio
+async def test_a_run_that_produced_nothing_stores_no_assistant_row(monkeypatch):
+    """An empty assistant row would read to the next rewrite as an answer."""
+    import api.threads.graph as graph_module
+    from api.threads.repository import list_messages
+
+    async def yields_no_answer(inputs):
+        yield "step", "research"
+
+    monkeypatch.setattr(graph_module, "research_with_progress", yields_no_answer)
+    monkeypatch.setattr(thread_controller, "route_message", lambda *a, **k: Route.RESEARCH)
+    monkeypatch.setattr(thread_controller, "rewrite_question", lambda q, h, *a, **k: q)
+
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        events = [
+            (kind, payload)
+            async for kind, payload in thread_controller.stream_message(
+                conn, USER, thread.thread_id, "what is section 420"
+            )
+        ]
+        await _drain_detached_runs()
+        stored = list_messages(conn, thread.thread_id, USER)
+
+    assert [message.role for message in stored] == ["user"]
+    assert events  # the reader still saw the step it was sent

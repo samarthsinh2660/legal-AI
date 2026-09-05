@@ -141,3 +141,40 @@ def test_the_state_name_is_rendered_as_it_is_written():
 
     assert context.jurisdiction.state == "Jammu and Kashmir"
 
+def test_the_gate_asks_once_and_then_proceeds():
+    """A thread that already asked must not ask again, whatever came back.
+
+    The table cannot hold every spelling, district or nickname a user might
+    answer with, and while the fact stays unset the gate would re-ask
+    forever. One ask, then research with what is known.
+    """
+    from api.threads.controller import _already_clarified
+    from legal_ai.conversation.rewriter import Turn
+    from legal_ai.graph.nodes import clarification as clarification_node
+
+    history = [
+        Turn(role="user", content="can I challenge the mutation entry"),
+        Turn(role="assistant", content=STATE_QUESTION),
+        Turn(role="user", content="it is in Kumaon"),
+    ]
+    assert _already_clarified(history) is True
+
+    # An unparseable answer still leaves the state unset...
+    context = build_thread_context("can I challenge the mutation entry in Kumaon")
+    assert context.jurisdiction.state is None
+    assert clarification_needed(context) == STATE_QUESTION
+
+    # ...but the node declines to ask a second time.
+    asked_again = clarification_node(
+        {"context": context, "clarification_asked": True}
+    )
+    assert asked_again["clarification_needed"] is None
+
+
+def test_a_thread_that_never_asked_still_asks():
+    from api.threads.controller import _already_clarified
+    from legal_ai.conversation.rewriter import Turn
+
+    history = [Turn(role="user", content="can I challenge the mutation entry")]
+
+    assert _already_clarified(history) is False
