@@ -70,43 +70,37 @@ export function useThread(threadId: string) {
     queryKey: [...threadKeys.all, threadId],
     queryFn: () => fetchThread(threadId),
     enabled: Boolean(threadId),
-  });
-  return { thread, error, isLoading };
-}
-
-/** How long a researched turn may take before we stop waiting for it. */
-const RUN_CEILING_MS = 5 * 60 * 1000;
-const POLL_MS = 3000;
-
-/** Whether the thread ends on a question nobody has answered yet. */
-function awaitingAnswer(messages: Message[]): boolean {
-  const last = messages[messages.length - 1];
-  if (last?.role !== "user") return false;
-  const asked = new Date(last.created_at).getTime();
-  return Number.isFinite(asked) && Date.now() - asked < RUN_CEILING_MS;
-}
-
-export function useMessages(threadId: string) {
-  const { data, error, isLoading } = useQuery({
-    queryKey: [...threadKeys.all, threadId, "messages"],
-    queryFn: () => fetchMessages(threadId),
-    enabled: Boolean(threadId),
-    // The run is detached from the request, so it finishes and stores its
-    // answer whether or not this tab is still watching. A reopened thread
-    // therefore has an answer coming and only has to wait for it.
-    refetchInterval: (query) =>
-      awaitingAnswer(query.state.data ?? []) ? POLL_MS : false,
+    // The backstop, not the mechanism. A run's progress and its end arrive
+    // over the run stream; this covers the one case SSE cannot self-heal --
+    // a proxy that holds the connection open and buffers it, so the browser
+    // sees a healthy stream, never reconnects, and nothing reaches it. Only
+    // while something is actually running.
+    refetchInterval: (query) => (query.state.data?.active_run ? POLL_MS : false),
     // Polling stops on an unfocused tab by default, and waiting out a
     // two-minute answer in another tab is exactly what people do -- the
     // answer then landed only once they came back and looked.
     refetchIntervalInBackground: true,
   });
-  return {
-    messages: data ?? [],
-    error,
-    isLoading,
-    awaitingAnswer: awaitingAnswer(data ?? []),
-  };
+  return { thread, error, isLoading };
+}
+
+/** How often a backstop poll runs. See `useThread`. */
+const POLL_MS = 15000;
+
+export function useMessages(threadId: string) {
+  const { data, error, isLoading, isFetching } = useQuery({
+    queryKey: [...threadKeys.all, threadId, "messages"],
+    queryFn: () => fetchMessages(threadId),
+    enabled: Boolean(threadId),
+    // Not polled. The run stream says when a turn is over, and the hook
+    // watching it invalidates this query -- so a poll here would be asking
+    // the same question a second way.
+  });
+  // `isFetching` covers the refetch after a run ends, when the reply exists
+  // on the server and not yet here. Without it the screen has a moment
+  // where the last message is a question with no run behind it, which is
+  // the shape of a turn that died.
+  return { messages: data ?? [], error, isLoading, isFetching };
 }
 
 export function useRenameThread() {

@@ -1,112 +1,31 @@
-"""One turn of a thread.
+"""Accepting a message.
 
-Where the phase's two findings meet. A follow-up is rewritten before it
-reaches retrieval, because "what about Bombay" retrieves nothing on its own.
-A message the router judges answerable from the thread is composed out of the
-claims the thread already established, rather than re-running a
-thirty-second fan-out to re-find what is on screen.
+The whole of what the API does for a turn: check the thread is this user's,
+store the question, and put a job on the queue. The answering happens in
+`src/worker/`, on possibly another machine, and reaches the reader over
+`GET /runs/{run_id}/stream`.
 
-Both fallbacks point the same way -- towards doing more work, never less. A
-broken rewriter sends the user's own words; an uncertain route researches.
-
-The rewrite is a retrieval device and is never stored. Showing it back would
-rewrite the user's own history at them.
+The question is stored here rather than by the worker so that it is on
+screen the instant the request returns, and survives a refresh taken a
+second later. A researched turn takes 30-130 seconds, and a tab closed
+anywhere in that window used to lose the question outright -- nothing was
+written until the very end, so a disconnect left the thread looking exactly
+like nobody had asked anything. Reproduced live 2026-09-03 on thread
+714851b0, which landed back on "Ask your first question below."
 """
 
 from __future__ import annotations
 
-import asyncio
-import logging
-
-from api.databases.postgres import connection
-from api.threads.repository import (
-    DEFAULT_TITLE,
-    recent_answers,
-    recent_turns,
-    add_message,
-    get_thread,
-    list_messages,
-    set_title,
-)
-from api.utils.errors import Failure, Ok, Result, not_found
-from legal_ai.agents.draft import render
-from legal_ai.config import Configuration
-from api.threads.graph import research as run_research
-from legal_ai.conversation.recall import answer_from_thread
-from legal_ai.conversation.rewriter import Turn, rewrite_question
-from legal_ai.conversation.intent import Intent, classify, reply_for
-from legal_ai.conversation.router import Route, route_message
-
-# Turns of history handed to the rewriter and the router. Bounded because
-# accuracy falls when the current question sits mid-context, not to save
-# tokens.
-log = logging.getLogger(__name__)
-
-HISTORY_TURNS = 8
+from api.runs import repository as runs
+from api.threads.repository import DEFAULT_TITLE, add_message, get_thread, set_title
+from api.utils.errors import Ok, Result, conflict, not_found
 
 # Characters of the first message used as a thread title. A sidebar of
 # "New thread" is unusable.
 TITLE_CHARS = 60
 
 
-def _history(conn, thread_id: str, user_id: str) -> list[Turn]:
-    return [
-        Turn(role=message.role, content=message.content)
-        for message in recent_turns(conn, thread_id, user_id, HISTORY_TURNS)
-    ]
-
-
-def _already_clarified(history: list[Turn]) -> bool:
-    """Whether this thread has already put a clarifying question.
-
-    Asked once, then proceed whatever came back. The gate re-asks while the
-    fact it wants is unset, and an answer it cannot parse -- a district, a
-    spelling, a state the table does not carry -- leaves it unset forever.
-    Researching without the fact gives a weaker answer; asking a fourth time
-    gives none at all.
-    """
-    from legal_ai.context.clarification import DATE_QUESTION, STATE_QUESTION
-
-    asked = {STATE_QUESTION, DATE_QUESTION}
-    return any(
-        turn.role == "assistant" and turn.content.strip() in asked for turn in history
-    )
-
-
-# What an ANSWER turn says when the thread cannot answer the question.
-# Until 2026-09 this path returned the previous assistant turn verbatim, so a
-# new question got the old answer with nothing on screen saying so. Composing
-# over the stored claims replaces that; where composition finds nothing, the
-# reply says nothing was found. It does not fall back to the replay, and it
-# does not silently research -- a turn that never touched the corpus must not
-# read like one that did.
-COULD_NOT_ANSWER = (
-    "I could not answer that from this conversation. Nothing established in "
-    "the thread so far addresses it, and this turn did not search the corpus. "
-    "Ask it as a fresh question to have it researched."
-)
-
-
-def answer_from_thread_turn(conn, user_id: str, thread_id: str, message: str):
-    """The ANSWER route's reply: `(text, answer)`.
-
-    `answer` is None when the thread held nothing that answers the question,
-    which the caller renders as `COULD_NOT_ANSWER` rather than as an answer.
-
-    The read is committed before the composition call. Holding the
-    transaction across it queues every writer behind a model round-trip --
-    CLAUDE.md section 8.
-    """
-    stored = recent_answers(conn, thread_id, user_id, HISTORY_TURNS)
-    conn.commit()
-
-    composed = answer_from_thread(message, stored)
-    if composed is None:
-        return COULD_NOT_ANSWER, None
-    return render(composed), _as_dict(composed)
-
-
-async def send_message(
+def send_message(
     conn,
     user_id: str,
     thread_id: str,
@@ -114,350 +33,43 @@ async def send_message(
     document_ids: list[str] | None = None,
     verification_level: str | None = None,
 ) -> Result:
-    """Add `message` to the thread and answer it.
+    """Queue `message` for answering and return the run that will answer it.
 
-    A missing thread and someone else's thread are the same
-    404: telling a caller a thread exists but is not theirs confirms the id.
+    A missing thread and someone else's thread are the same 404: telling a
+    caller a thread exists but is not theirs confirms the id.
+
+    One run per thread. Two turns answering the same thread at once would
+    interleave their messages and each rewrite the other's follow-up against
+    a history that was still moving.
     """
+    from legal_ai.config import Configuration
+
     thread = get_thread(conn, thread_id, user_id)
     if thread is None:
         return not_found("thread")
-    # Everything the graph needs is read now, and the connection is released
-    # before the run. Holding it for the 100+ seconds of a research call
-    # exhausts a pool of ten after ten concurrent messages, and every other
-    # request -- including the auth check and /health -- then waits out the
-    # borrow timeout and fails. CLAUDE.md section 8.
-    conn.commit()
+
+    if runs.live_for_thread(conn, thread_id, user_id) is not None:
+        return conflict(
+            "run_in_progress", "This thread is still working on the last message."
+        )
 
     if verification_level is None:
         verification_level = Configuration.from_env().verification_level
 
-    # A greeting is settled by a pattern, not a model. Before this gate the
-    # planner was asked to plan a corpus search for it and had no way to
-    # decline, so "thanks!" cost 80s and came back with the law on gratuity.
-    small_talk = reply_for(classify(message))
-    if small_talk is not None:
-        add_message(conn, thread_id, "user", message)
-        add_message(conn, thread_id, "assistant", small_talk)
-        return Ok({
-            "text": small_talk, "answer": None, "clarification_needed": None,
-            "route": Route.ANSWER.value, "verification_level": verification_level,
-        })
-
-    history = _history(conn, thread_id, user_id)
-    route = route_message(message, history)
-
-    clarification = None
-    if route is Route.ANSWER:
-        text, answer = answer_from_thread_turn(conn, user_id, thread_id, message)
-    else:
-        # Only the rewritten question reaches retrieval.
-        # Both the case and the documents are the thread's own. The ids in
-        # the request are filtered against the case's files first: a
-        # document_id seen once -- from a detached case, a shared link --
-        # would otherwise read that file's full text into any answer,
-        # forever.
-        result = await run_research(
-            {
-                "question": rewrite_question(message, history),
-                "case_id": thread.case_id,
-                "document_ids": _permitted_documents(conn, thread.case_id, document_ids),
-                "verification_level": verification_level,
-                "clarification_asked": _already_clarified(history),
-            }
-        )
-        if isinstance(result, Failure):
-            # Nothing is stored. A half-turn in the thread would be resolved
-            # against by the next rewrite as though it were an answer.
-            return result
-        state = result.value
-        text = state.get("answer")
-        draft = state.get("draft_answer")
-        answer = _as_dict(draft)
-
-        # The graph can halt to ask for a missing fact. That is a real
-        # outcome, not an empty answer: dropping it leaves the user with a
-        # blank reply and no idea what to do next.
-        clarification = state.get("clarification_needed")
-        if clarification and not answer:
-            text = clarification
-
-    add_message(conn, thread_id, "user", message)
-    add_message(conn, thread_id, "assistant", text or "", answer=answer)
-
-    # A thread in a case leaves its conclusions behind. Without this the
-    # case carries documents forward but not findings, and the fourth
-    # question re-derives what the first three settled -- which is the whole
-    # reason the container exists.
-    if thread.case_id and route is Route.RESEARCH and answer is not None:
-        _remember(conn, thread.case_id, message, answer)
-
+    stored = add_message(conn, thread_id, "user", message)
     if thread.title == DEFAULT_TITLE:
         set_title(conn, thread_id, user_id, message[:TITLE_CHARS])
 
-    return Ok({
-        "text": text,
-        "answer": answer,
-        "clarification_needed": clarification,
-        "route": route.value,
+    run_id = runs.enqueue(conn, thread_id, user_id, "research", {
+        "message": message,
+        # Which message this is, so the worker can read the history as it
+        # stood before it -- otherwise the rewriter is handed the very
+        # question it is rewriting.
+        "message_id": stored.message_id,
+        "document_ids": _permitted_documents(conn, thread.case_id, document_ids),
         "verification_level": verification_level,
     })
-
-
-def _as_dict(draft) -> dict | None:
-    """The structured answer, as JSON, so a later turn can cite what was
-    established rather than re-deriving it."""
-    if draft is None:
-        return None
-    from api.schemas import AnswerModel
-
-    return AnswerModel.of(draft).model_dump()
-
-
-def _remember(conn, case_id: str, question: str, answer: dict) -> None:
-    """Record what this turn established against the case.
-
-    Only claims that survived verification. A claim the checker rejected, or
-    never looked at, must not become a fact the next question is seeded
-    with -- that would launder an unverified statement into the case file.
-
-    Failures are swallowed: losing a finding costs the next question some
-    context, while failing the request costs the user the answer they
-    already paid for.
-    """
-    from legal_ai.case.models import EstablishedFinding
-    from legal_ai.case.session import save_to_case
-
-    findings = tuple(
-        EstablishedFinding(
-            claim=claim["text"],
-            evidence_ids=tuple(claim.get("evidence_ids") or ()),
-            source_case_id=case_id,
-        )
-        for claim in answer.get("key_elements") or []
-        if claim.get("text") and claim.get("evidence_ids")
-    )
-    try:
-        save_to_case(conn, case_id, question, findings=findings)
-    except Exception:
-        log.warning("could not record findings for case %s", case_id, exc_info=True)
-
-
-async def stream_message(
-    conn,
-    user_id: str,
-    thread_id: str,
-    message: str,
-    document_ids: list[str] | None = None,
-    verification_level: str | None = None,
-):
-    """`send_message`, yielding progress as it goes.
-
-    Deliberately a separate function rather than a flag on `send_message`.
-    The two differ only in how they report, and a boolean that changes a
-    return type from a value to a generator is the kind of signature nobody
-    reads correctly.
-    """
-    from api.threads.graph import STEP_LABELS, research_with_progress
-
-    thread = get_thread(conn, thread_id, user_id)
-    if thread is None:
-        yield "error", {"code": "not_found", "message": "No such thread."}
-        return
-
-    if verification_level is None:
-        verification_level = Configuration.from_env().verification_level
-
-    small_talk = reply_for(classify(message))
-    if small_talk is not None:
-        add_message(conn, thread_id, "user", message)
-        add_message(conn, thread_id, "assistant", small_talk)
-        yield "done", {
-            "text": small_talk, "answer": None, "clarification_needed": None,
-            "route": Route.ANSWER.value, "verification_level": verification_level,
-        }
-        return
-
-    history = _history(conn, thread_id, user_id)
-    # Off the loop for the same reason as the rewrite below: a follow-up
-    # routes by asking a model, and that call blocked every other request.
-    route = await asyncio.to_thread(route_message, message, history)
-
-    if route is Route.ANSWER:
-        # No steps to report on: it never touched the corpus.
-        text, answer = answer_from_thread_turn(conn, user_id, thread_id, message)
-        add_message(conn, thread_id, "user", message)
-        add_message(conn, thread_id, "assistant", text or "", answer=answer)
-        yield "done", {
-            "text": text, "answer": answer, "clarification_needed": None,
-            "route": route.value, "verification_level": verification_level,
-        }
-        return
-
-    # Stored now, not after the run. A researched turn takes 30-130s, and a
-    # tab closed or refreshed anywhere in that window used to lose the
-    # question outright -- nothing was written until the very end, so a
-    # disconnect left the thread looking exactly like nobody had asked
-    # anything. The reader had no way to tell "still running" from
-    # "vanished". Reproduced live 2026-09-03: refreshing mid-research on
-    # thread 714851b0 landed on "Ask your first question below."
-    add_message(conn, thread_id, "user", message)
-    if thread.title == DEFAULT_TITLE:
-        set_title(conn, thread_id, user_id, message[:TITLE_CHARS])
-
-    events: asyncio.Queue = asyncio.Queue()
-    run = asyncio.create_task(_research_and_store(
-        thread_id=thread_id,
-        case_id=thread.case_id,
-        message=message,
-        history=history,
-        document_ids=_permitted_documents(conn, thread.case_id, document_ids),
-        verification_level=verification_level,
-        events=events,
-    ))
-    # Held so the loop cannot collect a run mid-flight; asyncio keeps only a
-    # weak reference to a task nobody awaits.
-    _RUNS.add(run)
-    run.add_done_callback(_RUNS.discard)
-
-    # From here this only watches. Whatever happens to the connection, the
-    # run above owns the answer and will store it.
-    while True:
-        event = await events.get()
-        if event is None:
-            return
-        yield event
-
-
-# In-flight detached runs, by task. See `_research_and_store`.
-_RUNS: set[asyncio.Task] = set()
-
-
-async def _research_and_store(
-    thread_id: str,
-    case_id: str | None,
-    message: str,
-    history: list[Turn],
-    document_ids: list[str],
-    verification_level: str,
-    events: asyncio.Queue,
-) -> None:
-    """Run one turn and store its answer, read or not.
-
-    Detached from the request on purpose. The write used to sit at the tail
-    of the SSE generator, so a closed tab threw away a finished answer and
-    the model budget behind it -- the run itself carried on regardless,
-    since Python cannot interrupt it. The client now watches this rather
-    than driving it, and a refresh costs the progress view, nothing else.
-
-    `events` is unbounded and never awaited on the put side, so a reader
-    that goes away cannot stall the run.
-    """
-    from api.threads.graph import STEP_LABELS, research_with_progress
-
-    state = None
-    try:
-        # Off the event loop: this is a blocking model call inside an async
-        # handler, and while one ran inline every other request waited on
-        # it -- including /health and the auth check.
-        question = await asyncio.to_thread(rewrite_question, message, history)
-
-        async for kind, payload in research_with_progress({
-            "question": question,
-            "case_id": case_id,
-            "document_ids": document_ids,
-            "verification_level": verification_level,
-            "clarification_asked": _already_clarified(history),
-        }):
-            if kind == "step":
-                events.put_nowait(
-                    ("step", {"node": payload, "label": STEP_LABELS.get(payload, payload)})
-                )
-            elif kind == "timeout":
-                # The question survives; no assistant reply is written, so
-                # there is nothing here for a later rewrite to mistake for
-                # an answer.
-                events.put_nowait(("error", {
-                    "code": "timeout",
-                    "message": "Research did not finish within the time limit.",
-                }))
-                return
-            elif kind == "error":
-                log.warning("research failed mid-stream", exc_info=payload)
-                events.put_nowait(
-                    ("error", {"code": "internal_error", "message": "Research failed."})
-                )
-                return
-            else:
-                state = payload
-
-        text = (state or {}).get("answer")
-        answer = _as_dict((state or {}).get("draft_answer"))
-        clarification = (state or {}).get("clarification_needed")
-        if clarification and not answer:
-            text = clarification
-
-        # The lede in small pieces, ahead of "done". Not a token stream from
-        # the model -- the lede is already final at this point, past
-        # verification, which is the one thing that may still move a claim
-        # between buckets. Streaming raw generation from the analyst call
-        # would show a reader prose that verification could go on to flag,
-        # which is exactly the false reassurance the three-state pattern
-        # exists to prevent (CLAUDE.md #2). Chunking a *finished* answer for
-        # progressive reveal is the safe version of the same UX win --
-        # measured elsewhere at ~40% faster *perceived* even at identical
-        # wall-clock time, because the reader starts reading before the rest
-        # of the pane (claims, sources) has rendered. See docs/SPEED_2026_09_03.md #1.
-        lede = (answer or {}).get("lede") if answer else None
-        if lede:
-            for chunk in _chunk_words(lede):
-                events.put_nowait(("answer_chunk", {"text": chunk}))
-                # A small pause between frames. Chunks would otherwise leave
-                # this generator microseconds apart and arrive as one write
-                # on a fast connection, defeating the point. 30ms x ~10
-                # chunks for a typical lede adds well under a second.
-                await asyncio.sleep(_CHUNK_DELAY_SECONDS)
-
-        # Its own connection. The request's went back to the pool the moment
-        # the client left, and this write has to outlive that.
-        #
-        # A run that produced nothing writes nothing: an empty assistant row
-        # reads to the next rewrite as an answer that was given, which is
-        # the same reason the timeout branch above stores none.
-        if text or answer:
-            with connection() as conn:
-                add_message(conn, thread_id, "assistant", text or "", answer=answer)
-                if case_id and answer is not None:
-                    _remember(conn, case_id, message, answer)
-
-        events.put_nowait(("done", {
-            "text": text, "answer": answer, "clarification_needed": clarification,
-            "route": Route.RESEARCH.value, "verification_level": verification_level,
-        }))
-    except Exception:
-        # Nobody is left to raise to: this runs outside the request.
-        log.exception("detached run failed for thread %s", thread_id)
-        events.put_nowait(
-            ("error", {"code": "internal_error", "message": "Research failed."})
-        )
-    finally:
-        events.put_nowait(None)
-
-
-# Words per SSE frame. Small enough to read as a stream rather than a dump;
-# large enough that a 40-word lede is not 40 separate HTTP frames.
-_CHUNK_WORDS = 4
-_CHUNK_DELAY_SECONDS = 0.03
-
-
-def _chunk_words(text: str) -> list[str]:
-    """`text` split on whitespace into `_CHUNK_WORDS`-word pieces, each
-    carrying a trailing space so the client can just concatenate them."""
-    words = text.split()
-    return [
-        " ".join(words[i : i + _CHUNK_WORDS]) + " "
-        for i in range(0, len(words), _CHUNK_WORDS)
-    ]
+    return Ok({"run_id": run_id, "thread_id": thread_id, "status": "queued"})
 
 
 def _permitted_documents(conn, case_id: str | None, requested) -> list[str]:
@@ -465,7 +77,8 @@ def _permitted_documents(conn, case_id: str | None, requested) -> list[str]:
 
     `get_case_file_text` looks a document up by id alone, with no owner and
     no case filter, so anything not checked here is readable by anyone who
-    has ever seen the id.
+    has ever seen the id. Checked at the door rather than in the worker: the
+    job row is trusted input by the time a worker reads it.
 
     An empty `requested` defaults to every file the case holds, rather than
     to none: the chat composer sends no per-message document_ids on a case

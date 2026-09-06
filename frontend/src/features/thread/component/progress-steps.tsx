@@ -7,8 +7,8 @@ import type { ProgressStep } from "../types";
  * the one still running.
  *
  * There is no progress bar and no timer. A step that sits there for 78
- * seconds is the truth about a slow search, and design/UX_FLOWS.md
- * requires this pane to show real work rather than fake thinking.
+ * seconds is the truth about a slow search; a bar that advanced on a clock
+ * would be showing fake thinking.
  */
 export function ProgressSteps({ steps }: { steps: ProgressStep[] }) {
   return (
@@ -28,6 +28,11 @@ export function ProgressSteps({ steps }: { steps: ProgressStep[] }) {
           {steps.length === 0 ? "Starting research…" : "Working…"}
         </li>
       </ul>
+      {/* Said once, here, rather than as a second block below the box.
+          Two panes describing the same wait read as two things happening. */}
+      <p className="mt-2 text-xs text-ink-muted">
+        This keeps running whether or not the page is open.
+      </p>
     </div>
   );
 }

@@ -9,9 +9,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ActiveRunSchema,
   AnswerSchema,
   MessageSchema,
-  ReplySchema,
+  StartedRunSchema,
   ThreadSchema,
 } from "@/features/thread/types";
 import { CaseSchema } from "@/features/case/types";
@@ -30,6 +31,44 @@ describe("threads", () => {
 
   it("accepts the thread the API returns", () => {
     expect(ThreadSchema.parse(thread).thread_id).toBe("t1");
+  });
+
+  it("carries the run in flight, and what kind it is", () => {
+    const parsed = ThreadSchema.parse({
+      ...thread,
+      active_run: {
+        run_id: "r1",
+        kind: "research",
+        status: "running",
+        current_step: "analyst",
+      },
+    });
+    expect(parsed.active_run?.current_step).toBe("analyst");
+  });
+
+  it("defaults active_run to null for a thread with nothing running", () => {
+    expect(ThreadSchema.parse(thread).active_run).toBeNull();
+  });
+
+  it("accepts what sending a message returns", () => {
+    expect(
+      StartedRunSchema.parse({
+        run_id: "r1",
+        thread_id: "t1",
+        status: "queued",
+      }).run_id,
+    ).toBe("r1");
+  });
+
+  it("refuses a run of a kind the client cannot render", () => {
+    expect(
+      ActiveRunSchema.safeParse({
+        run_id: "r1",
+        kind: "something_new",
+        status: "running",
+        current_step: null,
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts an offset page, which is what this backend sends", () => {
@@ -88,9 +127,9 @@ describe("messages", () => {
   });
 });
 
-describe("the recorded reply", () => {
+describe("the recorded answer", () => {
   it("parses whole", () => {
-    expect(ReplySchema.safeParse(recorded).success).toBe(true);
+    expect(AnswerSchema.safeParse(recorded.answer).success).toBe(true);
   });
 
   it("keeps all four verdict buckets as separate fields", () => {

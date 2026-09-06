@@ -5,12 +5,14 @@
  * wherever it likes, and a parser that assumes one chunk is one frame
  * drops steps or throws on half a JSON object. The frame format asserted
  * below was taken off the wire from the running API, not from the docs.
+ *
+ * One reader now serves both cases -- the turn this tab asked for and a run
+ * it found already going -- so these frames are the whole client contract.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { streamMessage } from "@/features/thread/services";
-import { Verification } from "@/features/thread/types";
+import { watchRun } from "@/features/thread/services";
 
 /** Serve `chunks` as a byte stream, exactly as fetch would. */
 function streamOf(chunks: string[], ok = true, status = 200) {
@@ -27,16 +29,18 @@ function streamOf(chunks: string[], ok = true, status = 200) {
   });
 }
 
-const STEP = 'event: step\ndata: {"node": "research", "label": "Searching statutes and judgments"}\n\n';
+const STEP =
+  'id: 1\nevent: step\ndata: {"node": "research", "label": "Searching statutes and judgments"}\n\n';
 const DONE =
-  'event: done\ndata: {"text": "An answer.", "answer": null, "clarification_needed": null, "route": "RESEARCH", "verification_level": "verified"}\n\n';
+  'id: 2\nevent: done\ndata: {"text": "An answer.", "route": "RESEARCH"}\n\n';
 
-async function collect(fetchMock: ReturnType<typeof streamOf>) {
+async function collect(
+  fetchMock: ReturnType<typeof streamOf>,
+  since = 0,
+) {
   vi.stubGlobal("fetch", fetchMock);
   const events = [];
-  for await (const event of streamMessage("t1", "q", Verification.Verified)) {
-    events.push(event);
-  }
+  for await (const event of watchRun("r1", since)) events.push(event);
   return events;
 }
 
@@ -59,10 +63,13 @@ describe("frames", () => {
 
   it("survives a break in the middle of a JSON payload", async () => {
     const events = await collect(
-      streamOf(['event: step\ndata: {"node": "res', 'earch", "label": "x"}\n\n']),
+      streamOf([
+        'id: 4\nevent: step\ndata: {"node": "res',
+        'earch", "label": "x"}\n\n',
+      ]),
     );
     expect(events).toEqual([
-      { type: "step", step: { node: "research", label: "x" } },
+      { type: "step", seq: 4, step: { node: "research", label: "x" } },
     ]);
   });
 
@@ -77,26 +84,31 @@ describe("frames", () => {
       "draft",
     ];
     const frames = nodes.map(
-      (node) => `event: step\ndata: {"node": "${node}", "label": "l"}\n\n`,
+      (node, index) =>
+        `id: ${index + 1}\nevent: step\ndata: {"node": "${node}", "label": "l"}\n\n`,
     );
     const events = await collect(streamOf([...frames, DONE]));
 
     expect(events).toHaveLength(8);
     expect(
-      events.filter((e) => e.type === "step").map((e) => e.step.node),
+      events.flatMap((e) => (e.type === "step" ? [e.step.node] : [])),
     ).toEqual(nodes);
+  });
+
+  it("carries the seq, which is what a reconnect resumes from", async () => {
+    const events = await collect(streamOf([STEP + DONE]));
+    expect(events.map((e) => ("seq" in e ? e.seq : null))).toEqual([1, 2]);
+  });
+
+  it("reads the lede's chunks", async () => {
+    const events = await collect(
+      streamOf(['id: 3\nevent: answer_chunk\ndata: {"text": "A bail "}\n\n']),
+    );
+    expect(events).toEqual([{ type: "answer_chunk", seq: 3, text: "A bail " }]);
   });
 });
 
 describe("outcomes", () => {
-  it("parses the done payload against the reply schema", async () => {
-    const events = await collect(streamOf([DONE]));
-    expect(events[0]).toMatchObject({
-      type: "done",
-      reply: { route: "RESEARCH", text: "An answer." },
-    });
-  });
-
   it("surfaces a server error event as an error, not a done", async () => {
     const events = await collect(
       streamOf([
@@ -114,16 +126,21 @@ describe("outcomes", () => {
   });
 
   it("ignores a keep-alive comment frame", async () => {
-    const events = await collect(streamOf([": keep-alive\n\n" + DONE]));
+    const events = await collect(streamOf([": ping\n\n" + DONE]));
     expect(events.map((e) => e.type)).toEqual(["done"]);
   });
 });
 
 describe("the request", () => {
-  it("sends the chosen verification level", async () => {
+  it("resumes from the last event seen", async () => {
     const fetchMock = streamOf([DONE]);
-    await collect(fetchMock);
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body).toEqual({ message: "q", verification_level: "verified" });
+    await collect(fetchMock, 7);
+    expect(fetchMock.mock.calls[0][1].headers["Last-Event-ID"]).toBe("7");
+  });
+
+  it("sends no resume header on a first attach", async () => {
+    const fetchMock = streamOf([DONE]);
+    await collect(fetchMock, 0);
+    expect(fetchMock.mock.calls[0][1].headers["Last-Event-ID"]).toBeUndefined();
   });
 });

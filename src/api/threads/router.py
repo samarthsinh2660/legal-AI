@@ -7,8 +7,6 @@ token -- see `api/middleware/auth.py`.
 
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, Query, Request
 
 from api.databases.postgres import connection
@@ -28,7 +26,7 @@ from api.threads.schemas import (
     MessageRequest,
     NewThreadRequest,
     RenameThreadRequest,
-    ReplyModel,
+    StartedRunModel,
     ThreadModel,
 )
 from api.utils.errors import Failure, not_found
@@ -81,11 +79,27 @@ async def my_threads(
     responses={404: {"model": ErrorResponse}},
 )
 async def one_thread(request: Request, thread_id: str):
+    """One thread, and whatever is running on it."""
+    from api.runs import repository as runs
+
     with connection() as conn:
         thread = get_thread(conn, thread_id, request.state.user_id)
-    if thread is None:
-        return respond(not_found("thread"))
-    return success(ThreadModel(**thread.__dict__).model_dump())
+        if thread is None:
+            return respond(not_found("thread"))
+        live = runs.live_for_thread(conn, thread_id, request.state.user_id)
+
+    model = ThreadModel(**thread.__dict__)
+    if live is not None:
+        model.active_run = {
+            "run_id": live["run_id"],
+            # A research turn and a document draft are both runs, and the
+            # client shows them differently -- "still researching" over a
+            # draft would be a false report of what is happening.
+            "kind": live["kind"],
+            "status": live["status"],
+            "current_step": live["current_step"],
+        }
+    return success(model.model_dump())
 
 
 @router.patch(
@@ -135,15 +149,22 @@ async def thread_messages(request: Request, thread_id: str):
 
 
 @router.post(
-    "/{thread_id}/messages", response_model=Success[ReplyModel],
+    "/{thread_id}/messages", response_model=Success[StartedRunModel],
     responses={
         404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
         429: {"model": ErrorResponse},
-        504: {"model": ErrorResponse},
     },
 )
 async def post_message(request: Request, thread_id: str, body: MessageRequest):
-    """Send a message and get the reply.
+    """Queue a message for answering. Returns the run that will answer it.
+
+    Returns at once, with no answer in it. Answering takes 30-130 seconds
+    and belongs to a worker; the client watches
+    `GET /runs/{run_id}/stream`, which replays anything it missed and
+    survives a refresh, a second device and a server restart. The reply is
+    stored as a message either way, so a client that never watches still
+    finds it by reloading the thread.
 
     Counted against the per-user AI budget: a turn that routes to RESEARCH
     costs what a research call costs.
@@ -161,60 +182,12 @@ async def post_message(request: Request, thread_id: str, body: MessageRequest):
     if check_ai_quota(user_id) is not None:
         return respond(rate_limited())
 
-    # One connection for the whole turn is what the controller needs, but it
-    # commits before the graph runs so the borrow is not held across it.
     with connection() as conn:
-        result = await send_message(
+        result = send_message(
             conn, user_id, thread_id, body.message,
             document_ids=body.document_ids,
             verification_level=body.verification_level,
         )
     if isinstance(result, Failure):
         return respond(result)
-    return success(ReplyModel(**result.value).model_dump())
-
-
-@router.post("/{thread_id}/messages/stream")
-async def post_message_streaming(request: Request, thread_id: str, body: MessageRequest):
-    """The same turn, as Server-Sent Events, so the wait is legible.
-
-    A researched answer takes a minute or two. Without this the client sees
-    a blank pane and assumes the page has hung -- the answer is correct and
-    the product looks broken.
-
-    Events:
-        step          {"node": "research", "label": "Searching statutes and judgments"}
-        answer_chunk  {"text": "a few words "}  -- the lede, in pieces, once
-                       it is final (i.e. past verification); not raw model
-                       tokens. See controller.stream_message.
-        done          the same body POST /messages returns
-        error         {"code": ..., "message": ...}
-
-    SSE rather than WebSockets: the traffic is one-way, and a plain POST
-    still exists for clients that would rather wait.
-    """
-    from api.middleware.rate_limit import check_ai_quota
-    from api.threads.controller import stream_message
-    from api.utils.errors import rate_limited
-    from fastapi.responses import StreamingResponse
-
-    user_id = request.state.user_id
-    if check_ai_quota(user_id) is not None:
-        return respond(rate_limited())
-
-    async def events():
-        with connection() as conn:
-            async for name, payload in stream_message(
-                conn, user_id, thread_id, body.message,
-                document_ids=body.document_ids,
-                verification_level=body.verification_level,
-            ):
-                yield f"event: {name}\ndata: {json.dumps(payload)}\n\n"
-
-    return StreamingResponse(
-        events(),
-        media_type="text/event-stream",
-        # Proxies buffer by default, which would hold every step until the
-        # answer is ready and defeat the point.
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    return success(StartedRunModel(**result.value).model_dump(), status=202)

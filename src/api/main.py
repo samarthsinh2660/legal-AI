@@ -32,6 +32,7 @@ from api.graph.router import router as graph_router
 from api.search.router import router as search_router
 from api.documents.router import router as documents_router
 from api.drafts.router import router as drafts_router
+from api.runs.router import router as runs_router
 from api.audit.repository import ensure_audit_schema
 from api.audit.router import router as audit_router
 from api.middleware.audit import AuditMiddleware
@@ -39,6 +40,7 @@ from api.middleware.auth import AuthMiddleware
 from api.middleware.rate_limit import RateLimiter, RateLimitMiddleware
 from api.schemas import HealthResponse, Success
 from api.drafts.repository import ensure_draft_schema
+from api.runs.repository import ensure_run_schema
 from api.threads.repository import ensure_thread_schema
 from api.threads.router import router as threads_router
 from api.utils.errors import Ok, Result, invalid_request, service_unavailable
@@ -115,7 +117,10 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
             allow_origins=origins,
             allow_credentials=True,
             allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type"],
+            # Last-Event-ID is what a reconnecting stream resumes with. It
+            # is a custom header, so leaving it out blocks the reconnect at
+            # the preflight and the reader silently stops getting progress.
+            allow_headers=["Authorization", "Content-Type", "Last-Event-ID"],
         )
 
     @application.exception_handler(RequestValidationError)
@@ -178,6 +183,7 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
                 ensure_case_schema(conn)
                 ensure_case_file_schema(conn)
                 ensure_thread_schema(conn)
+                ensure_run_schema(conn)
                 ensure_draft_schema(conn)
                 ensure_audit_schema(conn)
         except Exception:
@@ -185,12 +191,24 @@ def create_app(limiter: RateLimiter | None = None) -> FastAPI:
             # it has to come up to report itself unhealthy.
             log.warning("startup: could not ensure chat schema", exc_info=True)
 
+    @application.on_event("shutdown")
+    async def _stop_run_listener() -> None:
+        """Close the one connection that listens for run changes.
+
+        Left open, it keeps a Postgres backend alive past the process and
+        makes a restart look like a leak.
+        """
+        from api.runs.manager import hub
+
+        await hub.stop()
+
     application.include_router(audit_router)
     application.include_router(accounts_router)
     application.include_router(threads_router)
     application.include_router(cases_router)
     application.include_router(documents_router)
     application.include_router(drafts_router)
+    application.include_router(runs_router)
     application.include_router(search_router)
     application.include_router(graph_router)
     return application
