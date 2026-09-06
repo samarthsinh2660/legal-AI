@@ -3,7 +3,7 @@ import Image from "next/image";
 /**
  * Molecule: the brand lockup, as artwork.
  *
- * The PNG rather than text or a redrawn SVG. `design/BRAND.md` is explicit
+ * The PNG rather than text or a redrawn SVG. The brand is explicit
  * that an earlier attempt to trace the mark by hand produced something
  * recognisably *not* the logo, so the artwork is the source of truth.
  *

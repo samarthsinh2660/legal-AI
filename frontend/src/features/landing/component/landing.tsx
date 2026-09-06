@@ -9,7 +9,7 @@ import { SourceStrip } from "./source-strip";
 import { Workflow } from "./workflow";
 
 /**
- * Screen 1 in design/UX_FLOWS.md. Public: no session, no fetch, no hook,
+ * The public landing page: no session, no fetch, no hook,
  * which is why it sits outside the `(app)` group that wraps everything in
  * RequireAuth.
  *

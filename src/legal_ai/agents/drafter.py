@@ -31,7 +31,7 @@ rounds:
 One model call, then deterministic checks. A second call could review the
 draft, but every defect worth catching is mechanical -- a citation that was
 never retrieved, a document reciting itself as already sent -- and a regex
-catches those every time rather than most of the time. CLAUDE.md section 4.
+catches those every time rather than most of the time.
 
 It runs only when a reader asks for a document. It is not a stage of the
 research graph: a document is not part of answering a question, and a node

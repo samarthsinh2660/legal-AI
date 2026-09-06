@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /** One line in the trail. Mirrors `AuditEventModel` in
  *  `src/api/audit/schemas.py`. Carries no question, answer or document
- *  text -- see docs/API.md §4.4. */
+ *  text: a second copy would be another place for it to leak from. */
 export const AuditEventSchema = z.object({
   event_id: z.number(),
   action: z.string(),

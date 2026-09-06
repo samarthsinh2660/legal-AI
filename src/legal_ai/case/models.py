@@ -50,8 +50,8 @@ class Case:
     case_number: str | None = None
     parties: tuple[str, ...] = ()
 
-    # design/UX_FLOWS.md "Creating a case": what kind of matter this is and
-    # where it has got to. Shown in the case workspace header.
+    # What kind of matter this is and where it has got to. Collected when
+    # the case is created, shown in the case workspace header.
     matter_type: str | None = None
     status: str | None = None
 

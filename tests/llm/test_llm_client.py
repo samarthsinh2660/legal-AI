@@ -281,3 +281,43 @@ def test_a_healthy_chain_is_unaffected(fake):
     for _ in range(3):
         llm.generate("q", chain=("a", "b"))
     assert models.calls == ["a", "a", "a"]
+
+
+# --- one backoff per call, not one per model -------------------------------
+#
+# Measured on a live turn, 2026-09-06: a question spent 45 of its 108
+# seconds walking six models, each getting a 429 twice with an 8-second
+# sleep between. The sleep exists to tell a per-minute limit from a daily
+# cap -- but that question is answered by the *first* model's backoff. If
+# eight seconds did not clear it, the same eight will not clear it for the
+# second model either, and the chain pays the wait six times over to learn
+# nothing new.
+
+
+def test_the_backoff_is_paid_once_per_call_not_once_per_model(fake, monkeypatch):
+    slept = []
+    monkeypatch.setattr(llm.time, "sleep", slept.append)
+    models = fake({
+        "a": "429 RESOURCE_EXHAUSTED",
+        "b": "429 RESOURCE_EXHAUSTED",
+        "c": "429 RESOURCE_EXHAUSTED",
+    })
+
+    assert llm.generate("hi", chain=("a", "b", "c", "d")) == "answer from d"
+
+    # `a` is retried after the backoff; `b` and `c` are not, because the
+    # answer that retry was buying has already been bought.
+    assert models.calls == ["a", "a", "b", "c", "d"]
+    assert slept == [llm.RATE_LIMIT_BACKOFF_SECONDS]
+
+
+def test_a_single_rate_limited_model_still_gets_its_retry(fake, monkeypatch):
+    """The cheap check that distinguishes a passing minute from a spent day
+    must survive: it is the whole reason the backoff exists."""
+    slept = []
+    monkeypatch.setattr(llm.time, "sleep", slept.append)
+    models = fake({"a": "429 RESOURCE_EXHAUSTED"})
+
+    assert llm.generate("hi", chain=("a", "b")) == "answer from b"
+    assert models.calls == ["a", "a", "b"]
+    assert slept == [llm.RATE_LIMIT_BACKOFF_SECONDS]

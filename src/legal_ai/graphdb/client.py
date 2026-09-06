@@ -1,7 +1,9 @@
 # src/legal_ai/graphdb/client.py
-"""Neo4j driver for the initial, structural-only knowledge graph.
+"""Neo4j driver for the structural knowledge graph.
 
-See docs/superpowers/specs/2026-08-15-phase1-ingestion-design.md §3.4.
+Structural only: what cites what, what contains what, who decided what.
+Nothing here holds document text -- that lives in Postgres, and the graph
+holds ids and titles so a traversal stays cheap.
 """
 
 from __future__ import annotations

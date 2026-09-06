@@ -144,8 +144,8 @@ def _audit(conn, user_id: str, status: int) -> None:
     stopped, which is the one thing an audit trail may not do.
 
     No ensure_audit_schema: `CREATE TABLE IF NOT EXISTS` takes a lock even
-    when it does nothing, and this is the hottest unauthenticated route --
-    CLAUDE.md section 8. Startup creates the table.
+    when it does nothing, and this is the hottest unauthenticated route.
+    Startup creates the table.
 
     A failure here must not stop the sign-in; the gap is loud in the logs.
     """

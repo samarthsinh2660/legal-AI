@@ -41,7 +41,7 @@ DEFAULT_MAX_DISTANCE = None
 # Nearest neighbours existed the whole time; the graph traversal simply
 # failed to reach them, and returned empty rather than erroring. An unusual
 # query therefore looked like a query with no answer -- the exact confusion
-# this system must not make (PHASE_6 §2.0). Raising ef_search costs search
+# this system must never make. Raising ef_search costs search
 # time and buys recall; it must be set per query, not per index, because it
 # has to scale with the number of rows asked for.
 HNSW_EF_SEARCH = 400

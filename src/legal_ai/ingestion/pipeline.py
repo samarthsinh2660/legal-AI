@@ -1,6 +1,8 @@
 """Wires: fetch -> parse -> verification gate -> store -> vector index -> graph.
 
-See docs/superpowers/specs/2026-08-15-phase1-ingestion-design.md §3.1.
+The gate sits before the store on purpose. A document that fails it is
+never written, so nothing downstream has to carry a "might be junk" flag
+that some reader will eventually forget to check.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""The tool registry -- name to implementation, per PROJECT_STRUCTURE.md §6.
+"""The tool registry -- name to implementation.
 
 Agents name a tool; this decides what runs. Keeping the binding here rather
 than inside an agent is the point of the boundary: an agent never knows

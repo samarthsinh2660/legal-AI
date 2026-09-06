@@ -21,9 +21,9 @@ the strength of a second model call that looked at no evidence at all. Where
 the same text was stored twice in different buckets, the least reassuring
 one wins.
 
-**Deterministic before model** (CLAUDE.md §4): a thread holding no stored
-claims cannot be composed from, and a model call cannot discover that. It is
-a dict lookup, so it happens first and the call is never made.
+Deterministic before model: a thread holding no stored claims cannot be
+composed from, and a model call cannot discover that. It is a dict lookup,
+so it happens first and the call is never made.
 
 Returning None is a real outcome, not a failure to hide. The caller says so
 plainly; falling back to the replay is what this module exists to end.

@@ -2,8 +2,10 @@
 """Write CONTAINS / CITES / CITES_SECTION / DECIDED_BY edges — structural
 only, no LLM.
 
-Semantic relationships (INTERPRETED_BY, DISTINGUISHES, OVERRULES) are
-Phase 7 (GraphRAG) work — see docs/phases/PHASE_7_ADVANCED_GRAPHRAG.md.
+Semantic relationships -- INTERPRETED_BY, DISTINGUISHES, OVERRULES --
+are deliberately absent. Each is a judgement about what a court did, and
+writing one from a model would put an unmeasured label into the structure
+every later answer is ranked by.
 """
 
 from __future__ import annotations

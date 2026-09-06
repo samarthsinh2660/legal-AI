@@ -1,7 +1,7 @@
 """DraftAnswer -- the contract between the system and the research screen.
 
-Slots, not prose. `PROJECT_STRUCTURE.md` §3: the UI does not free-render a
-paragraph, it renders these fields. That is what lets the screen show a
+Slots, not prose. The UI does not free-render a paragraph; it renders
+these fields. That is what lets the screen show a
 claim we could not verify differently from one we could -- in free prose
 the two look identical, same font, same confidence, and the reader has no
 way to tell them apart.

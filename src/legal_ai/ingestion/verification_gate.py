@@ -1,4 +1,4 @@
-"""The Source Verification Gate — see docs/DATA_LAYER_ARCHITECTURE.md §4.
+"""The Source Verification Gate.
 
 Samples a batch, checks each sampled document has real extractable text
 and (where a live primary source exists) matches it. The whole batch
@@ -50,8 +50,7 @@ def verify_batch(
     else:
         notes.append(
             "no live primary-source check was available for this source — "
-            "verified text-extraction only, per "
-            "docs/superpowers/specs/2026-08-15-phase1-ingestion-design.md §3.3"
+            "verified text-extraction only"
         )
 
     return VerificationResult(

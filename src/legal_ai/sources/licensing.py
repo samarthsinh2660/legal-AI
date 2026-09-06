@@ -1,10 +1,9 @@
 # src/legal_ai/sources/licensing.py
 """Known licence/attribution facts per data source.
 
-Single source of truth for licensing claims — probes and, later, ingestion
-adapters read from here rather than re-stating terms inline. See
-docs/LEGAL_DATA_SOURCES.md §2 (source-of-truth hierarchy) and the
-per-source sections it links.
+Single source of truth for licensing claims — probes and ingestion adapters
+read from here rather than re-stating terms inline. Terms restated in three
+places are terms that will disagree in two of them.
 """
 
 from __future__ import annotations
@@ -66,8 +65,8 @@ KNOWN_LICENCES: dict[str, LicenceInfo] = {
         attribution_required=False,
         redistribution_allowed=True,
         notes=(
-            "Not a new legal authority — see docs/LEGAL_DATA_SOURCES.md §8. "
-            "The underlying official court/eCourts source remains "
+            "Not a new legal authority: an aggregator, whose copy we may "
+            "use. The underlying official court/eCourts source remains "
             "authoritative."
         ),
     ),

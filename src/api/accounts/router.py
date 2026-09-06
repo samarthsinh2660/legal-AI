@@ -44,8 +44,8 @@ router = APIRouter(prefix="/auth", tags=["accounts"])
 async def register_account(request: RegisterRequest):
     """Create an account.
 
-    Open to anyone who can reach the service, which is a deployment
-    decision and not a settled one -- see docs/API.md Limits.
+    Open to anyone who can reach the service. A deployment decision, and
+    not a settled one: it means anyone reachable can spend model budget.
     """
     with connection() as conn:
         result = register(conn, request.email, request.password, name=request.name)

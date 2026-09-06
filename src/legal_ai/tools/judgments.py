@@ -1,7 +1,5 @@
 """Query tools for Supreme Court / High Court judgments.
 
-See docs/superpowers/specs/2026-08-19-phase2-milestone4-tool-contracts-design.md.
-
 search_judgments returns up to `limit` Evidence. At limit=1 it is a lookup
 -- the caller knows the case name. Above one it is discovery, and only the
 full-text source can serve it: the archive index carries no subject,

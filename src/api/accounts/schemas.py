@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
+
+from api.utils.fields import Text
 
 
 class RegisterRequest(BaseModel):
@@ -16,7 +18,9 @@ class RegisterRequest(BaseModel):
     every non-HTTP caller.
     """
 
-    email: str = Field(min_length=3, max_length=320)
+    email: Annotated[Text, Field(min_length=3, max_length=320)]
+    # Not trimmed: a password may begin or end with a space, and stripping
+    # one would silently change the credential.
     password: str = Field(min_length=12, max_length=1024)
     # Optional: the accounts that predate names have none, and a
     # registration that fails on a blank name helps nobody.
@@ -30,7 +34,7 @@ class RegisterResponse(BaseModel):
 class RenameRequest(BaseModel):
     """The one editable field. See `controller.rename` for why it is one."""
 
-    name: str = Field(min_length=1, max_length=80)
+    name: Annotated[Text, Field(max_length=80)]
 
 
 class ChangeEmailRequest(BaseModel):
@@ -40,7 +44,7 @@ class ChangeEmailRequest(BaseModel):
     so a borrowed token must not be able to move it.
     """
 
-    email: str = Field(min_length=3, max_length=320)
+    email: Annotated[Text, Field(min_length=3, max_length=320)]
     password: str = Field(min_length=1, max_length=1024)
 
 

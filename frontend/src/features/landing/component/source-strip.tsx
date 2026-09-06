@@ -1,7 +1,7 @@
 import { LandingSectionHead } from "./section-head";
 
 /** Molecule: the sources, named plainly. No logos and no claimed
- *  partnership -- design/UX_FLOWS.md forbids both, and neither would be
+ *  partnership -- both are forbidden, and neither would be
  *  true. */
 const SOURCES = [
   "India Code",

@@ -3,9 +3,10 @@
 Complements citations.py (judgment-to-judgment reporter citations, e.g.
 "(2019) 8 SCC 729") with judgment-to-statute references, e.g. "Section 18
 of the Real Estate (Regulation and Development) Act, 2016" or "Section
-420 IPC". Intentionally regex, not an LLM, same reasoning as
-citations.py — see docs/superpowers/specs/2026-08-15-phase1-ingestion-design.md
-§3.4.
+420 IPC". Intentionally regex, not an LLM, for the same reason
+citations.py is: a reference is a fixed printed form, so a regex either
+matches it or does not, while a model can also produce one that was never
+in the text.
 
 Best-effort by nature: Act names vary widely in judgments (short titles,
 abbreviations, "the said Act"). Anything unparseable or unresolvable is

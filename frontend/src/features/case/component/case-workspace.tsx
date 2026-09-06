@@ -17,7 +17,7 @@ import { CaseThreads } from "./case-threads";
 /**
  * Organism: one matter and everything hanging off it.
  *
- * Screen 5b in design/UX_FLOWS.md. The timeline and the issues board that
+ * The case workspace. The timeline and the issues board that
  * screen also describes are not here: `case_findings` has no read route,
  * so there is nothing behind them yet.
  */

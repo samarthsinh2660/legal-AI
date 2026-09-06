@@ -1,7 +1,10 @@
 # src/legal_ai/ingestion/schema.py
 """Canonical document schema shared by every ingestion source.
 
-See docs/superpowers/specs/2026-08-15-phase1-ingestion-design.md §3.2.
+One shape for a statute, a judgment and anything added later, so retrieval
+and verification never learn where a document came from. Provenance is a
+field on it rather than a separate table for the same reason: a document
+that loses its source is one we cannot show a reader.
 """
 
 from __future__ import annotations

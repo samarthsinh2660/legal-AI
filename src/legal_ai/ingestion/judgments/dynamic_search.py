@@ -1,6 +1,5 @@
 """Lazy-cached dynamic judgment search — the fetch + verify step only.
 
-See docs/superpowers/specs/2026-08-17-dynamic-judgment-search-design.md.
 Finds a judgment and runs it through the Source Verification Gate.
 Storing it is a separate step (see judgments/store.py); nothing here
 writes to Postgres or Neo4j.

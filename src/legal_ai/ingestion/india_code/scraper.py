@@ -1,8 +1,9 @@
 # src/legal_ai/ingestion/india_code/scraper.py
 """India Code Central Acts listing + per-act page fetch.
 
-Confirmed real: 845 Acts, no JSON API, "Showing items X to Y of N" on
-LISTING_URL — see docs/DATA_RECON_FINDINGS.md.
+Confirmed against the live site before this was written: 845 Acts, no JSON
+API, and a "Showing items X to Y of N" count on LISTING_URL that is the
+only way to know how many pages there are.
 """
 
 from __future__ import annotations

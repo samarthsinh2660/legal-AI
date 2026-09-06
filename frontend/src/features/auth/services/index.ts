@@ -22,7 +22,7 @@ export async function register(credentials: Credentials) {
 
 /**
  * Ends the session on the client. The backend keeps no denylist, so the
- * token stays valid until it expires -- see docs/API.md §9. Discarding it
+ * token stays valid until it expires: there is no denylist. Discarding it
  * locally is the whole of the effect, which is why this cannot fail in a
  * way the caller needs to handle.
  */

@@ -155,11 +155,26 @@ Everything in containers:
 
 ```bash
 export LEGAL_AI_JWT_SECRET="$(openssl rand -hex 32)"
-docker compose up -d      # Postgres, Neo4j, and the API on :8000
+docker compose up -d      # Postgres, Neo4j, the API on :8000, and a worker
 ```
+
+On a host with the standalone binary rather than the plugin, that is
+`docker-compose up -d`.
 
 The schema in `src/api/databases/001_init.sql` applies itself on a fresh
 Postgres volume.
+
+**Four services.** The API takes requests and queues work; the worker
+answers it; two Text Embeddings Inference containers hold the embedder and
+the cross-encoder so no worker has to. That last part is why a worker is
+148 MB rather than 1.45 GB, and why a GPU would be bought once rather than
+per worker. Unset `LEGAL_AI_EMBED_URL` and `LEGAL_AI_RERANK_URL` and the
+models load in-process instead, which is what happens on a laptop and in
+the test suite. A question is a row in `runs`, claimed with `FOR UPDATE
+SKIP LOCKED`, so `docker compose up -d --scale worker=3` needs no
+coordination and no broker — and a worker can equally run on another
+machine, since it holds no inbound port. See
+[`docs/RELIABILITY_ARCHITECTURE.md`](./docs/RELIABILITY_ARCHITECTURE.md).
 
 For development:
 
@@ -168,10 +183,21 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 docker compose up -d postgres neo4j
 pytest -q
+
+uvicorn api.main:app --reload   # the API
+python -m worker                # and, in another shell, a worker
 ```
 
-`pyproject.toml` is the only dependency list — `[project.dependencies]` for
-runtime, the `dev` extra for the test tools.
+Stop any worker before running the suite. Two reasons: several tests
+enqueue a job and then claim it, and a live worker takes it first; and a
+worker that does take one answers it for real, spending model budget on a
+test fixture. `tests/worker/conftest.py` detects a competing consumer and
+says so rather than failing intermittently three tests later.
+
+`pyproject.toml` is the only dependency list. `[project.dependencies]` is
+what the API needs; `worker` adds the research graph, `ingest` adds the
+crawlers and parsers the corpus jobs use and no service does, and `dev`
+pulls all of it for the test suite.
 
 See [`docs/API.md`](./docs/API.md) for endpoints and environment.
 

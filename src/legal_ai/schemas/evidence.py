@@ -1,5 +1,10 @@
 # src/legal_ai/schemas/evidence.py
-"""Provenance-carrying evidence, per docs/LEGAL_DATA_SOURCES.md §28."""
+"""Evidence that carries where it came from.
+
+Nothing reaches a reader without its provenance: a passage with no source
+is a claim we cannot attribute, which is the one thing this system may not
+produce.
+"""
 
 from __future__ import annotations
 
@@ -43,9 +48,9 @@ class Evidence(BaseModel):
     """One retrieved passage with everything needed to show it to a user.
 
     `content` is the passage that actually matched, not the whole document.
-    The Source details panel in design/UX_FLOWS.md renders court, case name,
-    citation and the relevant extract, and every one of those has to travel
-    with the evidence or the panel cannot be built.
+    The source panel a reader opens shows court, case name, citation and the
+    extract, and every one of those has to travel with the evidence or the
+    panel cannot be built.
     """
 
     content: str

@@ -1,7 +1,8 @@
 """Postgres connection for the canonical static store.
 
-Connects to the docker-compose Postgres (pgvector/pgvector:pg16) started
-per docs/superpowers/specs/2026-08-15-phase1-ingestion-design.md §3.5.
+Its own per-call connections rather than the API's pool, on purpose: the
+callers here are ingest jobs that hold one for minutes, which would starve
+a pool sized for requests.
 """
 
 from __future__ import annotations
