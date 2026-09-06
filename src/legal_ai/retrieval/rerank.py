@@ -10,14 +10,21 @@ affordable only over a shortlist, never the whole corpus.
 Reranking reorders; it never recovers a document the retriever missed. If
 the right document is not in the shortlist, no reranker will find it.
 
-Set RERANK_MODEL to switch models. Benchmark numbers are in
-docs/phases/PHASE_2_QUERY_RETRIEVAL.md.
+Set RERANK_MODEL to switch models. The default was chosen by benchmark
+against this corpus; changing it is a measurement, not a preference.
+
+Set LEGAL_AI_RERANK_URL and the model is called over HTTP instead of loaded
+here. The ordering is identical either way; the scores are not, because TEI
+returns a sigmoid where the local CrossEncoder returns the raw logit. Only
+the ordering is used -- see legal_ai.inference.client.
 """
 
 from __future__ import annotations
 
 import os
 from functools import lru_cache
+
+from legal_ai.inference import client
 
 # Registered models, with a note on the trade-off each represents. A model
 # must be listed here before use so a typo cannot silently download an
@@ -64,11 +71,15 @@ def rerank(
     if not candidates:
         return []
 
-    scores = _model(reranker_name()).predict(
-        [(query, passage) for _doc_id, passage in candidates],
-        batch_size=batch_size,
-        show_progress_bar=False,
-    )
+    url = client.rerank_url()
+    if url:
+        scores = client.rerank_texts(query, [passage for _id, passage in candidates], url)
+    else:
+        scores = _model(reranker_name()).predict(
+            [(query, passage) for _doc_id, passage in candidates],
+            batch_size=batch_size,
+            show_progress_bar=False,
+        )
     ranked = sorted(
         ((doc_id, float(score)) for (doc_id, _passage), score in zip(candidates, scores)),
         key=lambda item: -item[1],
