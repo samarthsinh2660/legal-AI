@@ -50,6 +50,15 @@ def run(job: dict) -> None:
 
     try:
         with connection() as conn:
+            # The one place a draft can be interrupted, and the only place
+            # it can say it is alive. Everything after this is a single
+            # model call with no seam inside it -- so without a beat here
+            # the heartbeat stays as `claim` left it, and a draft slower
+            # than STALE_AFTER_SECONDS is requeued while it is still being
+            # written. Two workers then finish the same draft row.
+            if runs.beat(conn, run_id) != "running":
+                log.info("run %s is no longer wanted; not drafting", run_id)
+                return
             thread = get_thread(conn, thread_id, user_id)
             messages = list_messages(conn, thread_id, user_id)
             authorities = thread_authorities(messages)

@@ -63,7 +63,7 @@ STEP_LABELS = {
 
 
 def stream_graph(inputs: dict):
-    """Yield `("step", node)` per completed node, then `("done", state)`.
+    """Yield `("step", node)` per node, `("findings", …)` once, then `("done", state)`.
 
     Real steps, not a timer: each event is emitted when a node actually
     finishes, so a slow search shows as a step that sits there. The progress
@@ -81,16 +81,37 @@ def stream_graph(inputs: dict):
     skip = set() if inputs.get("document_ids") else {"document"}
     deadline = time.monotonic() + read_timeout()
     state: dict = {}
+    reported = False
     try:
-        for update in _compiled().stream(inputs):
+        # An update the graph has produced is never discarded, and a graph
+        # that has finished is never called a timeout -- both were wrong
+        # before, and both threw away an answer that had already been paid
+        # for. The two are told apart by asking for one more update:
+        # a finished generator raises StopIteration at once, so the probe
+        # costs nothing, while a graph with more to do reveals itself.
+        stream = _compiled().stream(inputs)
+        overrun = False
+        while True:
+            try:
+                update = next(stream)
+            except StopIteration:
+                break
+            if overrun:
+                log.warning("research passed its deadline with work left")
+                yield "timeout", None
+                return
             for node, produced in update.items():
                 state.update(produced or {})
                 if node not in skip:
                     yield "step", node
+                # Announced once, as soon as retrieval has paid for itself,
+                # so a worker that dies later still leaves the evidence
+                # behind for whoever picks the run up.
+                if node == "research" and not reported and state.get("findings"):
+                    reported = True
+                    yield "findings", list(state["findings"])
             if time.monotonic() > deadline:
-                log.warning("research passed its deadline mid-run")
-                yield "timeout", None
-                return
+                overrun = True
     except Exception as exc:  # noqa: BLE001 - reported to the caller as a value
         yield "error", exc
         return

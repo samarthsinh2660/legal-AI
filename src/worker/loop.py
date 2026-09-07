@@ -22,6 +22,7 @@ import time
 import psycopg
 
 from api.databases.postgres import connection, dsn
+from api.runs import repository as runs
 from api.runs.repository import KINDS, QUEUED_CHANNEL, claim
 
 log = logging.getLogger(__name__)
@@ -34,6 +35,12 @@ IDLE_SECONDS = 5.0
 # How long to wait before rebuilding a listener that died. Long enough not
 # to spin against a database that is down; the sweep still runs meanwhile.
 RECONNECT_SECONDS = 2.0
+
+# How long a run may go without a heartbeat before it is treated as
+# abandoned. Comfortably past the graph's own ceiling: a worker deep in a
+# model call must never be declared dead while it is working, or the answer
+# it goes on to store lands on a run another worker has already been given.
+STALE_AFTER_SECONDS = 600.0
 
 _JOBS = {}
 
@@ -142,7 +149,13 @@ class Worker:
         return True
 
     def _wait(self) -> None:
-        """Sleep until something is enqueued, or `IDLE_SECONDS` passes."""
+        """Sleep until something is enqueued, or `IDLE_SECONDS` passes.
+
+        Also when the reaper runs. A worker with nothing to do is exactly
+        when a row nobody owns is worth looking for, and this saves a
+        second process to deploy and watch for one indexed query.
+        """
+        self._reap()
         try:
             listener = self._listen()
             # `stop_after=1` returns on the first notification; the timeout
@@ -153,6 +166,21 @@ class Worker:
             log.warning("queue listener dropped; sweeping instead", exc_info=True)
             self._close_listener()
             time.sleep(RECONNECT_SECONDS)
+
+    def _reap(self) -> None:
+        """Requeue or fail runs whose worker stopped breathing.
+
+        Failures are swallowed. This is maintenance; a database hiccup in
+        it must not stop the worker doing the thing it exists for.
+        """
+        try:
+            with connection() as conn:
+                abandoned = runs.reap(conn, stale_after=STALE_AFTER_SECONDS)
+            if abandoned:
+                log.warning("requeued or failed %d abandoned run(s): %s",
+                            len(abandoned), ", ".join(abandoned))
+        except Exception:
+            log.warning("could not sweep for abandoned runs", exc_info=True)
 
     def _listen(self) -> psycopg.Connection:
         """The listening connection, opened on first use.

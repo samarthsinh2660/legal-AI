@@ -68,6 +68,17 @@ export async function sendMessage(
   return StartedRunSchema.parse(data);
 }
 
+/**
+ * Stop a run that is still going.
+ *
+ * A queued run never costs a model call. A running one stops at the
+ * worker's next node -- so this is not instant, and the button should not
+ * claim it is.
+ */
+export async function cancelRun(runId: string): Promise<void> {
+  await apiClient.post(`/runs/${runId}/cancel`, {});
+}
+
 export async function renameThread(
   threadId: string,
   title: string,
@@ -136,7 +147,7 @@ export async function* watchRun(
   | { type: "step"; seq: number; step: ProgressStep }
   | { type: "answer_chunk"; seq: number; text: string }
   | { type: "done"; seq: number }
-  | { type: "error"; message: string }
+  | { type: "error"; code: string; message: string }
 > {
   const token = readToken();
   const response = await fetch(`${API_BASE_URL}/runs/${runId}/stream`, {
@@ -149,7 +160,11 @@ export async function* watchRun(
   });
 
   if (!response.ok || !response.body) {
-    yield { type: "error", message: `The server answered ${response.status}.` };
+    yield {
+      type: "error",
+      code: "http",
+      message: `The server answered ${response.status}.`,
+    };
     return;
   }
 
@@ -183,8 +198,18 @@ export async function* watchRun(
       } else if (event === "done") {
         yield { type: "done", seq: id };
       } else if (event === "error") {
-        const { message } = JSON.parse(data) as { message?: string };
-        yield { type: "error", message: message ?? "The run failed." };
+        // The code matters: the server sends `timeout` to say it has
+        // stopped *watching*, not that the run stopped. Dropping it made
+        // the client treat "still going" as "finished".
+        const { code, message } = JSON.parse(data) as {
+          code?: string;
+          message?: string;
+        };
+        yield {
+          type: "error",
+          code: code ?? "error",
+          message: message ?? "The run failed.",
+        };
       }
     }
   }

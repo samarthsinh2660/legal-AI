@@ -180,3 +180,32 @@ def test_the_answer_payload_carries_the_coverage_note():
         DraftAnswer(question="s.498A IPC", coverage_note="We do not hold the IPC.")
     )
     assert model.coverage_note == "We do not hold the IPC."
+
+
+def test_a_draft_in_flight_does_not_block_the_next_question():
+    """The gate matched any kind, so preparing a document refused the next
+    question with "This thread is still working on the last message" --
+    which describes something else entirely. Drafting reads the thread; it
+    does not write to it, so a question alongside one is fine."""
+    from api.drafts import controller as drafts
+
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        drafts.start_draft(conn, USER, thread.thread_id)
+        conn.commit()
+
+        assert isinstance(
+            thread_controller.send_message(conn, USER, thread.thread_id, "a question"),
+            Ok,
+        )
+
+
+def test_two_questions_at_once_are_still_refused():
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        thread_controller.send_message(conn, USER, thread.thread_id, "first")
+        conn.commit()
+        second = thread_controller.send_message(conn, USER, thread.thread_id, "second")
+
+    assert isinstance(second, Failure)
+    assert second.code == "run_in_progress"

@@ -51,7 +51,10 @@ def _finished_run(steps=("research", "analyst")):
     """A run that is already over, so the stream replays and closes."""
     with connection() as conn:
         thread = create_thread(conn, USER)
-        run_id = runs.enqueue(conn, thread.thread_id, USER, "research", {})
+        runs.enqueue(conn, thread.thread_id, USER, "research", {})
+        # Claimed, because only a running run can finish -- that is what
+        # lets the reaper hand an abandoned one to somebody else.
+        run_id = runs.claim(conn, ("research",))["run_id"]
         for node in steps:
             runs.step(conn, run_id, node, f"Doing {node}")
         runs.finish(conn, run_id, {"text": "the answer"})
@@ -107,7 +110,8 @@ def test_an_unreadable_last_event_id_replays_everything(app):
 def test_a_failed_run_ends_the_stream_with_its_reason(app):
     with connection() as conn:
         thread = create_thread(conn, USER)
-        run_id = runs.enqueue(conn, thread.thread_id, USER, "research", {})
+        runs.enqueue(conn, thread.thread_id, USER, "research", {})
+        run_id = runs.claim(conn, ("research",))["run_id"]
         runs.fail(conn, run_id, "timeout", "Research did not finish in time.")
 
     frames = _frames(_client(app).get(f"/runs/{run_id}/stream").text)
@@ -165,3 +169,87 @@ def test_the_resume_header_survives_a_cors_preflight(app):
     assert response.status_code == 200
     allowed = response.headers["access-control-allow-headers"].lower()
     assert "last-event-id" in allowed
+
+
+# --- cancelling ------------------------------------------------------------
+
+
+def test_a_reader_can_cancel_their_own_run(app):
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        run_id = runs.enqueue(conn, thread.thread_id, USER, "research", {})
+
+    response = _client(app).post(f"/runs/{run_id}/cancel")
+    assert response.status_code == 200
+
+    with connection() as conn:
+        assert runs.get(conn, run_id, USER)["status"] == "cancelled"
+
+
+def test_cancelling_ends_the_stream_with_a_reason(app):
+    """A stream that just stopped would look like a dropped connection, and
+    the client would reconnect to a run that is not coming back."""
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        run_id = runs.enqueue(conn, thread.thread_id, USER, "research", {})
+    client = _client(app)
+    client.post(f"/runs/{run_id}/cancel")
+
+    frames = _frames(client.get(f"/runs/{run_id}/stream").text)
+    assert frames[-1]["event"] == "error"
+    assert "cancelled" in frames[-1]["data"]
+
+
+def test_another_users_run_cannot_be_cancelled(app):
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        run_id = runs.enqueue(conn, thread.thread_id, USER, "research", {})
+
+    assert _client(app, OTHER).post(f"/runs/{run_id}/cancel").status_code == 404
+    with connection() as conn:
+        assert runs.get(conn, run_id, USER)["status"] == "queued"
+
+
+def test_cancelling_a_finished_run_is_refused_rather_than_silently_ignored(app):
+    """The answer is stored and paid for; the client should learn that its
+    cancel arrived too late rather than believe it worked."""
+    run_id = _finished_run()
+    assert _client(app).post(f"/runs/{run_id}/cancel").status_code == 409
+
+
+def test_a_run_that_finishes_between_the_two_reads_still_sends_its_answer(app):
+    """The generator read events, then status. `_reply` commits the status
+    change and the `done` event together, so a commit landing between the
+    two reads left `pending` empty and `status` done -- and the stream
+    closed with no terminal frame at all.
+
+    Simulated by finishing the run inside `events_after`, which is exactly
+    that window.
+    """
+    from api.runs import router as runs_router
+
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        runs.enqueue(conn, thread.thread_id, USER, "research", {})
+        run_id = runs.claim(conn, ("research",))["run_id"]
+
+    real_events_after = runs_router.runs.events_after
+    fired = {"done": False}
+
+    def finish_midway(conn, rid, after):
+        pending = real_events_after(conn, rid, after)
+        if not fired["done"]:
+            fired["done"] = True
+            with connection() as other:
+                runs.finish(other, rid, {"text": "the answer"})
+        return pending
+
+    runs_router.runs.events_after = finish_midway
+    try:
+        frames = _frames(_client(app).get(f"/runs/{run_id}/stream").text)
+    finally:
+        runs_router.runs.events_after = real_events_after
+
+    assert frames, "the stream closed with no frames at all"
+    assert frames[-1]["event"] == "done"
+    assert "the answer" in frames[-1]["data"]

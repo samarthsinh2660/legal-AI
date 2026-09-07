@@ -177,3 +177,59 @@ def test_a_worker_still_starts_when_the_models_cannot_load(monkeypatch):
 
     # The whole assertion: it returns rather than raising.
     Worker(kinds=(KIND,)).warm()
+
+
+# --- the reaper -------------------------------------------------------------
+#
+# It runs on the idle sweep rather than in a process of its own. A worker
+# with nothing to do is exactly when a stale row is worth looking for, and a
+# separate reaper would be another thing to deploy, watch and restart for a
+# query that takes an index scan.
+#
+# The one case this does not cover is a deployment with no workers at all --
+# where nothing is running either, so nothing can have been abandoned.
+
+
+def test_an_idle_worker_reaps(monkeypatch):
+    import worker.loop as loop_module
+
+    swept = []
+    monkeypatch.setattr(loop_module.runs, "reap",
+                        lambda _conn, stale_after: swept.append(stale_after) or [])
+    monkeypatch.setattr(loop_module, "IDLE_SECONDS", 0.1)
+
+    worker = Worker(kinds=(KIND,))
+    worker._wait()
+
+    assert swept == [loop_module.STALE_AFTER_SECONDS]
+
+
+def test_the_stale_window_is_longer_than_a_run_is_allowed_to_take():
+    """A worker deep in a model call must not be declared dead while it is
+    working -- the answer it goes on to store would land on a run somebody
+    else had already been given."""
+    import worker.graph as graph_module
+    import worker.loop as loop_module
+
+    assert loop_module.STALE_AFTER_SECONDS > graph_module.DEFAULT_TIMEOUT_SECONDS
+
+
+def test_a_worker_that_cannot_reap_still_takes_jobs(monkeypatch):
+    """The sweep is maintenance. A database hiccup in it must not stop the
+    thing the worker is actually for."""
+    import worker.loop as loop_module
+
+    def explodes(_conn, stale_after):
+        raise RuntimeError("the sweep failed")
+
+    monkeypatch.setattr(loop_module.runs, "reap", explodes)
+    monkeypatch.setattr(loop_module, "IDLE_SECONDS", 0.1)
+    seen = _handled(monkeypatch)
+
+    worker = Worker(kinds=(KIND,))
+    worker._wait()
+
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        runs.enqueue(conn, thread.thread_id, USER, KIND, {})
+    assert worker.run_once() is True

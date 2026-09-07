@@ -159,3 +159,42 @@ def test_a_grounded_run_produces_no_warning_section(monkeypatch):
     assert result["unsupported_claims"] == []
     assert "NOT supported by the retrieved sources" not in result["answer"]
     assert result["draft_answer"].is_complete is True
+
+
+# --- resuming a run that died mid-way --------------------------------------
+
+
+def test_the_research_node_skips_searching_when_it_is_handed_evidence():
+    """What makes a requeued run cheap: the reaper's second worker starts
+    from the evidence the first one found, not from the search."""
+    from unittest.mock import patch
+
+    from legal_ai.graph.nodes import research
+
+    with patch("legal_ai.agents.supervisor.research") as searched:
+        produced = research({
+            "question": "what is the punishment under section 138",
+            "findings": ["carried over"],
+            "research_rounds": 0,
+        })
+
+    searched.assert_not_called()
+    assert produced == {"searched": True, "research_rounds": 1}
+
+
+def test_the_loop_back_from_verification_still_searches():
+    """The second round is asking for evidence the first did not find.
+    Skipping it would answer the same question with the same gaps."""
+    from unittest.mock import patch
+
+    from legal_ai.graph.nodes import research
+
+    with patch("legal_ai.agents.supervisor.research") as searched:
+        searched.return_value = type("R", (), {"evidence": [], "angles": []})()
+        research({
+            "question": "what is the punishment under section 138",
+            "findings": ["from the first round"],
+            "research_rounds": 1,
+        })
+
+    searched.assert_called_once()

@@ -38,9 +38,10 @@ def send_message(
     A missing thread and someone else's thread are the same 404: telling a
     caller a thread exists but is not theirs confirms the id.
 
-    One run per thread. Two turns answering the same thread at once would
-    interleave their messages and each rewrite the other's follow-up against
-    a history that was still moving.
+    One research run per thread. Two turns answering the same thread at
+    once would interleave their messages and each rewrite the other's
+    follow-up against a history that was still moving. A draft alongside
+    one is fine: it reads the thread and writes nothing to it.
     """
     from legal_ai.config import Configuration
 
@@ -48,7 +49,7 @@ def send_message(
     if thread is None:
         return not_found("thread")
 
-    if runs.live_for_thread(conn, thread_id, user_id) is not None:
+    if runs.live_for_thread(conn, thread_id, user_id, kind="research") is not None:
         return conflict(
             "run_in_progress", "This thread is still working on the last message."
         )

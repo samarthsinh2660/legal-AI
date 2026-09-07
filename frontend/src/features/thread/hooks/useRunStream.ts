@@ -77,6 +77,11 @@ export function useRunStream(runId: string | null): RunState {
             } else if (event.type === "done") {
               stopped = true;
               setState((previous) => ({ ...previous, finished: true }));
+            } else if (event.code === "timeout") {
+              // The server stopped watching; the run did not stop. Saying
+              // otherwise leaves a finished answer unfetched until the
+              // reader reloads the page by hand.
+              break;
             } else {
               stopped = true;
               setState((previous) => ({

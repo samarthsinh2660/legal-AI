@@ -34,6 +34,9 @@ _RESOURCES = (
     ("/search", "search"),
     ("/graph", "graph"),
     ("/audit", "audit"),
+    # Cancelling ends a client's research. A mutation to a matter that is
+    # recorded nowhere is the thing this module exists to prevent.
+    ("/runs", "run"),
 )
 
 _ACTIONS = {

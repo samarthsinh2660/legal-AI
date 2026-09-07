@@ -10,7 +10,7 @@
  * which is what makes both states reachable at all.
  */
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -294,4 +294,70 @@ it("keeps delivering while the tab is in the background", async () => {
 
   // @ts-expect-error -- restore jsdom's own descriptor for the next test
   delete document.visibilityState;
+});
+
+it("offers a stop while a run is going, and says stopping until it does", async () => {
+  // Cancelling is not instant: the worker finishes the node it is inside
+  // and quits at the next boundary. The button must not claim otherwise,
+  // and the run's own stream is what reports the end.
+  const cancels: string[] = [];
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c;
+    },
+  });
+
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      const path = String(url);
+      if (path.includes("/cancel")) {
+        cancels.push(path);
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, data: { status: "cancelled" } }),
+        });
+      }
+      if (path.includes("/runs/") && path.endsWith("/stream")) {
+        return Promise.resolve({ ok: true, status: 200, body });
+      }
+      const data = path.includes("/messages")
+        ? [ASKED]
+        : path.includes("/drafts")
+          ? []
+          : thread({
+              run_id: "r1",
+              kind: "research",
+              status: "running",
+              current_step: "research",
+            });
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data }),
+      });
+    }),
+  );
+
+  render(<ResearchThread threadId="t1" />, { wrapper });
+  const button = await screen.findByRole("button", { name: /^stop$/i });
+
+  fireEvent.click(button);
+
+  await waitFor(() => expect(cancels).toHaveLength(1));
+  expect(cancels[0]).toMatch(/\/runs\/r1\/cancel$/);
+  // Still going as far as the reader is concerned, because it is.
+  await screen.findByRole("button", { name: /stopping/i });
+
+  controller.enqueue(
+    new TextEncoder().encode(
+      'id: 1\nevent: error\ndata: {"code":"cancelled","message":"This run was cancelled."}\n\n',
+    ),
+  );
+  controller.close();
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: /stopping/i })).not.toBeInTheDocument(),
+  );
 });

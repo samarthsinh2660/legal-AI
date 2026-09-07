@@ -1,8 +1,9 @@
 # Reliability architecture — the end state
 
-**Status:** phases 1, 2 and 3 built and QA'd against containers on
-2026-09-06. The tables, the worker, the connection manager and the model
-servers exist; the reaper and cancellation do not. See the build order at the
+**Status:** built and QA'd against containers, 2026-09-05/06. The tables,
+the worker, the connection manager, the model servers, the reaper and
+cancellation all exist. The one piece deliberately not built is the
+checkpoint -- see the build order for why. See the build order at the
 end for exactly which is which.
 
 The problem this settles: a research turn takes 30–130 seconds and costs
@@ -40,9 +41,9 @@ QA pass has since confirmed against the running stack.
 | Second tab, same thread | a parallel run; findings interleave | 409 `run_in_progress` ✓ |
 | Deploy / graceful restart | run dies silently | worker drains, answer stored ✓ |
 | Thread deleted mid-run | FK violation per step, run paid for anyway | stops between nodes ✓ |
-| Worker killed outright | row stranded | **still stranded** — needs the reaper |
-| Reader leaves | full model budget still spent | **still spent** — needs cancellation |
-| Retry after a crash | would duplicate the answer and the case findings | no retries yet |
+| Worker killed outright | row stranded | swept back onto the queue ✓ |
+| Reader leaves | full model budget still spent | cancellable; stops at the next node ✓ |
+| Retry after a crash | would duplicate the answer and the case findings | exactly one worker finishes ✓ |
 | 100 requests at once | 100 tasks, 16 executor threads, no backpressure | they queue ✓ |
 | 100 readers waiting | 33 polls/second, growing with every reader | one stream each, then silence ✓ |
 
@@ -556,8 +557,9 @@ run_events (
 row and nothing from the request, so there is no shared memory, no session
 and no filesystem between the two.
 
-Phase 4 adds three columns to `runs` and nothing else — `attempts`,
-`checkpoint jsonb` for mid-graph resume, and `heartbeat_at` for the reaper.
+`attempts` and `heartbeat_at` are what the reaper reads: a row whose
+heartbeat has stopped is a row nobody owns, and one past `MAX_ATTEMPTS` is
+the job's fault rather than the worker's.
 
 The drafts table predates this and is unchanged:
 
@@ -644,28 +646,39 @@ job in hand and then exit, so a deploy costs a drain and nothing else.
 Verified live 2026-09-05 -- the run was mid-graph, the worker took 24 more
 seconds, stored the answer and left.
 
-An *unplanned* death is Phase 4. Its row still says `running`, with a
-`heartbeat_at` that stops advancing. The reaper sees a stale heartbeat and
-either requeues the run (attempts < max) or fails it with a reason. With
-`checkpoint` set, the requeued run resumes at the node it reached rather
-than re-paying for planning and retrieval. Until then a killed worker
-strands its row, and the reader waits on an answer that is not coming.
+An unplanned death is handled too. The row says `running` with a
+`heartbeat_at` that stops advancing; every idle worker sweeps for rows whose
+heartbeat is older than `STALE_AFTER_SECONDS` (600s, comfortably past the
+graph's own 300s ceiling) and either requeues the run or, past three
+attempts, fails it with a reason and a terminal event.
+
+The requeued run resumes from the evidence the dead attempt found, so it
+re-pays for the analysis but not the search -- measured at 0.9s against
+~30s. The reaper can only guess: a worker deep in a model call and a worker that
+died look identical. So a run is occasionally requeued while its first
+worker is still alive, and both finish. `complete()` is the guard --
+`UPDATE ... WHERE status = 'running'`, in the same transaction as the answer
+write, so exactly one of them stores anything. Two assistant messages would
+be the visible half; duplicated case findings the real damage.
 
 ### Reader leaves, or presses cancel
 
-Phase 4. Set `status = 'cancelled'`; the worker checks between nodes and
-stops. That is why cancellation lands here and could never land in the
-design this replaced: Python cannot interrupt the blocking call, but it
-*can* decline to start the next node. The seam is the same one the
-checkpoint needs, which is why they arrive together.
+`POST /runs/{id}/cancel` sets `status = 'cancelled'`; the worker sees it at
+its next node and stops. A queued run never costs a model call at all; a
+running one stops at the next boundary, because Python cannot interrupt the
+call it is inside but *can* decline to start another.
+
+The thread screen has a **Stop** control in the progress pane. It reads
+"Stopping…" until the run's own stream reports the end, because asking to
+stop is not stopping: the worker finishes the node it is inside first.
 
 ### Retry after a crash
 
-Phase 4, with the reaper that makes retries possible at all. The answer
-write becomes `INSERT … WHERE NOT EXISTS (answer for this run_id)`, in the
-same transaction that marks the run done, so a retry that gets as far as
-writing twice writes once. This matters most for `_remember()` --
-duplicated case findings are wrong data, not a cosmetic bug.
+The run is requeued and worked again from the start. What makes that safe
+is that finishing is a race exactly one worker wins: `complete()` moves the
+row from `running` to `done` and returns whether this caller was the one
+that did, in the same transaction as the message write. A straggler that
+was declared dead and comes back finishes nothing.
 
 ### Overload
 
@@ -877,11 +890,33 @@ this host, and the CUDA TEI image is a tag swap plus a device reservation
 once it is. Measured on this machine's RTX 3050: reranking 50 passages,
 5.12s on CPU against 0.61s on GPU, identical ranking.
 
-**Phase 4 — checkpoint, cancellation and reaper.**
-Persist graph state per step; heartbeat and sweep; a cancel that the worker
-honours between nodes.
-*Gets:* mid-run resume (stop paying twice), zombie detection, and a reader
-who leaves stopping the spend rather than only the watching.
+**Phase 4 — checkpoint, cancellation and reaper. DONE (2026-09-06).**
+A heartbeat written between nodes, a sweep on every idle worker, a cancel
+the worker honours at the same seam, a completion exactly one worker can
+win, and a checkpoint of the evidence a dead attempt found.
+*Got:* a killed worker's run comes back instead of stranding a reader
+forever; a reader who leaves stops paying; a requeued run cannot answer
+twice, and does not buy the search again.
+
+Verified live: a worker killed mid-run, its heartbeat aged, and the run
+swept back onto the queue. The second attempt logged `resuming with 10
+findings` and finished in **0.9s** rather than ~30s -- the research node
+never ran.
+
+**Only `findings` is carried.** It is where the time is (about 7s of
+planning and 11s of retrieval) and the only part of the graph channel that
+round-trips *provably*: Evidence is a pydantic model, so `model_dump` and
+`model_validate` are exact, and a test asserts the round trip including
+provenance. `ThreadContext` is a frozen dataclass and costs 1.3s to
+rebuild, so it is rebuilt rather than serialised.
+
+The restore is all-or-nothing. Anything unreadable is discarded whole and
+the run searches afresh, because half a list would put an answer's
+citations on evidence that was never properly rebuilt -- the silent
+degradation everything else here exists to prevent. And it applies only on
+the first round: the loop back from verification is asking for evidence the
+first pass did not find, and skipping that would answer the same question
+with the same gaps.
 
 Nothing in one phase is rewritten by the next. The schema above is the whole
 contract, and it is the reason this was worth designing before building.

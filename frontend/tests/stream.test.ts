@@ -115,13 +115,15 @@ describe("outcomes", () => {
         'event: error\ndata: {"code": "timeout", "message": "Took too long."}\n\n',
       ]),
     );
-    expect(events).toEqual([{ type: "error", message: "Took too long." }]);
+    expect(events).toEqual([
+      { type: "error", code: "timeout", message: "Took too long." },
+    ]);
   });
 
   it("reports a non-200 without trying to read a body that is not there", async () => {
     const events = await collect(streamOf([], false, 503));
     expect(events).toEqual([
-      { type: "error", message: "The server answered 503." },
+      { type: "error", code: "http", message: "The server answered 503." },
     ]);
   });
 
@@ -142,5 +144,30 @@ describe("the request", () => {
     const fetchMock = streamOf([DONE]);
     await collect(fetchMock, 0);
     expect(fetchMock.mock.calls[0][1].headers["Last-Event-ID"]).toBeUndefined();
+  });
+});
+
+describe("the server's own codes", () => {
+  it("carries the error code, not just its prose", async () => {
+    // `timeout` means the server stopped watching, not that the run
+    // stopped. A client that cannot tell the two apart abandons a run that
+    // is still going.
+    const events = await collect(
+      streamOf([
+        'event: error\ndata: {"code":"timeout","message":"Stopped watching; the run is still going."}\n\n',
+      ]),
+    );
+    expect(events).toEqual([
+      {
+        type: "error",
+        code: "timeout",
+        message: "Stopped watching; the run is still going.",
+      },
+    ]);
+  });
+
+  it("labels a transport failure so it is not mistaken for a run failure", async () => {
+    const events = await collect(streamOf([], false, 503));
+    expect(events[0]).toMatchObject({ type: "error", code: "http" });
   });
 });

@@ -340,10 +340,220 @@ def test_a_deleted_run_is_not_reported_as_an_error(monkeypatch):
     job.run(claimed)
 
 
-def test_abandoned_is_true_only_once_the_run_is_gone():
+def test_there_is_no_reason_to_stop_until_there_is():
     with connection() as conn:
         _thread_id, claimed = _ask(conn, "what is section 138")
-        assert job._abandoned(claimed["run_id"]) is False
+        assert job._stop_reason(claimed["run_id"]) is None
         conn.execute("DELETE FROM threads WHERE user_id = %s", (USER,))
         conn.commit()
-        assert job._abandoned(claimed["run_id"]) is True
+        assert "deleted" in job._stop_reason(claimed["run_id"])
+
+
+def test_a_cancelled_run_is_its_own_reason_to_stop():
+    with connection() as conn:
+        _thread_id, claimed = _ask(conn, "what is section 138")
+        runs.cancel(conn, claimed["run_id"], USER)
+        assert "cancelled" in job._stop_reason(claimed["run_id"])
+
+
+# --- stopping, and saying you are alive ------------------------------------
+#
+# The worker already pauses between nodes to check the run still exists.
+# That one seam carries everything Phase 4 needs: a beat so the reaper can
+# tell working from dead, and a cancel check so a reader who left stops
+# being charged. Neither can live anywhere else -- a synchronous graph
+# offers no other place to interrupt it.
+
+
+def test_a_cancelled_run_stops_at_the_next_node(monkeypatch):
+    _researches(monkeypatch)
+    reached = []
+
+    def three_nodes(inputs):
+        yield "step", "context_builder"
+        reached.append("context_builder")
+        with connection() as conn:
+            runs.cancel(conn, CANCELLED["run_id"], USER)
+        yield "step", "research"
+        reached.append("research")
+        yield "done", {"answer": "should never be stored", "draft_answer": None}
+
+    monkeypatch.setattr(job, "stream_graph", three_nodes)
+
+    with connection() as conn:
+        thread_id, claimed = _ask(conn, "what is section 138")
+    CANCELLED.update(claimed)
+    job.run(claimed)
+
+    # It got as far as the node that cancelled it, and stopped before the
+    # next one produced anything.
+    assert reached == ["context_builder"]
+    with connection() as conn:
+        assert runs.get(conn, claimed["run_id"], USER)["status"] == "cancelled"
+        assert [m.role for m in list_messages(conn, thread_id, USER)] == ["user"]
+
+
+CANCELLED: dict = {}
+
+
+def test_a_running_job_beats_between_nodes(monkeypatch):
+    """The reaper tells a working run from an abandoned one by this and
+    nothing else."""
+    _researches(monkeypatch)
+    beats = []
+
+    def beat(_conn, run_id):
+        beats.append(run_id)
+        return "running"      # the status the worker carries on for
+
+    monkeypatch.setattr(job.runs, "beat", beat)
+    monkeypatch.setattr(job, "stream_graph", _graph_yielding(
+        ("step", "context_builder"), ("step", "research"), ("step", "analyst"),
+    ))
+
+    with connection() as conn:
+        _thread_id, claimed = _ask(conn, "what is section 138")
+    job.run(claimed)
+
+    assert beats.count(claimed["run_id"]) >= 3
+
+
+def test_a_cancelled_run_writes_no_answer_even_if_the_graph_finished(monkeypatch):
+    """The graph returns whatever it returns; the decision not to store it
+    is the worker's, and has to hold at the last moment too."""
+    _researches(monkeypatch)
+    monkeypatch.setattr(job, "stream_graph", _answering("A lede."))
+
+    with connection() as conn:
+        thread_id, claimed = _ask(conn, "what is section 138")
+        runs.cancel(conn, claimed["run_id"], USER)
+    job.run(claimed)
+
+    with connection() as conn:
+        assert [m.role for m in list_messages(conn, thread_id, USER)] == ["user"]
+
+
+# --- a requeued run must not answer twice ----------------------------------
+#
+# The reaper can only guess. A worker deep in a model call and a worker that
+# died look identical from the outside, so a run will occasionally be
+# requeued while the first worker is still alive -- and then two workers
+# finish the same question. Two assistant messages is the visible half; the
+# real damage is _remember(), because duplicated case findings are wrong
+# data that the next question is seeded with.
+
+
+def test_only_the_first_worker_to_finish_stores_an_answer(monkeypatch):
+    _researches(monkeypatch)
+    monkeypatch.setattr(job, "stream_graph", _answering("A lede."))
+
+    with connection() as conn:
+        thread_id, claimed = _ask(conn, "what is section 138")
+
+    job.run(claimed)                      # the worker that was thought dead
+    job.run(dict(claimed))                # the one it was requeued to
+
+    with connection() as conn:
+        stored = list_messages(conn, thread_id, USER)
+
+    assert [m.role for m in stored] == ["user", "assistant"]
+
+
+def test_the_second_finisher_leaves_the_first_answer_alone(monkeypatch):
+    _researches(monkeypatch)
+    monkeypatch.setattr(job, "stream_graph", _answering("The first answer."))
+
+    with connection() as conn:
+        thread_id, claimed = _ask(conn, "what is section 138")
+    job.run(claimed)
+
+    monkeypatch.setattr(job, "stream_graph", _answering("A different answer."))
+    job.run(dict(claimed))
+
+    with connection() as conn:
+        stored = list_messages(conn, thread_id, USER)
+
+    assert "The first answer." in stored[1].content
+    assert "A different answer." not in stored[1].content
+
+
+# --- a retry does not buy the search twice ---------------------------------
+
+
+def test_a_run_saves_what_it_found_so_a_retry_need_not_search_again(monkeypatch):
+    from legal_ai.schemas.evidence import Evidence, Provenance, SourceRef
+    from datetime import datetime, timezone
+
+    found = [Evidence(
+        document_id="act:2189:sec-138", document_type="act", title="s.138",
+        content="Dishonour of cheque.",
+        provenance=Provenance(
+            source=SourceRef(name="India Code", url="https://x", source_type="primary"),
+            retrieved_at=datetime(2026, 9, 6, tzinfo=timezone.utc),
+            licence="Government of India", attribution_required=False),
+    )]
+
+    _researches(monkeypatch)
+    monkeypatch.setattr(job, "stream_graph", _graph_yielding(
+        ("step", "research"),
+        ("findings", found),
+        ("done", {"answer": "text", "draft_answer": None}),
+    ))
+
+    with connection() as conn:
+        _thread_id, claimed = _ask(conn, "what is section 138")
+    job.run(claimed)
+
+    with connection() as conn:
+        restored = runs.restore_findings(conn, claimed["run_id"])
+    assert [e.document_id for e in restored] == ["act:2189:sec-138"]
+
+
+def test_a_retried_run_hands_the_graph_what_the_last_attempt_found(monkeypatch):
+    """The whole point: the second worker starts from the evidence rather
+    than from the search."""
+    from legal_ai.schemas.evidence import Evidence, Provenance, SourceRef
+    from datetime import datetime, timezone
+
+    found = [Evidence(
+        document_id="act:2189:sec-138", document_type="act", title="s.138",
+        content="Dishonour of cheque.",
+        provenance=Provenance(
+            source=SourceRef(name="India Code", url="https://x", source_type="primary"),
+            retrieved_at=datetime(2026, 9, 6, tzinfo=timezone.utc),
+            licence="Government of India", attribution_required=False),
+    )]
+
+    _researches(monkeypatch)
+    seen = {}
+
+    def capture(inputs):
+        seen["findings"] = inputs.get("findings")
+        yield "done", {"answer": "text", "draft_answer": None}
+
+    with connection() as conn:
+        _thread_id, claimed = _ask(conn, "what is section 138")
+        runs.save_findings(conn, claimed["run_id"], found)
+
+    monkeypatch.setattr(job, "stream_graph", capture)
+    job.run(claimed)
+
+    assert [e.document_id for e in (seen["findings"] or [])] == ["act:2189:sec-138"]
+
+
+def test_a_first_attempt_hands_the_graph_nothing(monkeypatch):
+    """A fresh run must search. Seeding it with an empty list would be the
+    same shape as seeding it with results."""
+    _researches(monkeypatch)
+    seen = {}
+
+    def capture(inputs):
+        seen["findings"] = inputs.get("findings")
+        yield "done", {"answer": "text", "draft_answer": None}
+
+    monkeypatch.setattr(job, "stream_graph", capture)
+    with connection() as conn:
+        _thread_id, claimed = _ask(conn, "what is section 138")
+    job.run(claimed)
+
+    assert not seen["findings"]

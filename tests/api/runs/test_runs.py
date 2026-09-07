@@ -91,7 +91,8 @@ def test_the_current_step_is_readable_without_walking_the_events():
 def test_a_finished_run_stops_being_live_and_keeps_its_answer():
     with connection() as conn:
         thread = create_thread(conn, USER)
-        run_id = runs.enqueue(conn, thread.thread_id, USER, "research", {})
+        runs.enqueue(conn, thread.thread_id, USER, "research", {})
+        run_id = runs.claim(conn, ("research",))["run_id"]
         runs.finish(conn, run_id, {"text": "the answer"})
 
         assert runs.get(conn, run_id, USER)["status"] == "done"
@@ -103,7 +104,8 @@ def test_a_failed_run_keeps_its_row_and_its_reason():
     """A run that vanishes is indistinguishable from one still going."""
     with connection() as conn:
         thread = create_thread(conn, USER)
-        run_id = runs.enqueue(conn, thread.thread_id, USER, "research", {})
+        runs.enqueue(conn, thread.thread_id, USER, "research", {})
+        run_id = runs.claim(conn, ("research",))["run_id"]
         runs.fail(conn, run_id, "timeout", "Research did not finish in time.")
 
         run = runs.get(conn, run_id, USER)
@@ -193,3 +195,51 @@ def test_a_claimed_job_carries_everything_the_worker_needs():
 def test_an_empty_queue_hands_back_nothing_rather_than_waiting():
     with connection() as conn:
         assert runs.claim(conn, ("research", "draft")) is None
+
+
+def test_a_run_nobody_claimed_cannot_be_finished():
+    """Only a running run can finish. That is what makes a requeue safe:
+    the reaper puts a row back to `queued`, and a straggling worker that
+    still thinks it owns it writes nothing."""
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        run_id = runs.enqueue(conn, thread.thread_id, USER, "research", {})
+
+        assert runs.finish(conn, run_id, {"text": "the answer"}) is False
+        assert runs.get(conn, run_id, USER)["status"] == "queued"
+
+
+def test_two_writers_appending_at_once_do_not_collide():
+    """The worker appends steps and lede chunks; the API appends the
+    terminal event when a reader cancels. `COALESCE(MAX(seq),0)+1` let both
+    read the same maximum under READ COMMITTED, and the loser hit the
+    (run_id, seq) primary key -- surfacing as a 500 on cancel, or as the
+    worker recording its own run as internal_error."""
+    import threading
+
+    with connection() as conn:
+        thread = create_thread(conn, USER)
+        run_id = runs.enqueue(conn, thread.thread_id, USER, "research", {})
+
+    errors: list[Exception] = []
+    start = threading.Barrier(4)
+
+    def append_many(tag: str):
+        try:
+            start.wait(timeout=10)
+            for i in range(10):
+                with connection() as conn:
+                    runs.append(conn, run_id, "step", {"node": f"{tag}{i}"})
+        except Exception as error:  # noqa: BLE001 - the point of the test
+            errors.append(error)
+
+    writers = [threading.Thread(target=append_many, args=(t,)) for t in "abcd"]
+    for w in writers:
+        w.start()
+    for w in writers:
+        w.join(timeout=30)
+
+    assert errors == []
+    with connection() as conn:
+        seqs = [e["seq"] for e in runs.events_after(conn, run_id, 0)]
+    assert seqs == list(range(1, 41))

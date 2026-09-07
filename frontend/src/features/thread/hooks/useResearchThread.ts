@@ -14,7 +14,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { sendMessage } from "../services";
+import { cancelRun, sendMessage } from "../services";
 import { Verification, type Message } from "../types";
 import { threadKeys, useMessages, useThread } from "./index";
 import { useRunStream } from "./useRunStream";
@@ -74,6 +74,27 @@ export function useResearchThread(threadId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watching, threadId, queryClient]);
 
+  // Asking to stop is not stopping: the worker finishes the node it is
+  // inside and quits at the next boundary. The run's own stream is what
+  // reports the end, so nothing here pretends it already happened.
+  const [stopping, setStopping] = useState(false);
+  const stop = useCallback(async () => {
+    if (!watching) return;
+    setStopping(true);
+    try {
+      await cancelRun(watching);
+    } catch (caught) {
+      setStopping(false);
+      setSendError(
+        caught instanceof Error ? caught.message : "Could not stop this run.",
+      );
+    }
+  }, [watching]);
+
+  useEffect(() => {
+    if (!watching) setStopping(false);
+  }, [watching]);
+
   const send = useCallback(
     async (text: string, mode?: Verification) => {
       const asked = text.trim();
@@ -123,6 +144,8 @@ export function useResearchThread(threadId: string) {
     streamingLede: live.lede,
     // A run in flight, whether this tab started it or found it.
     isSending: Boolean(watching),
+    stop,
+    stopping,
     // The thread ends on a question with no run behind it: the turn did not
     // finish. An honest state, not a five-minute guess -- there is a row
     // saying so. Held back while the messages are being refetched, or a

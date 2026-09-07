@@ -240,6 +240,15 @@ CREATE TABLE IF NOT EXISTS runs (
         CHECK (status IN ('queued','running','done','failed','cancelled')),
     current_step TEXT,
     payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- How many workers have been handed this, and when the one holding it
+    -- last said it was alive. A row whose heartbeat stopped is a row nobody
+    -- owns, which is what the reaper sweeps for.
+    attempts     INT NOT NULL DEFAULT 0,
+    heartbeat_at TIMESTAMPTZ,
+    -- The evidence a previous attempt found, so a requeued run does not
+    -- buy the search again. Findings only: they are the expensive part and
+    -- the only part that round-trips provably.
+    checkpoint   JSONB,
     error        TEXT,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     started_at   TIMESTAMPTZ,
@@ -265,6 +274,10 @@ CREATE INDEX IF NOT EXISTS runs_thread_live_idx ON runs (thread_id)
 -- The claim query, which every idle worker runs on every sweep.
 CREATE INDEX IF NOT EXISTS runs_queued_idx ON runs (kind, created_at)
     WHERE status = 'queued';
+
+-- The reaper's sweep: only a running row can have stopped breathing.
+CREATE INDEX IF NOT EXISTS runs_heartbeat_idx ON runs (heartbeat_at)
+    WHERE status = 'running';
 
 
 -- A drafted document. The structure is kept beside the file so a document

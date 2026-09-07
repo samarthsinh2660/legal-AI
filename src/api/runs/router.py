@@ -58,6 +58,35 @@ async def one_run(request: Request, run_id: str):
     return success(run)
 
 
+@router.post(
+    "/runs/{run_id}/cancel",
+    response_model=Success[dict],
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+)
+async def cancel_run(request: Request, run_id: str):
+    """Stop a run that has not finished.
+
+    A queued run stops before it costs anything. A running one is marked and
+    the worker stops at its next node -- Python cannot interrupt the call it
+    is inside, but it can decline to start another.
+
+    A run that already finished answers 409: its answer is stored and paid
+    for, and a client should learn its cancel arrived too late rather than
+    believe it worked.
+    """
+    from api.utils.errors import conflict
+
+    with connection() as conn:
+        run = runs.get(conn, run_id, request.state.user_id)
+        if run is None:
+            return respond(not_found("run"))
+        if not runs.cancel(conn, run_id, request.state.user_id):
+            return respond(conflict(
+                "run_finished", "This run has already finished."
+            ))
+    return success({"run_id": run_id, "status": "cancelled"})
+
+
 @router.get("/runs/{run_id}/stream", responses={404: {"model": ErrorResponse}})
 async def watch_run(
     request: Request,
@@ -94,8 +123,14 @@ async def watch_run(
         try:
             while True:
                 with connection() as conn:
-                    pending = runs.events_after(conn, run_id, seen)
+                    # Status first, then events. The worker commits the
+                    # status change and the terminal event in one
+                    # transaction, so reading events first left a window
+                    # where the commit landed between the two: no terminal
+                    # event in `pending`, `status` already done, and the
+                    # stream closed having sent the reader nothing.
                     status = (runs.get(conn, run_id, user_id) or {}).get("status")
+                    pending = runs.events_after(conn, run_id, seen)
 
                 for event in pending:
                     seen = event["seq"]

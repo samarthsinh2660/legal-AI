@@ -28,15 +28,13 @@ sweep, so a lost notification costs seconds and never a job.
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 import psycopg
 from psycopg.types.json import Json
 
-# What a run can be. `cancelled` has no writer yet -- it arrives with the
-# worker, which can decline to start the next step. Listed here because the
-# constraint is the schema and adding a value later is a migration.
-STATUSES = ("queued", "running", "done", "failed", "cancelled")
+log = logging.getLogger(__name__)
 
 # What a run does. One column is the whole of multi-kind support: a worker
 # claims only the kinds it can serve.
@@ -48,6 +46,11 @@ QUEUED_CHANNEL = "run_queued"
 # Woken when a run gains an event or changes status. The API's connection
 # manager listens, once per process, and fans out to the streams it serves.
 CHANGED_CHANNEL = "run_changed"
+
+# How many times a run may be handed to a worker before it is treated as
+# the problem rather than the worker. A job that kills whoever picks it up
+# would otherwise kill every worker in turn, one at a time.
+MAX_ATTEMPTS = 3
 
 
 def ensure_run_schema(conn: psycopg.Connection) -> None:
@@ -65,15 +68,23 @@ def ensure_run_schema(conn: psycopg.Connection) -> None:
             current_step TEXT,
             error TEXT,
             payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            attempts INT NOT NULL DEFAULT 0,
+            heartbeat_at TIMESTAMPTZ,
+            checkpoint JSONB,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             started_at TIMESTAMPTZ,
             finished_at TIMESTAMPTZ
         )
         """
     )
-    # The column arrived with the worker, after the table existed.
+    # These arrived after the table existed: `payload` with the worker,
+    # the rest with the reaper.
     conn.execute("ALTER TABLE runs ADD COLUMN IF NOT EXISTS payload JSONB "
                  "NOT NULL DEFAULT '{}'::jsonb")
+    conn.execute("ALTER TABLE runs ADD COLUMN IF NOT EXISTS attempts INT "
+                 "NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE runs ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ")
+    conn.execute("ALTER TABLE runs ADD COLUMN IF NOT EXISTS checkpoint JSONB")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS run_events (
@@ -95,6 +106,11 @@ def ensure_run_schema(conn: psycopg.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS runs_queued_idx ON runs (kind, created_at) "
         "WHERE status = 'queued'"
+    )
+    # The reaper's sweep: only running rows can have stopped breathing.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS runs_heartbeat_idx ON runs (heartbeat_at) "
+        "WHERE status = 'running'"
     )
     conn.commit()
 
@@ -155,7 +171,8 @@ def claim(conn: psycopg.Connection, kinds: tuple[str, ...]) -> dict | None:
     """
     row = conn.execute(
         """
-        UPDATE runs SET status = 'running', started_at = now()
+        UPDATE runs SET status = 'running', started_at = now(),
+                        heartbeat_at = now(), attempts = attempts + 1
         WHERE run_id = (
             SELECT run_id FROM runs
             WHERE status = 'queued' AND kind = ANY(%s)
@@ -179,6 +196,165 @@ def claim(conn: psycopg.Connection, kinds: tuple[str, ...]) -> dict | None:
     }
 
 
+def restore_findings(conn: psycopg.Connection, run_id: str) -> list:
+    """The evidence a previous attempt found, or an empty list.
+
+    All of it or none of it. A half-restored list would put an answer's
+    citations on evidence that was never properly rebuilt, which is worse
+    than paying for the search again -- so anything unreadable is discarded
+    whole and the run searches afresh.
+    """
+    from legal_ai.schemas.evidence import Evidence
+
+    row = conn.execute(
+        "SELECT checkpoint FROM runs WHERE run_id = %s", (run_id,)
+    ).fetchone()
+    stored = (row[0] or {}).get("findings") if row else None
+    if not stored:
+        return []
+    try:
+        return [Evidence.model_validate(item) for item in stored]
+    except Exception:
+        log.warning("run %s: unreadable checkpoint, searching again", run_id)
+        return []
+
+
+def save_findings(conn: psycopg.Connection, run_id: str, findings) -> None:
+    """Keep the evidence this run found, so a retry need not buy it again.
+
+    Only the findings. They are the expensive part -- about 7s of planning
+    and 11s of retrieval -- and the only part of the graph channel that
+    round-trips provably: Evidence is a pydantic model. The ThreadContext
+    is a frozen dataclass and costs 1.3s to rebuild, so it is rebuilt.
+
+    An empty list is not stored. A search that found nothing is not worth
+    resuming, and a stored empty list would make the next attempt skip
+    searching at all.
+    """
+    if not findings:
+        return
+    # Added to, not replaced. `stream_graph` accumulates node outputs, so a
+    # resumed run whose verification loops back reports only round two's
+    # new evidence -- replacing with that shrank the checkpoint, and the
+    # next attempt would answer from a fraction of what had been found.
+    kept = {e.document_id: e for e in restore_findings(conn, run_id)}
+    kept.update({e.document_id: e for e in findings})
+    conn.execute(
+        "UPDATE runs SET checkpoint = %s WHERE run_id = %s",
+        (Json({"findings": [e.model_dump(mode="json") for e in kept.values()]}), run_id),
+    )
+    conn.commit()
+
+
+def cancel(conn: psycopg.Connection, run_id: str, user_id: str) -> bool:
+    """Stop a run that has not finished. True if this call stopped it.
+
+    A queued run is cancelled before it costs anything. A running one is
+    marked, and the worker stops at its next node -- Python cannot
+    interrupt the call it is inside, but it can decline to start another.
+
+    A finished run is left alone: its answer is stored and paid for, and
+    throwing it away would help nobody.
+    """
+    row = conn.execute(
+        "UPDATE runs SET status = 'cancelled', finished_at = now() "
+        "WHERE run_id = %s AND user_id = %s AND status IN ('queued','running') "
+        "RETURNING run_id",
+        (run_id, user_id),
+    ).fetchone()
+    if row is None:
+        conn.commit()
+        return False
+    # A terminal event, or the reader's stream sits open on a run that has
+    # stopped and says nothing.
+    append(conn, run_id, "error",
+           {"code": "cancelled", "message": "This run was cancelled."})
+    return True
+
+
+def beat(conn: psycopg.Connection, run_id: str) -> str | None:
+    """Say the worker is still on it, and report what the run is now.
+
+    Returns the status, or None if the run is gone -- which is everything
+    the worker needs to decide whether to carry on: `running` means carry
+    on, `cancelled` means a reader left, and None means the thread was
+    deleted underneath it.
+
+    One statement, because it is one row. Asking separately cost three
+    round-trips at every node, twenty-one across a run, and the heartbeat
+    only moves for a run that is still going: reviving a cancelled one
+    would tell the reaper a worker still owns it.
+
+    Called between graph nodes because that is the only place a synchronous
+    graph can be interrupted at all.
+    """
+    row = conn.execute(
+        """
+        UPDATE runs
+        SET heartbeat_at = CASE WHEN status = 'running' THEN now() ELSE heartbeat_at END
+        WHERE run_id = %s
+        RETURNING status
+        """,
+        (run_id,),
+    ).fetchone()
+    conn.commit()
+    return row[0] if row else None
+
+
+def reap(conn: psycopg.Connection, stale_after: float) -> list[str]:
+    """Requeue or fail every run whose worker stopped breathing.
+
+    Returns the ids it touched. A run past `MAX_ATTEMPTS` is failed rather
+    than requeued: a job that kills whoever picks it up would otherwise
+    kill every worker in turn.
+
+    `stale_after` has to be comfortably longer than the slowest gap between
+    two nodes, or a worker deep in a model call is declared dead while it
+    is working -- and the answer it goes on to store lands on a run
+    somebody else is already redoing.
+    """
+    # One statement, so the condition is evaluated against the row as it is
+    # when it is written. Selecting first and updating row by row committed
+    # inside the loop, which released the locks on everything not yet
+    # handled -- and every idle worker sweeps, so a second reaper could
+    # then requeue a run the first had already requeued and a worker had
+    # since claimed. That hands a live job to a second worker: `complete`
+    # keeps one answer, but the model budget is spent twice.
+    requeued = conn.execute(
+        """
+        UPDATE runs SET status = 'queued', heartbeat_at = NULL, current_step = NULL
+        WHERE status = 'running'
+          AND heartbeat_at IS NOT NULL
+          AND heartbeat_at < now() - make_interval(secs => %s)
+          AND attempts < %s
+        RETURNING run_id, kind
+        """,
+        (stale_after, MAX_ATTEMPTS),
+    ).fetchall()
+    for _run_id, kind in requeued:
+        _notify(conn, QUEUED_CHANNEL, kind)
+    conn.commit()
+
+    # Past the attempt ceiling the run is the problem, not the worker. Done
+    # separately because each needs its own terminal event, and `fail` is
+    # itself guarded so a second reaper doing the same work writes nothing.
+    exhausted = conn.execute(
+        """
+        SELECT run_id, attempts FROM runs
+        WHERE status = 'running'
+          AND heartbeat_at IS NOT NULL
+          AND heartbeat_at < now() - make_interval(secs => %s)
+          AND attempts >= %s
+        """,
+        (stale_after, MAX_ATTEMPTS),
+    ).fetchall()
+    for run_id, attempts in exhausted:
+        fail(conn, run_id, "abandoned",
+             f"No worker finished this after {attempts} attempts.")
+
+    return [run_id for run_id, _kind in requeued] + [r for r, _a in exhausted]
+
+
 def append(conn: psycopg.Connection, run_id: str, kind: str, payload: dict) -> int:
     """Add one event and return its seq.
 
@@ -186,6 +362,17 @@ def append(conn: psycopg.Connection, run_id: str, kind: str, payload: dict) -> i
     it is dense and per-run -- `Last-Event-ID` is only meaningful against
     the run it came from.
     """
+    # Serialised per run, because two writers really do append at once: the
+    # worker emits steps and the lede's chunks while the API may be
+    # appending the terminal event for a reader who pressed Stop. Reading
+    # MAX(seq) without this let both see the same maximum under READ
+    # COMMITTED, and the loser hit the (run_id, seq) primary key -- a 500
+    # on cancel, or a worker recording its own run as internal_error.
+    #
+    # An advisory lock rather than a row lock on `runs`: it is held only
+    # until this transaction commits, and it does not contend with the
+    # status updates that `complete`, `cancel` and `fail` take on that row.
+    conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (run_id,))
     row = conn.execute(
         """
         INSERT INTO run_events (run_id, seq, kind, payload)
@@ -209,34 +396,69 @@ def step(conn: psycopg.Connection, run_id: str, node: str, label: str) -> int:
     return append(conn, run_id, "step", {"node": node, "label": label})
 
 
-def finish(conn: psycopg.Connection, run_id: str, payload: dict) -> None:
-    """Mark the run done and record its terminal event."""
-    conn.execute(
-        "UPDATE runs SET status = 'done', finished_at = now() WHERE run_id = %s",
+def complete(conn: psycopg.Connection, run_id: str) -> bool:
+    """Claim the right to finish this run. True if this caller won it.
+
+    Does not commit, so the caller can write the answer in the same
+    transaction. That is what makes a requeued run safe: the reaper can
+    only guess, so a worker deep in a model call is sometimes declared dead
+    and its run handed to somebody else. Both then finish the same
+    question. The row lock this takes means exactly one of them gets past
+    here, and the loser writes nothing -- two assistant messages would be
+    the visible half, and duplicated case findings the real damage.
+    """
+    row = conn.execute(
+        "UPDATE runs SET status = 'done', finished_at = now() "
+        "WHERE run_id = %s AND status = 'running' RETURNING run_id",
         (run_id,),
-    )
+    ).fetchone()
+    return row is not None
+
+
+def finish(conn: psycopg.Connection, run_id: str, payload: dict) -> bool:
+    """Mark the run done and record its terminal event.
+
+    False if somebody else finished it first, in which case nothing is
+    written. Callers with an answer to store should use `complete` and
+    write it in the same transaction before appending the event.
+    """
+    if not complete(conn, run_id):
+        return False
     append(conn, run_id, "done", payload)
+    return True
 
 
-def fail(conn: psycopg.Connection, run_id: str, code: str, message: str) -> None:
+def fail(conn: psycopg.Connection, run_id: str, code: str, message: str) -> bool:
     """Mark the run failed, with a reason a reader can act on.
+
+    False if the run had already finished, in which case nothing is
+    written. Guarded for the same reason `complete` is: the reaper can
+    requeue a live run, so a straggling worker sometimes raises long after
+    another has stored a good answer. Unguarded, that straggler relabelled
+    a `done` run as failed and appended a second terminal event -- the
+    thread holding a correct answer while the run told the reader
+    "Research failed." It would also overwrite a reader's own `cancelled`.
 
     A failed run keeps its row. A run that silently disappears is
     indistinguishable from one still going.
     """
-    conn.execute(
+    row = conn.execute(
         "UPDATE runs SET status = 'failed', error = %s, finished_at = now() "
-        "WHERE run_id = %s",
+        "WHERE run_id = %s AND status = 'running' RETURNING run_id",
         (message[:2000], run_id),
-    )
+    ).fetchone()
+    if row is None:
+        return False
     append(conn, run_id, "error", {"code": code, "message": message})
+    return True
 
 
 def get(conn: psycopg.Connection, run_id: str, user_id: str) -> dict | None:
     """One run, or None if it is not this user's."""
     row = conn.execute(
         "SELECT run_id, thread_id, kind, status, current_step, error, "
-        "created_at, finished_at FROM runs WHERE run_id = %s AND user_id = %s",
+        "created_at, finished_at, heartbeat_at, attempts "
+        "FROM runs WHERE run_id = %s AND user_id = %s",
         (run_id, user_id),
     ).fetchone()
     return _as_dict(row) if row else None
@@ -254,18 +476,30 @@ def exists(conn: psycopg.Connection, run_id: str) -> bool:
     ).fetchone() is not None
 
 
-def live_for_thread(conn: psycopg.Connection, thread_id: str, user_id: str) -> dict | None:
+def live_for_thread(
+    conn: psycopg.Connection,
+    thread_id: str,
+    user_id: str,
+    kind: str | None = None,
+) -> dict | None:
     """The run in flight on this thread, or None.
 
     What a reopened thread asks in order to decide whether to open a
     stream, so it is the one query on the thread-load path.
+
+    `kind` narrows it. The one-run-per-thread gate wants research only: a
+    draft reads the thread and does not write to it, so refusing a question
+    while one is being prepared blocked something harmless -- and did it
+    with "This thread is still working on the last message", which
+    describes a different thing entirely.
     """
     row = conn.execute(
         "SELECT run_id, thread_id, kind, status, current_step, error, "
-        "created_at, finished_at FROM runs "
+        "created_at, finished_at, heartbeat_at, attempts FROM runs "
         "WHERE thread_id = %s AND user_id = %s AND status IN ('queued','running') "
+        "AND (%s::text IS NULL OR kind = %s) "
         "ORDER BY created_at DESC LIMIT 1",
-        (thread_id, user_id),
+        (thread_id, user_id, kind, kind),
     ).fetchone()
     return _as_dict(row) if row else None
 
@@ -290,4 +524,6 @@ def _as_dict(row) -> dict:
         "error": row[5],
         "created_at": row[6],
         "finished_at": row[7],
+        "heartbeat_at": row[8],
+        "attempts": row[9],
     }

@@ -49,6 +49,8 @@ export function ResearchThread({
     steps,
     streamingLede,
     isSending,
+    stop,
+    stopping,
     sendError,
     send,
   } = useResearchThread(threadId);
@@ -129,7 +131,9 @@ export function ResearchThread({
           ),
         )}
         {startError && <p className="text-sm text-danger">{startError}</p>}
-        {isSending && <ProgressSteps steps={steps} />}
+        {isSending && (
+          <ProgressSteps steps={steps} onStop={() => void stop()} stopping={stopping} />
+        )}
         {/* The question is stored before the work starts, so a reopened
             thread can end on a question with no reply yet. A run row says
             which of the two this is -- still going, or over without an

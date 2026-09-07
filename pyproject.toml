@@ -62,8 +62,13 @@ dev = [
     "legal-ai[worker,ingest]",
 ]
 
+# The recon probes, run by hand. `pyarrow` is here because
+# scripts/recon/probe_*_bulk.py read parquet directly -- it left the
+# runtime dependencies when the service images were split, and nothing but
+# these scripts needs it.
 scripts = [
     "duckdb>=1.5",
+    "pyarrow>=17.0",
 ]
 
 [build-system]

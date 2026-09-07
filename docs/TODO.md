@@ -152,17 +152,10 @@ tuned.
 
 ## 4. Smaller, known
 
-- **Cancellation.** A reader who has gone still spends the full model
-  budget. Python cannot interrupt the blocking call, but a worker can
-  decline to start the next node. The seam already exists: the worker
-  checks between nodes for a run that has been deleted, and a cancel flag
-  is the same check reading a different column. Phase 4, alongside the
-  checkpoint that seam also carries.
-- **A worker killed mid-run leaves its row saying "running".** The graceful
-  path is covered -- SIGTERM drains, verified live 2026-09-05 -- but a
-  `kill -9` or a lost machine strands the row, and the thread waits on an
-  answer that is not coming. The reaper in Phase 4 is what closes it:
-  `heartbeat_at`, swept.
+- **Cancelling is not automatic.** The Stop button and the endpoint behind
+  it exist, but a reader who simply closes the tab still pays: nothing
+  watches for an abandoned stream. Whether it should is a product decision
+  -- a run that keeps going is sometimes what the reader wants.
 - **The images still carry torch, though nothing running uses it.** The
   models now live in two TEI containers and a worker is 148 MB resident,
   but `sentence-transformers` stays a dependency because unsetting

@@ -128,22 +128,38 @@ def _research(
     question = rewrite_question(message, history)
     state: dict = {}
 
+    # What a previous attempt found, if the reaper handed this run on. The
+    # graph skips searching when it is given evidence on its first round,
+    # so a retry costs the analysis again but not the search.
+    with connection() as conn:
+        carried = runs.restore_findings(conn, run_id)
+    if carried:
+        log.info("run %s: resuming with %d findings", run_id, len(carried))
+
     for kind, produced in stream_graph({
         "question": question,
         "case_id": case_id,
         "document_ids": document_ids,
         "verification_level": verification_level,
+        "findings": carried,
         "clarification_asked": _already_clarified(history, {STATE_QUESTION, DATE_QUESTION}),
     }):
-        # Checked between nodes, which is the only place a running graph can
-        # be stopped at all. A reader who deletes the thread has taken the
-        # answer's destination with it.
-        if _abandoned(run_id):
-            log.info("run %s was deleted; stopping", run_id)
+        # The one seam a synchronous graph offers. Everything that needs to
+        # interrupt a run happens here: a thread deleted out from under it,
+        # a reader who cancelled, and the beat that tells the reaper this
+        # worker is alive rather than dead holding a row.
+        stop = _stop_reason(run_id)
+        if stop:
+            log.info("run %s: %s", run_id, stop)
             return
         if kind == "step":
             with connection() as conn:
                 runs.step(conn, run_id, produced, STEP_LABELS.get(produced, produced))
+        elif kind == "findings":
+            # Stored the moment retrieval is done, not at the end: the
+            # point is to survive a worker that dies after this.
+            with connection() as conn:
+                runs.save_findings(conn, run_id, produced)
         elif kind == "timeout":
             # The question survives; no assistant reply is written, so there
             # is nothing here for a later rewrite to mistake for an answer.
@@ -169,8 +185,9 @@ def _research(
     # the false reassurance every three-state check here exists to prevent.
     # Chunking a finished answer is the safe version of the same win: the
     # reader starts reading before claims and sources have rendered.
-    if _abandoned(run_id):
-        log.info("run %s was deleted; stopping", run_id)
+    stop = _stop_reason(run_id)
+    if stop:
+        log.info("run %s: %s", run_id, stop)
         return
 
     lede = (answer or {}).get("lede") if answer else None
@@ -201,8 +218,17 @@ def _reply(
     reason the timeout branch stores none.
     """
     with connection() as conn:
-        if not runs.exists(conn, run_id):
-            log.info("run %s was deleted; discarding its answer", run_id)
+        # Re-checked at the last moment: the graph ran to completion, but
+        # between its final node and this write the reader may have
+        # cancelled or deleted the thread.
+        if runs.beat(conn, run_id) != "running":
+            log.info("run %s is no longer wanted; discarding its answer", run_id)
+            return
+        # The right to finish, taken before anything is written and in the
+        # same transaction as the writing. A requeued run can be worked by
+        # two workers; only one gets past here.
+        if not runs.complete(conn, run_id):
+            log.info("run %s was already answered elsewhere; discarding", run_id)
             return
         if text or answer:
             add_message(conn, thread_id, "assistant", text or "", answer=answer)
@@ -212,7 +238,7 @@ def _reply(
             # which is the whole reason the container exists.
             if case_id and answer is not None and question is not None:
                 _remember(conn, case_id, question, answer)
-        runs.finish(conn, run_id, {
+        runs.append(conn, run_id, "done", {
             "text": text,
             "answer": answer,
             "clarification_needed": clarification,
@@ -268,10 +294,21 @@ def _already_clarified(history: list[Turn], asked: set[str]) -> bool:
     )
 
 
-def _abandoned(run_id: str) -> bool:
-    """Whether the run has been deleted out from under this job."""
+def _stop_reason(run_id: str) -> str | None:
+    """Why this job should stop, or None to carry on. Beats on the way past.
+
+    One statement answers all three questions, because they are one row: a
+    run that is gone was deleted with its thread, a cancelled one has a
+    reader who left, and anything still running gets its heartbeat moved so
+    the reaper knows a worker owns it.
+    """
     with connection() as conn:
-        return not runs.exists(conn, run_id)
+        status = runs.beat(conn, run_id)
+    if status is None:
+        return "the thread was deleted; stopping"
+    if status == "cancelled":
+        return "cancelled by the reader; stopping"
+    return None
 
 
 def _fail(run_id: str, code: str, message: str) -> None:

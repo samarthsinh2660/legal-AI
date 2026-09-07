@@ -121,14 +121,32 @@ else
   S=$(status "$RUN3")
   check "the row is left saying running, with nothing coming" \
         "$([ "$S" = running ] && echo true || echo false)" "$S (expected until a reaper exists)"
-  # Waits for "worker ready" rather than a fixed sleep. A worker now loads
-  # its models before claiming anything, so a 12-second sleep would find it
+  # Waits for "worker ready" rather than a fixed sleep. A worker loads its
+  # models before claiming anything, so a 12-second sleep would find it
   # still warming -- and the assertion would pass for the wrong reason.
   AT=$(now); docker start "$OWNER" > /dev/null; ready "$OWNER" "$AT"
   sleep 8
   S=$(status "$RUN3")
-  check "restarting the worker does not resurrect it either" \
+  check "the row stays running until the heartbeat goes stale" \
         "$([ "$S" = running ] && echo true || echo false)" "$S"
+
+  # And now the reaper. Aged by hand rather than by waiting out
+  # STALE_AFTER_SECONDS, which is deliberately longer than a run may take.
+  docker exec legal-ai-postgres psql -U legal_ai -d legal_ai -q -c \
+    "UPDATE runs SET heartbeat_at = now() - interval '30 minutes' WHERE run_id = '$RUN3'" \
+    > /dev/null 2>&1
+  # Asserted on `attempts`, not on status. A requeued run is claimed again
+  # within seconds and is therefore `running` almost immediately -- which is
+  # the success path, so waiting for "not running" waits forever and reports
+  # the reaper broken when it worked.
+  DEADLINE=$(( $(date +%s) + 120 )); N=1
+  while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+    N=$(api GET "/runs/$RUN3" | field "['attempts']")
+    [ "${N:-1}" -gt 1 ] && break
+    sleep 5
+  done
+  check "a worker sweeps the abandoned row and hands it out again" \
+        "$([ "${N:-1}" -gt 1 ] && echo true || echo false)" "attempts=$N"
 fi
 
 echo
