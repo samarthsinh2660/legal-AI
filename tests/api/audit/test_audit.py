@@ -328,3 +328,29 @@ def test_a_handler_that_raises_is_still_recorded(client, monkeypatch):
     with connection() as conn:
         events = events_for(conn, USER, limit=10)
     assert any(e.status == 500 for e in events)
+
+
+def test_cancelling_a_run_is_recorded(client):
+    """`POST /runs/{id}/cancel` ends a client's research and was written
+    down nowhere. A firm will not use a tool whose actions it cannot
+    account for, which is the whole premise of this module."""
+    from api.runs import repository as runs
+    from api.threads.repository import create_thread, ensure_thread_schema
+
+    with connection() as conn:
+        ensure_thread_schema(conn)
+        runs.ensure_run_schema(conn)
+        thread = create_thread(conn, USER)
+        run_id = runs.enqueue(conn, thread.thread_id, USER, "research", {})
+
+    client.post(f"/runs/{run_id}/cancel", headers=_auth())
+
+    entries = client.get("/audit?limit=50", headers=_auth()).json()["data"]["items"]
+    cancels = [e for e in entries if e["resource_type"] == "run"]
+
+    with connection() as conn:
+        conn.execute("DELETE FROM threads WHERE thread_id = %s", (thread.thread_id,))
+        conn.commit()
+
+    assert cancels, "cancelling a run left no audit entry"
+    assert cancels[0]["resource_id"] == run_id

@@ -1,7 +1,5 @@
 """Query tools for Acts and Sections.
 
-See docs/superpowers/specs/2026-08-19-phase2-milestone4-tool-contracts-design.md.
-
 Thin wrappers over the static store: no fetching or verification logic
 here, only Evidence construction.
 """

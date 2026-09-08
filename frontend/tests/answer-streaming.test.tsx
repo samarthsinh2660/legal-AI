@@ -2,10 +2,13 @@
  * The lede streams ahead of the finished message.
  *
  * Not a token stream from the model -- the lede is already past
- * verification by the time these events fire (see
- * api/threads/controller.py's docstring on the same change). What is
- * tested here is the wire contract and the reveal, not the backend's
- * reasoning for withholding raw generation.
+ * verification by the time these events fire (see `worker/research.py`'s
+ * docstring on the same change). What is tested here is the reveal, not the
+ * backend's reasoning for withholding raw generation.
+ *
+ * The chunks reach this screen over the run's stream, the same one a
+ * reopened tab attaches to, so this exercises the whole path a reader
+ * actually takes.
  */
 
 import { render, screen, waitFor } from "@testing-library/react";
@@ -14,7 +17,6 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { ResearchThread } from "@/features/thread/component/research-thread";
-import { streamMessage } from "@/features/thread/services";
 import { Verification } from "@/features/thread/types";
 
 vi.mock("next/navigation", () => ({
@@ -26,66 +28,52 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
-/** An SSE body: one frame per event, exactly what `pg_dump`-style
- *  event/data pairs look like on the wire. */
-function sseBody(frames: string[]): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  return new ReadableStream({
-    start(controller) {
-      for (const frame of frames) controller.enqueue(encoder.encode(frame));
-      controller.close();
-    },
+function frame(event: string, data: unknown, id?: number): string {
+  return `${id ? `id: ${id}\n` : ""}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+const THREAD = {
+  thread_id: "t1",
+  title: "Bail",
+  case_id: null,
+  created_at: "2026-09-01T10:00:00+00:00",
+  updated_at: "2026-09-01T10:00:00+00:00",
+  active_run: null,
+};
+
+/**
+ * Stand in for the API: POST returns a queued run, the run's stream is
+ * `body`, and every other read is empty.
+ */
+function serve(body: ReadableStream<Uint8Array>) {
+  return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    const path = String(url);
+    if (path.includes("/runs/") && path.endsWith("/stream")) {
+      return Promise.resolve({ ok: true, status: 200, body });
+    }
+    if (init?.method === "POST") {
+      return Promise.resolve({
+        ok: true,
+        status: 202,
+        json: async () => ({
+          success: true,
+          data: { run_id: "r1", thread_id: "t1", status: "queued" },
+        }),
+      });
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: path.includes("/messages") || path.includes("/drafts") ? [] : THREAD,
+      }),
+    });
   });
-}
-
-function frame(event: string, data: unknown): string {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-}
-
-function serveStream(frames: string[]) {
-  return vi.fn().mockImplementation((url: string) =>
-    Promise.resolve(
-      String(url).includes("/stream")
-        ? { ok: true, status: 200, body: sseBody(frames) }
-        : { ok: true, status: 200, json: async () => ({ success: true, data: [] }) },
-    ),
-  );
 }
 
 afterEach(() => {
   vi.unstubAllGlobals();
-});
-
-it("streamMessage yields answer_chunk events in order, before done", async () => {
-  vi.stubGlobal(
-    "fetch",
-    serveStream([
-      frame("step", { node: "research", label: "Searching" }),
-      frame("answer_chunk", { text: "Anticipatory bail " }),
-      frame("answer_chunk", { text: "is granted by " }),
-      frame("done", {
-        text: "Anticipatory bail is granted by the court.",
-        answer: null,
-        clarification_needed: null,
-        route: "RESEARCH",
-        verification_level: "quick",
-      }),
-    ]),
-  );
-
-  const events = [];
-  for await (const event of streamMessage("t1", "q", Verification.Quick)) {
-    events.push(event);
-  }
-
-  const kinds = events.map((e) => e.type);
-  expect(kinds.indexOf("answer_chunk")).toBeLessThan(kinds.indexOf("done"));
-  expect(
-    events
-      .filter((e): e is { type: "answer_chunk"; text: string } => e.type === "answer_chunk")
-      .map((e) => e.text)
-      .join(""),
-  ).toBe("Anticipatory bail is granted by ");
 });
 
 it("shows the lede growing on screen before the turn finishes", async () => {
@@ -101,42 +89,39 @@ it("shows the lede growing on screen before the turn finishes", async () => {
     },
   });
 
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockImplementation((url: string) =>
-      Promise.resolve(
-        String(url).includes("/stream")
-          ? { ok: true, status: 200, body }
-          : { ok: true, status: 200, json: async () => ({ success: true, data: [] }) },
-      ),
-    ),
-  );
+  vi.stubGlobal("fetch", serve(body));
 
   render(
-    <ResearchThread threadId="t1" initialQuestion="when is bail granted" initialMode={Verification.Quick} />,
+    <ResearchThread
+      threadId="t1"
+      initialQuestion="when is bail granted"
+      initialMode={Verification.Quick}
+    />,
     { wrapper },
   );
 
-  controller.enqueue(encoder.encode(frame("answer_chunk", { text: "Anticipatory bail " })));
-  await waitFor(() => expect(screen.getByText(/Anticipatory bail/)).toBeInTheDocument());
-
-  controller.enqueue(encoder.encode(frame("answer_chunk", { text: "is granted." })));
-  await waitFor(() => expect(screen.getByText(/Anticipatory bail is granted\./)).toBeInTheDocument());
+  controller.enqueue(
+    encoder.encode(frame("answer_chunk", { text: "Anticipatory bail " }, 1)),
+  );
+  await waitFor(() =>
+    expect(screen.getByText(/Anticipatory bail/)).toBeInTheDocument(),
+  );
 
   controller.enqueue(
-    encoder.encode(
-      frame("done", {
-        text: "Anticipatory bail is granted.",
-        answer: null,
-        clarification_needed: null,
-        route: "RESEARCH",
-        verification_level: "quick",
-      }),
-    ),
+    encoder.encode(frame("answer_chunk", { text: "is granted." }, 2)),
   );
+  await waitFor(() =>
+    expect(
+      screen.getByText(/Anticipatory bail is granted\./),
+    ).toBeInTheDocument(),
+  );
+
+  controller.enqueue(encoder.encode(frame("done", { text: "x" }, 3)));
   controller.close();
 
-  // The transient preview is gone once the turn settles -- MessageBubble
-  // (from the persisted message) is what carries the answer from here.
-  await waitFor(() => expect(screen.queryByText(/Anticipatory bail/)).not.toBeInTheDocument());
+  // The transient preview is gone once the run settles -- MessageBubble
+  // (from the stored message) is what carries the answer from here.
+  await waitFor(() =>
+    expect(screen.queryByText(/Anticipatory bail/)).not.toBeInTheDocument(),
+  );
 });

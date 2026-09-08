@@ -177,7 +177,10 @@ def test_a_question_that_was_never_searched_says_so():
 
     assert result.claims == ()
     assert "provisions were retrieved" not in result.lede
-    assert "indian law" in result.lede.lower()
+    # About the question, not about the system: the same reply is given to
+    # a legal question the planner could make nothing of, and claiming we
+    # do not cover Indian law would be false to that reader.
+    assert "could not find a legal issue" in result.lede.lower()
 
 
 def test_an_empty_search_still_reports_a_thin_corpus():
@@ -289,3 +292,29 @@ def test_a_judgment_extract_is_not_truncated_to_one_passage_in_the_prompt():
 
     assert "second point" in rendered
     assert len(extract) <= EXTRACT_CHARS
+
+
+# --- what "no angles" is allowed to claim ----------------------------------
+
+
+def test_the_no_issue_reply_does_not_deny_covering_indian_law():
+    """The planner returns no angles for two different things: a question
+    that is not law at all, and a legal question with no researchable issue
+    in it -- "what does section 999ZZ of the Negotiable Instruments Act say
+    about drones" plans nothing, and got told "I only research Indian law".
+
+    That is false to a reader asking about the Negotiable Instruments Act,
+    and it is the wrong of the two states to collapse into. The reply has
+    to be true of both.
+    """
+    from legal_ai.agents.analyst import OUT_OF_SCOPE
+
+    lowered = OUT_OF_SCOPE.lower()
+    assert "only research indian law" not in lowered
+    assert "could not find" in lowered or "no legal issue" in lowered
+
+
+def test_the_no_issue_reply_still_says_what_to_do_next():
+    from legal_ai.agents.analyst import OUT_OF_SCOPE
+
+    assert "legal question" in OUT_OF_SCOPE.lower()

@@ -7,12 +7,12 @@ import {
   DraftSchema,
   MessageSchema,
   StartedDraftSchema,
-  ReplySchema,
+  StartedRunSchema,
   ThreadSchema,
   type Draft,
   type Message,
   type ProgressStep,
-  type Reply,
+  type StartedRun,
   type Thread,
   type Verification,
 } from "../types";
@@ -49,82 +49,34 @@ export async function fetchMessages(threadId: string): Promise<Message[]> {
 }
 
 /**
- * Send a message and yield each event as it arrives.
+ * Ask a question. Returns the run that will answer it, not the answer.
  *
- * Hand-rolled rather than `EventSource`, which can only issue a GET and
- * cannot carry an Authorization header. This is also why it does not go
- * through `apiClient`: that unwraps one JSON envelope, and a stream is a
- * sequence of frames.
- *
- * A researched turn takes one to two minutes; without these events the
- * pane is blank for the whole of it and the page reads as hung.
+ * The answer takes 30-130 seconds and is produced by a worker, so this
+ * request only queues the job. What the reader watches is `watchRun`
+ * below -- which is the same thing a reopened tab does, so there is one
+ * path here rather than one for asking and another for coming back.
  */
-export async function* streamMessage(
+export async function sendMessage(
   threadId: string,
   message: string,
   verification: Verification,
-  signal?: AbortSignal,
-): AsyncGenerator<
-  | { type: "step"; step: ProgressStep }
-  | { type: "answer_chunk"; text: string }
-  | { type: "done"; reply: Reply }
-  | { type: "error"; message: string }
-> {
-  const token = readToken();
-  const response = await fetch(
-    `${API_BASE_URL}/threads/${threadId}/messages/stream`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ message, verification_level: verification }),
-      signal,
-    },
+): Promise<StartedRun> {
+  const data = await apiClient.post<unknown>(
+    `/threads/${threadId}/messages`,
+    { message, verification_level: verification },
   );
+  return StartedRunSchema.parse(data);
+}
 
-  if (!response.ok || !response.body) {
-    yield { type: "error", message: `The server answered ${response.status}.` };
-    return;
-  }
-
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += value;
-
-    // Frames are separated by a blank line. A chunk can split one in half,
-    // so whatever follows the last separator stays in the buffer.
-    const frames = buffer.split("\n\n");
-    buffer = frames.pop() ?? "";
-
-    for (const frame of frames) {
-      let event = "message";
-      let data = "";
-      for (const line of frame.split("\n")) {
-        if (line.startsWith("event:")) event = line.slice(6).trim();
-        else if (line.startsWith("data:")) data += line.slice(5).trim();
-      }
-      if (!data) continue;
-
-      const parsed: unknown = JSON.parse(data);
-      if (event === "step") {
-        yield { type: "step", step: parsed as ProgressStep };
-      } else if (event === "answer_chunk") {
-        const { text } = parsed as { text: string };
-        yield { type: "answer_chunk", text };
-      } else if (event === "done") {
-        yield { type: "done", reply: ReplySchema.parse(parsed) };
-      } else if (event === "error") {
-        const { message: text } = parsed as { message?: string };
-        yield { type: "error", message: text ?? "The research failed." };
-      }
-    }
-  }
+/**
+ * Stop a run that is still going.
+ *
+ * A queued run never costs a model call. A running one stops at the
+ * worker's next node -- so this is not instant, and the button should not
+ * claim it is.
+ */
+export async function cancelRun(runId: string): Promise<void> {
+  await apiClient.post(`/runs/${runId}/cancel`, {});
 }
 
 export async function renameThread(
@@ -173,3 +125,92 @@ export async function downloadDraft(draft: Draft): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+
+/**
+ * Attach to a run already in flight.
+ *
+ * A reopened tab has no hold on the stream the original POST opened, and
+ * that POST cannot be repeated -- it would ask the question twice. This
+ * watches the run itself.
+ *
+ * `fetch` rather than `EventSource`, for the same reason `streamMessage`
+ * uses it: `EventSource` cannot carry an Authorization header, and the
+ * alternative is a token in a URL and therefore in every access log. The
+ * cost is that resuming is ours to do -- hence `since`, which the caller
+ * advances as events arrive and passes back on reconnect.
+ */
+export async function* watchRun(
+  runId: string,
+  since: number,
+  signal?: AbortSignal,
+): AsyncGenerator<
+  | { type: "step"; seq: number; step: ProgressStep }
+  | { type: "answer_chunk"; seq: number; text: string }
+  | { type: "done"; seq: number }
+  | { type: "error"; code: string; message: string }
+> {
+  const token = readToken();
+  const response = await fetch(`${API_BASE_URL}/runs/${runId}/stream`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      // SSE's own resume header. The server replays from here.
+      ...(since ? { "Last-Event-ID": String(since) } : {}),
+    },
+    signal,
+  });
+
+  if (!response.ok || !response.body) {
+    yield {
+      type: "error",
+      code: "http",
+      message: `The server answered ${response.status}.`,
+    };
+    return;
+  }
+
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += value;
+
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+
+    for (const frame of frames) {
+      let event = "message";
+      let data = "";
+      let id = 0;
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) data += line.slice(5).trim();
+        else if (line.startsWith("id:")) id = Number(line.slice(3).trim()) || 0;
+      }
+      if (!data) continue;
+
+      if (event === "step") {
+        yield { type: "step", seq: id, step: JSON.parse(data) as ProgressStep };
+      } else if (event === "answer_chunk") {
+        const { text } = JSON.parse(data) as { text: string };
+        yield { type: "answer_chunk", seq: id, text };
+      } else if (event === "done") {
+        yield { type: "done", seq: id };
+      } else if (event === "error") {
+        // The code matters: the server sends `timeout` to say it has
+        // stopped *watching*, not that the run stopped. Dropping it made
+        // the client treat "still going" as "finished".
+        const { code, message } = JSON.parse(data) as {
+          code?: string;
+          message?: string;
+        };
+        yield {
+          type: "error",
+          code: code ?? "error",
+          message: message ?? "The run failed.",
+        };
+      }
+    }
+  }
+}

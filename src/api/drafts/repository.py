@@ -5,11 +5,9 @@ notice is tens of kilobytes and losing the filesystem must not lose the
 document; and because a draft belongs to a thread, so the thread's own
 ownership check is the only one that has to be right.
 
-`status` exists for the same reason the thread's answers poll: a document
-takes a model call and a render, and the reader who clicked the button
-needs to see something true while it happens. It is the honest version of
-the run status the queue will one day carry -- see
-docs/RELIABILITY_ARCHITECTURE.md.
+`status` says what the reader who pressed the button is allowed to be told
+while the model call and the render happen. It shadows the `runs` row that
+now drives the same job: the run is the queue entry, this is the file.
 """
 
 from __future__ import annotations

@@ -2,9 +2,9 @@
 
 India Code loads a Section's body text client-side: the Act page only
 ships each Section's number/title, and the real text comes from a
-separate call to /SectionPageContent. See
-docs/superpowers/specs/2026-08-15-section-body-fetch-design.md for the
-discovery process and design.
+separate call to /SectionPageContent. Scraping the Act page alone
+therefore yields a corpus of section headings with no law in it, which is
+what this exists to prevent.
 """
 
 from __future__ import annotations

@@ -148,16 +148,16 @@ def test_the_gate_asks_once_and_then_proceeds():
     answer with, and while the fact stays unset the gate would re-ask
     forever. One ask, then research with what is known.
     """
-    from api.threads.controller import _already_clarified
     from legal_ai.conversation.rewriter import Turn
     from legal_ai.graph.nodes import clarification as clarification_node
+    from worker.research import _already_clarified
 
     history = [
         Turn(role="user", content="can I challenge the mutation entry"),
         Turn(role="assistant", content=STATE_QUESTION),
         Turn(role="user", content="it is in Kumaon"),
     ]
-    assert _already_clarified(history) is True
+    assert _already_clarified(history, {STATE_QUESTION}) is True
 
     # An unparseable answer still leaves the state unset...
     context = build_thread_context("can I challenge the mutation entry in Kumaon")
@@ -172,9 +172,9 @@ def test_the_gate_asks_once_and_then_proceeds():
 
 
 def test_a_thread_that_never_asked_still_asks():
-    from api.threads.controller import _already_clarified
     from legal_ai.conversation.rewriter import Turn
+    from worker.research import _already_clarified
 
     history = [Turn(role="user", content="can I challenge the mutation entry")]
 
-    assert _already_clarified(history) is False
+    assert _already_clarified(history, {STATE_QUESTION}) is False

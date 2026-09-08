@@ -1,10 +1,12 @@
 # src/legal_ai/ingestion/citations.py
 """Regex-based Indian legal citation extraction.
 
-Formats confirmed real in docs/DATA_RECON_FINDINGS.md and the worked
-examples in design/pramana-ui.html: SCC, SCR, INSC, AIR, and state-report
-formats (GLR, etc). This is intentionally regex, not an LLM — see
-docs/superpowers/specs/2026-08-15-phase1-ingestion-design.md §3.4.
+Formats confirmed against real judgments before any were written: SCC, SCR,
+INSC, AIR, and state-report formats (GLR, etc).
+
+Regex, not a model. A citation is a fixed printed form, so a regex either
+matches it or does not; a model can also produce a citation that was never
+in the text, which is the one failure this must not have.
 
 Used only for judgment-to-judgment CITES edges. Statute references are a
 separate extractor (statute_citations.extract_section_references) and

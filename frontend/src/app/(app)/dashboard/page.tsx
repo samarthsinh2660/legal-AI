@@ -5,7 +5,7 @@ import { AskBox } from "@/features/thread/component/ask-box";
 import { RecentThreads } from "@/features/thread/component/recent-threads";
 
 /**
- * Screen 2 in design/UX_FLOWS.md -- the ask box and recent research.
+ * The dashboard: the ask box and recent research.
  * Composes organisms; builds no UI. "Home" is the landing page at `/`.
  *
  * `?case=` arrives from a case workspace: the same ask box, but the

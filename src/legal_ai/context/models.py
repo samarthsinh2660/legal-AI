@@ -1,8 +1,8 @@
 """Thread context -- what every node in a research thread is initialised from.
 
-Implements docs/AI_PROJECT_PROPOSAL.md §6. Built once per thread and passed
-read-only, so the question is analysed once rather than re-derived by each
-node at N times the token cost and with N chances to disagree.
+Built once per thread and passed read-only, so the question is analysed
+once rather than re-derived by each node at N times the token cost and with
+N chances to disagree.
 
 Everything here is frozen. A change produces a new revision rather than a
 mutation, which is what makes a thread reproducible after the fact.
@@ -91,14 +91,14 @@ class ThreadContext:
     needs_current_law: bool = False
 
     # Optional and settable at any point. A thread may belong to no case at
-    # all (a student reading a doctrine), and per design/UX_FLOWS.md a chat
-    # can be attached to a case later via "Save to case".
+    # all (a student reading a doctrine), and one that does can be attached
+    # later, through "Save to case".
     case_id: str | None = None
 
-    # The matter's own description, when the thread belongs to one.
-    # design/UX_FLOWS.md labels this field as seeding the context every agent
-    # starts from, so it is carried here rather than left in the database
-    # where no agent would see it.
+    # The matter's own description, when the thread belongs to one. The
+    # user is told this text seeds the context every agent starts from, so
+    # it is carried here rather than left in the database where no agent
+    # would see it.
     case_description: str | None = None
 
     document_ids: tuple[str, ...] = ()

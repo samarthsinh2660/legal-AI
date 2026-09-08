@@ -1,12 +1,15 @@
 # Reliability architecture — the end state
 
-**Status:** design. What ships today is the detached run and its polling;
-the tables, the workers and the connection manager are not built.
+**Status:** built and QA'd against containers, 2026-09-05/06. The tables,
+the worker, the connection manager, the model servers, the reaper and
+cancellation all exist. The one piece deliberately not built is the
+checkpoint -- see the build order for why. See the build order at the
+end for exactly which is which.
 
 The problem this settles: a research turn takes 30–130 seconds and costs
-real model budget, and today almost anything that interrupts it loses the
-work. This document describes the shape we build *once*, so each later
-piece is additive rather than a rewrite.
+real model budget, and almost anything that interrupted it used to lose the
+work. This document describes the shape built *once*, so each later piece
+is additive rather than a rewrite.
 
 ---
 
@@ -27,21 +30,22 @@ races.
 
 ## What the design has to survive
 
-Measured or reproduced on this system, not hypothetical:
+Measured or reproduced on this system, not hypothetical. ✓ marks what a
+QA pass has since confirmed against the running stack.
 
-| Event | Today |
-|---|---|
-| Browser closes mid-run | answer saved ✓ *(shipped — detached runs)* |
-| Refresh / new tab mid-run | says "Still researching", answer arrives ✓ *(shipped)* |
-| Waiting in another tab | polling continues in background ✓ *(shipped)* |
-| Live progress after refresh | lost — a spinner, not the steps |
-| Second tab, same thread | can start a parallel run; findings interleave |
-| Server restart / deploy | run dies silently, question left unanswered |
-| Worker hangs (not crashes) | indistinguishable from slow, forever |
-| Reader leaves | full model budget still spent |
-| Retry after crash | would duplicate the answer *and* the case findings |
-| 100 requests at once | 100 tasks against 16 executor threads, no backpressure |
-| 100 readers waiting | 33 polls/second at 3s each, growing with every reader |
+| Event | Was | Now |
+|---|---|---|
+| Browser closes mid-run | answer lost | answer stored ✓ |
+| Refresh / new tab mid-run | a spinner and a guess | attaches and replays ✓ |
+| Live progress after refresh | lost | replayed from `Last-Event-ID` ✓ |
+| Second tab, same thread | a parallel run; findings interleave | 409 `run_in_progress` ✓ |
+| Deploy / graceful restart | run dies silently | worker drains, answer stored ✓ |
+| Thread deleted mid-run | FK violation per step, run paid for anyway | stops between nodes ✓ |
+| Worker killed outright | row stranded | swept back onto the queue ✓ |
+| Reader leaves | full model budget still spent | cancellable; stops at the next node ✓ |
+| Retry after a crash | would duplicate the answer and the case findings | exactly one worker finishes ✓ |
+| 100 requests at once | 100 tasks, 16 executor threads, no backpressure | they queue ✓ |
+| 100 readers waiting | 33 polls/second, growing with every reader | one stream each, then silence ✓ |
 
 ---
 
@@ -242,38 +246,244 @@ ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
 Splitting the binary is a decision to defer until a measurement asks for
 it. What makes it cheap to defer is that the split is a WHERE clause.
 
+### How many workers are worth running, and in what shape
+
+One, today. Not because the queue cannot take more -- `--scale worker=3`
+works and no run was ever claimed twice -- but because all of them share
+one free-tier model key. Measured over 45 minutes of QA on 2026-09-06,
+three workers took 62 rate-limited responses between them (20, 22, 20).
+
+A third worker buys a third more *requests* against the same quota, not a
+third more answers. The number to raise first is the key's.
+
+**So sizing the worker count on free memory would size it on the one
+resource that is not scarce.** The signal that would actually mean
+something is queue depth against model-quota headroom -- and with one key
+and one reader, neither is worth automating yet.
+
+**When the quota does move, move the models out before adding workers.**
+A worker is 163 MB of its own work carrying 1290 MB of model stack, so the
+second worker is expensive for the wrong reason -- see the model-server
+section below, where that is measured line by line.
+
+Threads are the cheaper way to add a second worker *while the models stay
+in-process*: measured, four concurrent threads peaked at 1720 MB against
+~5344 MB for four processes, because threads share a loaded model and
+processes do not. But that is a workaround for a cost that should not
+exist, and it buys a shared crash domain and a harder drain. Behind a
+model server the question disappears -- plain processes, 163 MB each.
+
+It is also why "how many workers fit in the available RAM" has no useful
+answer: the number swings by 10x on process-or-thread and by 9x on
+where the models live, so it is a question about architecture, not memory.
+
+That is a change to `Worker.run_forever`, not to the queue: claiming is
+already `FOR UPDATE SKIP LOCKED`, which is safe from any number of
+claimants in any number of processes. The costs are the usual ones -- one
+thread crashing takes the process, and the SIGTERM drain has to wait for N
+jobs instead of one -- and neither is worth paying until something other
+than the model key is the limit.
+
+What the queue buys before any of that: a deploy that drains rather than
+drops, a restart that loses nothing, and a second worker that is a flag
+rather than a project.
+
+### The browser never sees a worker
+
+```
+  browser  ──►  API  ──►  Postgres  ◄──  worker
+```
+
+One arrow into the API, and the worker on the far side of the database.
+The browser's only endpoints are the API's; `/runs/{id}/stream` is an API
+route reading `run_events`, not a connection to whatever is producing them.
+
+This is not a convention to remember. It is what makes the rest true:
+
+- A worker with no inbound port cannot be reached, so it can run anywhere,
+  and a leaked reader token buys nothing on it.
+- Any API instance can serve any run, because the state is in the table and
+  not in the process working on it. Verified by restarting the API mid-run:
+  the run finished regardless, and the replacement process -- which had
+  never seen the run start -- replayed all sixteen of its events.
+- A worker can be redeployed, scaled or moved mid-run without a client
+  noticing anything but a gap in the steps.
+
+Guarded by `tests/worker/test_boundaries.py`: nothing under `src/worker/`
+may import a web framework, the worker stage declares no `EXPOSE`, and no
+frontend source names a host of its own.
+
+---
+
+## What the images actually weigh
+
+Measured, because the intuition is wrong. Splitting the graph into a worker
+is not what made the API smaller — the graph's own packages are about
+170 MB. The API's weight was CUDA, on a machine with no GPU.
+
+Inside the built image's site-packages, before and after (2026-09-06):
+
+```
+                    before    after
+  nvidia/           2724 MB       0     CUDA driver libraries
+  torch/            1127 MB   769 MB    CPU wheel instead of the CUDA one
+  pyarrow/           156 MB       0     nothing in src/ imports it; it came
+                                        in transitively and stopped when
+                                        bharat-courts dropped it at 0.4.0
+  transformers/      113 MB   113 MB
+  scipy/ + sklearn/  158 MB   158 MB
+  langgraph/           4 MB       0     worker image only
+  ─────────────────────────────────
+  site-packages     5501 MB  1445 MB
+  image             5.77 GB  1.53 GB
+```
+
+The worker is 1.64 GB: the same base, plus langgraph and the two packages
+its live-discovery fallback reaches.
+
+For scale: fastapi and psycopg together are **4 MB**. Everything else in
+that image is the model stack, and the API pulls it in for one reason —
+`/search` embeds and reranks the query in-process.
+
+Two changes got the 73%, and neither is the worker split:
+
+- **CPU-only torch.** `--index-url https://download.pytorch.org/whl/cpu`,
+  one build argument. `nvidia/` disappears and the torch wheel itself drops
+  by a third.
+- **Dependency extras.** `[project.dependencies]` is what the API needs;
+  `worker` adds langgraph, `ingest` adds pyarrow, beautifulsoup4 and the
+  court archives client — and `ingest` is in neither image, because those
+  jobs are run by hand against the database.
+
+The remaining 1.0 GB is torch, transformers, scipy and sklearn. It leaves
+with Phase 3 and not before.
+
+### If the box has a GPU
+
+The Dockerfile takes `TORCH_INDEX`, defaulting to the CPU wheels:
+
+```bash
+docker build --target worker \
+  --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu121 -t worker:gpu .
+```
+
+Then give the container the device (`--gpus all`, or compose's
+`deploy.resources.reservations.devices`). No code changes:
+sentence-transformers uses CUDA when torch reports it, and falls back when
+it does not — so the same source runs on both, and the image is what
+differs.
+
+That image is ~4 GB again, which is the trade: pay it on the machine where
+the GPU earns it, and keep the CPU image everywhere else. Which is the
+argument for Phase 3 — one GPU image serving every worker, rather than a
+GPU image *per* worker.
+
 ---
 
 ## The models are a service, not a library
 
 Every worker that runs retrieval loads the embedder and the cross-encoder
-itself — **1.2 GB measured**, per process. Two workers is two copies of
-identical weights, which is what caps the box at two.
+itself. Measured line by line, in one process (2026-09-06):
 
-The fix is to load them once, behind HTTP:
+```
+  bare python                                     11 MB
+  + psycopg, pydantic, the queue, the stores      40 MB
+  + the research graph, compiled                  77 MB
+  + live discovery                               163 MB
+  ────────────────────────────────────────────────────
+  a worker that calls a model SERVICE            163 MB
+
+  + torch                                        605 MB   (+442)
+  + sentence-transformers                        847 MB   (+242)
+  + the embedder, loaded                        1352 MB   (+505)
+  + the cross-encoder, loaded                   1453 MB   (+101)
+  ────────────────────────────────────────────────────
+  a worker that loads them itself (today)       1453 MB
+```
+
+**A worker is 163 MB of work and 1290 MB of model stack** — and 684 MB of
+that 1290 is torch and sentence-transformers themselves, not weights. Every
+extra worker process pays all of it again for an identical copy.
+
+The fix is to load them once, behind HTTP. **Built and measured
+2026-09-06:**
 
 ```
                  ┌──────────────────────┐
-                 │   INFERENCE SERVER   │   models loaded ONCE
-                 │  mpnet + reranker    │   ~1.4 GB, GPU if present
+                 │  embedder    1.20 GB │   TEI, one model per container
+                 │  reranker    0.84 GB │   loaded once, GPU if present
                  └──────────┬───────────┘
                             │  HTTP
           ┌─────────────────┼─────────────────┐
           ▼                 ▼                 ▼
-      worker 1          worker 2          worker 3     ~250 MB each
+      worker 1          worker 2          worker 3       148 MB each
 ```
 
-The arithmetic, from the measured numbers:
+A worker went from **1453 MB to 148 MB** resident, measured after a real
+turn, and imports no torch at all. Startup went with it:
 
-| Workers | Now (1.2 GB each) | With a model server |
+    models loaded in 20.3s          -> models ready in 0.1s (served over HTTP)
+
+The servers are two containers, not one: TEI serves a single model each.
+Their combined 2.04 GB is with the buffers sized down. TEI defaults to
+16384 batch tokens and 512 concurrent requests and pre-allocates for them,
+and the client never sends more than 32 texts at once, so the defaults were
+paying for traffic that does not exist:
+
+    reranker, default buffers    1.32 GB    6.11s over 50 passages
+    reranker, sized to traffic   0.88 GB    5.07s
+
+Smaller *and* faster, which is not the usual direction -- fewer, fuller
+batches beat more, emptier ones.
+
+**On CPU this is not a speed win, and was never going to be:**
+
+    reranking 50 passages, in-process PyTorch    4.73s
+    reranking 50 passages, TEI over HTTP         5.07s
+    reranking 50 passages, TEI on an RTX 3050    0.61s
+
+Seven percent slower per rerank, so about 0.7s on a turn that reranks
+twice. That is the price of the memory, and it is refunded many times over
+the moment the servers get a GPU -- which is the whole point of putting
+them somewhere a GPU can be.
+
+| Workers | In-process (1.45 GB each) | Served (2.04 GB once, +148 MB each) |
 |---|---|---|
-| 1 | 1.2 GB | 1.65 GB |
-| 2 | 2.4 GB | 1.9 GB |
-| 3 | 3.6 GB | 2.15 GB |
-| 8 | 9.6 GB | 3.65 GB |
+| 1 | 1.45 GB | 2.19 GB |
+| 2 | 2.91 GB | 2.34 GB |
+| 3 | 4.36 GB | 2.48 GB |
+| 8 | 11.6 GB | 3.23 GB |
 
-**Break-even is two workers.** At one it costs memory and buys nothing, so
-this is worth doing when a second worker is, and not before.
+**Break-even is two workers**, which is what the estimate said before any
+of it was built. At one it costs 0.7 GB and buys nothing.
+
+### Why it was safe to do at all
+
+Every vector in the corpus came from `all-mpnet-base-v2`. A server that
+embedded even slightly differently would mean re-embedding 35,601 sections
+and 332,025 chunks before search worked again, so this was checked before
+anything was written:
+
+    embeddings   worst cosine 0.999999955, worst |diff| 1.57e-07
+    reranking    ordering and top-10 identical
+
+Float32 rounding, not disagreement. The reranker's *scores* do differ --
+TEI returns a sigmoid where the local CrossEncoder returns the raw logit,
+so -6.2726 becomes 0.0019 -- which is harmless only because the sole
+caller keeps the order and discards the score. `tests/inference/` holds
+both checks, skipped when no server is running.
+
+### The switch
+
+`LEGAL_AI_EMBED_URL` and `LEGAL_AI_RERANK_URL`. Set, the model is called;
+unset, it is loaded in-process exactly as before. Nothing else changed:
+`embed()` and `rerank()` keep their signatures, so retrieval, the evals and
+the re-embed scripts are all unaware.
+
+A configured server that is down raises rather than falling back to a local
+load. A worker sized for 148 MB that quietly loads 1.3 GB instead trades a
+loud failure for an OOM kill later, on another machine, with nothing
+pointing back here.
 
 ### TGI or TEI
 
@@ -318,32 +528,42 @@ not because it makes a turn feel faster.
 
 ## The schema
 
+Built, in `src/api/runs/repository.py`:
+
 ```sql
 runs (
-  run_id           uuid primary key,
-  thread_id        text not null,
-  user_id          text not null,
-  kind             text not null default 'research',  -- research | draft
-  idempotency_key  text,               -- client-supplied, stops double-submit
-
-  status           text not null,      -- queued|running|done|failed|cancelled
-  attempts         int  not null default 0,
-  current_step     text,               -- 'research', 'drafting', ...
-
-  checkpoint       jsonb,              -- LangGraph state, for mid-graph resume
-  heartbeat_at     timestamptz,
-  created_at, started_at, finished_at timestamptz,
-  error            text
+  run_id        text primary key,
+  thread_id     text not null references threads on delete cascade,
+  user_id       text not null,
+  kind          text not null default 'research',  -- research | draft
+  status        text not null,      -- queued|running|done|failed|cancelled
+  current_step  text,               -- 'research', 'analyst', ...
+  payload       jsonb not null,     -- the job's whole input
+  error         text,
+  created_at, started_at, finished_at timestamptz
 )
 
 run_events (
-  run_id     uuid,
-  seq        int,                      -- monotonic per run; the SSE event id
-  kind       text,                     -- step | done | error
+  run_id     text references runs on delete cascade,
+  seq        int,                   -- monotonic per run; the SSE event id
+  kind       text,                  -- step | answer_chunk | done | error
   payload    jsonb,
   created_at timestamptz,
   primary key (run_id, seq)
 )
+```
+
+`payload` is what makes a worker on another machine possible: it reads the
+row and nothing from the request, so there is no shared memory, no session
+and no filesystem between the two.
+
+`attempts` and `heartbeat_at` are what the reaper reads: a row whose
+heartbeat has stopped is a row nobody owns, and one past `MAX_ATTEMPTS` is
+the job's fault rather than the worker's.
+
+The drafts table predates this and is unchanged:
+
+```sql
 
 drafts (
   draft_id       uuid primary key,
@@ -361,24 +581,27 @@ drafts (
 claims only the kinds it handles, so a second kind of work is a second
 value in one column rather than a second system.
 
-Two indexes carry most of the guarantees:
+Two partial indexes carry the hot paths:
 
 ```sql
--- One live run per thread, per kind. A draft may be prepared while a
--- question is still researching; two drafts of one thread at once is a
--- race worth refusing.
-create unique index one_live_run_per_thread on runs (thread_id, kind)
+-- "Is anything running on this thread", asked on every thread load.
+create index runs_thread_live_idx on runs (thread_id)
   where status in ('queued', 'running');
 
--- A resubmitted request attaches to the existing run instead of
--- starting a second one.
-create unique index run_idempotency on runs (thread_id, idempotency_key)
-  where idempotency_key is not null;
+-- The claim query, which every idle worker runs on every sweep.
+create index runs_queued_idx on runs (kind, created_at)
+  where status = 'queued';
 ```
 
-**What is not persisted:** the lede's word-by-word chunks. They are
-animation, and on reconnect the answer is already whole. Persisting ~7
-step events per run keeps the table trivial.
+One run per thread is enforced in the controller against the first of
+those, not by a unique index: the refusal has to reach the reader as a 409
+with something to read, and a constraint violation arrives as an exception
+with a DSN in it.
+
+**What the table carries:** every event, the lede's word-by-word chunks
+included. They were left out while producer and reader shared a process and
+an `asyncio.Queue`; with the producer in a worker, the table is the only
+wire between them. About twenty rows per run, deleted with the thread.
 
 ---
 
@@ -418,40 +641,61 @@ table, so nothing is special about the tab that started the run.
 
 ### Server restart mid-run
 
-The worker dies. Its row still says `running`, with a `heartbeat_at` that
-stops advancing. The reaper sees a stale heartbeat and either requeues the
-run (attempts < max) or fails it with a reason. With `checkpoint` set, the
-requeued run resumes at the node it reached rather than re-paying for
-planning and retrieval.
+A planned stop is already handled: SIGTERM asks the worker to finish the
+job in hand and then exit, so a deploy costs a drain and nothing else.
+Verified live 2026-09-05 -- the run was mid-graph, the worker took 24 more
+seconds, stored the answer and left.
+
+An unplanned death is handled too. The row says `running` with a
+`heartbeat_at` that stops advancing; every idle worker sweeps for rows whose
+heartbeat is older than `STALE_AFTER_SECONDS` (600s, comfortably past the
+graph's own 300s ceiling) and either requeues the run or, past three
+attempts, fails it with a reason and a terminal event.
+
+The requeued run resumes from the evidence the dead attempt found, so it
+re-pays for the analysis but not the search -- measured at 0.9s against
+~30s. The reaper can only guess: a worker deep in a model call and a worker that
+died look identical. So a run is occasionally requeued while its first
+worker is still alive, and both finish. `complete()` is the guard --
+`UPDATE ... WHERE status = 'running'`, in the same transaction as the answer
+write, so exactly one of them stores anything. Two assistant messages would
+be the visible half; duplicated case findings the real damage.
 
 ### Reader leaves, or presses cancel
 
-Set `status = 'cancelled'`. The worker checks between nodes and stops. That
-is why cancellation lands here and could never land in the current design:
-Python cannot interrupt the blocking call, but it *can* decline to start
-the next node.
+`POST /runs/{id}/cancel` sets `status = 'cancelled'`; the worker sees it at
+its next node and stops. A queued run never costs a model call at all; a
+running one stops at the next boundary, because Python cannot interrupt the
+call it is inside but *can* decline to start another.
+
+The thread screen has a **Stop** control in the progress pane. It reads
+"Stopping…" until the run's own stream reports the end, because asking to
+stop is not stopping: the worker finishes the node it is inside first.
 
 ### Retry after a crash
 
-The answer write is `INSERT … WHERE NOT EXISTS (answer for this run_id)`,
-in the same transaction that marks the run done. A retry that gets as far
-as writing twice writes once. This matters most for `_remember()` —
-duplicated case findings are wrong data, not a cosmetic bug.
+The run is requeued and worked again from the start. What makes that safe
+is that finishing is a race exactly one worker wins: `complete()` moves the
+row from `running` to `done` and returns whether this caller was the one
+that did, in the same transaction as the message write. A straggler that
+was declared dead and comes back finishes nothing.
 
 ### Overload
 
-Work waits in the `runs` table, not in RAM. Queue depth is a `SELECT
-count(*)`, which is also what lets the UI say "3rd in line, about 4
-minutes" instead of showing a spinner indistinguishable from a hang.
+Work waits in the `runs` table, not in RAM -- one worker takes one job at a
+time and the rest stay queued. Queue depth is a `SELECT count(*)`, which is
+also what would let the UI say "3rd in line, about 4 minutes" instead of a
+spinner indistinguishable from a hang. Nothing shows it yet; the number is
+there when a screen wants it.
 
 ---
 
 ## The drafting job
 
 A button beside the composer. It turns the conversation that just happened
-into a document the reader downloads. **Shipped**, on the detached run
-rather than on the queue; moving it onto `kind='draft'` is a change of
-where it executes, not of what it does.
+into a document the reader downloads. **Shipped**, and on the queue as
+`kind='draft'` since 2026-09-05 -- the same claim, the same worker, the
+same `runs` row; only the handler differs.
 
 ```
   [ 📄 Legal document ]  in the composer
@@ -595,58 +839,97 @@ their own kind:
     legal_ai/schemas/draft.py           the structure it returns
     legal_ai/knowledge/static/citation.py   an id rendered as a citation
     api/drafts/source.py                reading a thread into a draft's input
+    worker/drafting.py                  the job: read the thread, draft, store
 
-`agents/draft.py` already means "assemble the answer", which is why this
-one is `drafter.py` -- two unrelated senses of one word would be worse
+`agents/draft.py` already means "assemble the answer", which is why the
+agent is `drafter.py` -- two unrelated senses of one word would be worse
 than a slightly awkward name.
 
 **It is not a node in the research graph.** A document is not part of
 answering a question, so a node would draft one on every turn nobody asked
-for. It is an agent the orchestration calls when a reader presses the
-button, and it is silent otherwise.
+for. It is an agent the worker calls when a reader presses the button, and
+it is silent otherwise.
 
 ---
 
 ## Build order — each phase additive
 
-**Phase 1 — the tables, executed in-process.**
-Add `runs` and `run_events`. The existing detached task writes to them.
-No worker process yet.
-*Gets:* reconnect and replay, honest "still working" state, one-run-per-thread,
-double-submit protection.
-*Note:* the detached-run change this depends on is already written and
-awaiting commit.
+**Phase 1 — the tables. DONE (2026-09-05).**
+`runs` and `run_events`, `GET /runs/{id}` and `GET /runs/{id}/stream` with
+`Last-Event-ID` replay, `active_run` on the thread.
+*Got:* reconnect and replay, an honest "still working" state -- a row says
+whether a turn is running or died, where a five-minute clock used to guess.
 
-**Phase 2 — move execution to a worker, and the frontend to SSE.**
-The API stops running graphs; it only enqueues and watches. Workers claim
-with `SKIP LOCKED`. The connection manager takes delivery over, with
-`LISTEN/NOTIFY` in front of the polling that already works, and the
-frontend opens a stream instead of polling every three seconds.
-*Gets:* survives restart and deploy, cancellation, backpressure, horizontal
-scale, and a request cost per waiting reader that stops growing with the
-number of them.
+**Phase 2 — execution in a worker, delivery over SSE. DONE (2026-09-05).**
+`src/worker/` claims jobs with `FOR UPDATE SKIP LOCKED` and dispatches on
+`kind`; the API only enqueues. `NOTIFY run_queued` wakes an idle worker,
+`NOTIFY run_changed` wakes the connection manager, and both are latency
+alone -- the worker's sweep and the stream's heartbeat are what guarantee
+delivery. The frontend opens one stream instead of polling every three
+seconds, and asking and reopening are now the same code path.
+*Got:* survives restart and deploy, one run per thread, horizontal scale
+(`--scale worker=N`, no coordination), and a request cost per waiting
+reader that no longer grows with the number of them.
+*Not yet:* cancellation, and a reaper for a worker that dies without
+draining. Both Phase 4; the between-nodes check the worker already makes
+for a deleted run is the seam cancellation will use.
+*Verified:* 41 HTTP cases and 8 process-failure cases against containers,
+2026-09-06. Five bugs found and fixed in the pass -- see the QA record for
+that date.
 
-**Phase 3 — the models behind HTTP.**
-The embedder and the cross-encoder move into one inference service, so a
-worker is ~250 MB rather than 1.2 GB. Worth doing when a second worker is
-— break-even is two.
-*Gets:* more than two workers on one box, and a GPU that serves all of
-them rather than one.
+**Phase 3 — the models behind HTTP. DONE (2026-09-06).**
+Two TEI containers, one per model. `LEGAL_AI_EMBED_URL` and
+`LEGAL_AI_RERANK_URL` switch `embed()` and `rerank()` from loading to
+calling; unset, they load in-process as before.
+*Got:* a worker of **148 MB** rather than 1453, startup of 0.1s rather than
+20.3s, and one place to put a GPU. Verified interchangeable with the local
+models first -- worst cosine 0.999999955 -- so the corpus did not need
+re-embedding.
+*Not yet:* the GPU itself. `nvidia-container-toolkit` is not installed on
+this host, and the CUDA TEI image is a tag swap plus a device reservation
+once it is. Measured on this machine's RTX 3050: reranking 50 passages,
+5.12s on CPU against 0.61s on GPU, identical ranking.
 
-**Phase 4 — checkpoint and reaper.**
-Persist graph state per step; heartbeat and sweep.
-*Gets:* mid-run resume (stop paying twice), zombie detection, graceful drain.
+**Phase 4 — checkpoint, cancellation and reaper. DONE (2026-09-06).**
+A heartbeat written between nodes, a sweep on every idle worker, a cancel
+the worker honours at the same seam, a completion exactly one worker can
+win, and a checkpoint of the evidence a dead attempt found.
+*Got:* a killed worker's run comes back instead of stranding a reader
+forever; a reader who leaves stops paying; a requeued run cannot answer
+twice, and does not buy the search again.
+
+Verified live: a worker killed mid-run, its heartbeat aged, and the run
+swept back onto the queue. The second attempt logged `resuming with 10
+findings` and finished in **0.9s** rather than ~30s -- the research node
+never ran.
+
+**Only `findings` is carried.** It is where the time is (about 7s of
+planning and 11s of retrieval) and the only part of the graph channel that
+round-trips *provably*: Evidence is a pydantic model, so `model_dump` and
+`model_validate` are exact, and a test asserts the round trip including
+provenance. `ThreadContext` is a frozen dataclass and costs 1.3s to
+rebuild, so it is rebuilt rather than serialised.
+
+The restore is all-or-nothing. Anything unreadable is discarded whole and
+the run searches afresh, because half a list would put an answer's
+citations on evidence that was never properly rebuilt -- the silent
+degradation everything else here exists to prevent. And it applies only on
+the first round: the loop back from verification is asking for evidence the
+first pass did not find, and skipping that would answer the same question
+with the same gaps.
 
 Nothing in one phase is rewritten by the next. The schema above is the whole
-contract, and it is the reason this is worth designing before building.
+contract, and it is the reason this was worth designing before building.
 
 ---
 
 ## What this deliberately does not solve
 
-- **Speed.** A turn is ~119s, of which ~90s is two model calls and roughly
-  40s of that is free-tier rate-limit backoff. That is a separate axis and
-  a bigger user-facing win; see the timings in the session notes.
+- **Speed.** A warm turn is 18-40s: roughly 7s planning, 11s retrieval and
+  7s analysing. Retrieval is the largest share and 97% of it is the CPU
+  cross-encoder, which a GPU behind the model servers would take from ~5s
+  to 0.61s. The rest is two model calls on a free-tier key, and that same
+  quota is what caps throughput -- see the worker-count section.
 - **Model non-determinism.** The same question can produce a different
   answer on two runs. Reliability infrastructure cannot fix that and should
   not pretend to.

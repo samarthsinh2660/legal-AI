@@ -1,8 +1,8 @@
 """Polite, identified HTTP for every production source adapter.
 
-Same rate-limiting discipline as scripts/recon/common.py's polite_get,
-promoted here for production ingestion code — see
-docs/PROJECT_STRUCTURE.md §6 (probes and tools are separate code).
+Same rate-limiting discipline as the recon probes' polite_get, promoted
+here because ingestion runs unattended for hours and a source that blocks
+us costs a corpus, not a request.
 """
 
 from __future__ import annotations
@@ -32,9 +32,9 @@ def polite_get(
     """A rate-limited GET that retries transient network failures.
 
     A single SSL handshake timeout or dropped connection over an 800+
-    request run should not crash the whole run — see the real failure
-    that motivated this: docs/superpowers/plans/2026-08-15-ingestion-core-india-code-plan.md
-    Task 12's live run hit exactly this on request ~87.
+    request run must not cost the whole run. Not hypothetical: an
+    ingestion pass died on request ~87 of 845 for exactly this reason, and
+    everything it had fetched had to be fetched again.
     """
     host = urlparse(url).netloc
     merged_headers = {"User-Agent": USER_AGENT}

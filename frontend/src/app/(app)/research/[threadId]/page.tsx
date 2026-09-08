@@ -2,9 +2,9 @@ import { ResearchThread } from "@/features/thread/component/research-thread";
 import { Verification } from "@/features/thread/types";
 
 /**
- * Screen 3, in its first form: the conversation and the progress pane.
- * The source panel, the verification toggle and the citation drawer that
- * design/UX_FLOWS.md also puts on this screen are not built yet.
+ * The research thread, in its first form: the conversation and the
+ * progress pane. The source panel and the citation drawer the design also
+ * puts on this screen are not built yet.
  *
  * `params` and `searchParams` are Promises in Next 16 -- there is no
  * synchronous form left.

@@ -1,18 +1,24 @@
-"""Local embeddings -- the model is a config choice, not a hardcoded string.
+"""Embeddings -- the model is a config choice, not a hardcoded string.
 
 Set EMBEDDING_MODEL to override the default. Changing it requires
 re-embedding the whole corpus (scripts/reembed_corpus.py), because stored
 vectors and the column's declared dimension must agree, and vectors from
 different models are not comparable.
 
-Model selection rationale and benchmark numbers live in
-docs/phases/PHASE_2_QUERY_RETRIEVAL.md.
+The default was chosen by benchmark against this corpus, not by
+reputation. Changing it is a measurement, not a preference.
+
+Set LEGAL_AI_EMBED_URL and the model is called over HTTP instead of loaded
+here. Measured interchangeable with the in-process path -- worst cosine
+0.999999955 -- which is what lets a worker be 163 MB rather than 1453.
 """
 
 from __future__ import annotations
 
 import os
 from functools import lru_cache
+
+from legal_ai.inference import client
 
 # Registered models and their output dimensions. A model must be listed
 # here before use -- guessing a dimension silently corrupts the vector
@@ -48,6 +54,9 @@ def _model(name: str):
 
 
 def embed(text: str) -> list[float]:
+    url = client.embed_url()
+    if url:
+        return client.embed_texts([text], url)[0]
     vector = _model(model_name()).encode(text, normalize_embeddings=True)
     return vector.tolist()
 
@@ -59,6 +68,9 @@ def embed_many(texts: list[str], batch_size: int = 16) -> list[list[float]]:
     """
     if not texts:
         return []
+    url = client.embed_url()
+    if url:
+        return client.embed_texts(texts, url)
     vectors = _model(model_name()).encode(
         texts, batch_size=batch_size, normalize_embeddings=True, show_progress_bar=False
     )

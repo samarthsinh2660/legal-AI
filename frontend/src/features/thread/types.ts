@@ -8,12 +8,26 @@ import { z } from "zod";
  * them. Inventing them would be the same defect the backend spends its
  * effort avoiding, one layer up.
  */
+/** A run in flight on a thread, from `ThreadModel.active_run`. */
+export const ActiveRunSchema = z.object({
+  run_id: z.string(),
+  // A researched turn and a document draft are both runs, and they are
+  // shown differently -- "still researching" over a draft would be a false
+  // report of what is happening.
+  kind: z.enum(["research", "draft"]),
+  status: z.string(),
+  current_step: z.string().nullable().default(null),
+});
+
+export type ActiveRun = z.infer<typeof ActiveRunSchema>;
+
 export const ThreadSchema = z.object({
   thread_id: z.string(),
   title: z.string(),
   case_id: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
+  active_run: ActiveRunSchema.nullable().default(null),
 });
 
 export type Thread = z.infer<typeof ThreadSchema>;
@@ -45,15 +59,20 @@ export const MessageSchema = z.object({
 
 export type Message = z.infer<typeof MessageSchema>;
 
-export const ReplySchema = z.object({
-  text: z.string().nullable().optional(),
-  answer: z.record(z.string(), z.unknown()).nullable().optional(),
-  clarification_needed: z.string().nullable().optional(),
-  route: z.enum(["ANSWER", "RESEARCH"]),
-  verification_level: z.string().nullable().optional(),
+/**
+ * What sending a message returns.
+ *
+ * Not the answer. The answer is produced by a worker and arrives over
+ * `GET /runs/{run_id}/stream`; it is stored as a message either way, so a
+ * client that never watches still finds it by reloading the thread.
+ */
+export const StartedRunSchema = z.object({
+  run_id: z.string(),
+  thread_id: z.string(),
+  status: z.literal("queued"),
 });
 
-export type Reply = z.infer<typeof ReplySchema>;
+export type StartedRun = z.infer<typeof StartedRunSchema>;
 
 /**
  * One finished graph node. `node` is the stable key -- `label` is prose

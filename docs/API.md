@@ -10,9 +10,10 @@ POST /auth/login               a bearer token, and who it is for
 
 POST /threads                  start a research thread
 GET  /threads                  this user's threads
-POST /threads/{id}/messages    ask, or follow up
-POST /threads/{id}/messages/stream   the same, as Server-Sent Events
+POST /threads/{id}/messages    ask, or follow up -- returns a run, not an answer
 GET  /threads/{id}/messages    the conversation
+GET  /runs/{id}                one run's status
+GET  /runs/{id}/stream         watch it, as Server-Sent Events
 
 POST /cases                    create a matter
 GET  /cases                    this user's matters
@@ -48,17 +49,30 @@ export LEGAL_AI_JWT_SECRET="$(openssl rand -hex 32)"   # required, >= 32 bytes
 docker compose up -d
 ```
 
-That starts Postgres, Neo4j and the API. The schema in
-`src/api/databases/001_init.sql` is applied automatically on a **fresh**
-Postgres volume, before the server accepts connections. An existing volume
-is left alone -- to re-apply it, remove the volume.
+That starts Postgres, Neo4j, the API, one worker, and the two model servers
+(`docker-compose` on a host with the standalone binary). **The API and the
+worker are both needed:** the API queues work and the worker does it, so an
+API on its own accepts questions that nothing will ever answer.
 
-The API alone, against containerised stores:
+The model servers are optional in the sense that unsetting
+`LEGAL_AI_EMBED_URL` and `LEGAL_AI_RERANK_URL` makes each process load the
+models itself — correct, and ~1.3 GB heavier per process.
+
+`--scale worker=N` adds more and they need no coordination, but one is the
+right number while they share a free-tier model key: three of them spent
+45 minutes rate-limiting each other during QA.
+
+The schema in `src/api/databases/001_init.sql` is applied automatically on a
+**fresh** Postgres volume, before the server accepts connections. An
+existing volume is left alone -- to re-apply it, remove the volume.
+
+By hand, against containerised stores:
 
 ```bash
 docker compose up -d postgres neo4j
 export LEGAL_AI_JWT_SECRET="$(openssl rand -hex 32)"
 .venv/bin/uvicorn api.main:app --reload --port 8000
+.venv/bin/python -m worker        # in another shell
 ```
 
 Postgres and Neo4j must be up either way. Without them the
@@ -73,7 +87,9 @@ dying.
 | `LEGAL_AI_JWT_SECRET` | *(unset — every request rejected)* | Token signing key. Must be at least 32 bytes. |
 | `DATABASE_URL` | `postgresql://legal_ai:legal_ai_dev@localhost:5433/legal_ai` | Postgres DSN. |
 | `LEGAL_AI_DB_POOL_MIN` / `_MAX` | `1` / `10` | Connection pool size. |
-| `LEGAL_AI_RESEARCH_TIMEOUT` | `300` | Seconds before a research request answers 504. |
+| `LEGAL_AI_RESEARCH_TIMEOUT` | `300` | Seconds before the worker gives up on a run. |
+| `LEGAL_AI_EMBED_URL` | *(unset — loaded in-process)* | A Text Embeddings Inference server holding `all-mpnet-base-v2`. Set, the model is called; unset, it is loaded, which costs ~1.2 GB per process. |
+| `LEGAL_AI_RERANK_URL` | *(unset — loaded in-process)* | The same, for the cross-encoder. |
 | `LEGAL_AI_VERIFICATION_LEVEL` | `quick` | Default mode when a request omits one. |
 | `LEGAL_AI_TRUST_PROXY_HEADER` | `false` | Read `X-Forwarded-For` for rate limiting. Only true behind a proxy. |
 | `API_PORT` | `8000` | Host port for the API container. |
@@ -216,15 +232,125 @@ A follow-up is **rewritten into a standalone question before retrieval** --
 "what about bombay" retrieves nothing on its own. The rewrite is a retrieval
 device: what is stored and shown back is what the user typed.
 
+**This returns a run, not an answer.**
+
 ```json
 {
   "success": true,
   "data": {
-    "text": "plain-text rendering",
-    "answer": { "...": "the same DraftAnswer shape as before" },
-    "route": "RESEARCH",
-    "verification_level": "quick"
+    "run_id": "f6d39660f5924e3fa436deec05db36a9",
+    "thread_id": "339b640f1a3b419bb2b5da9cdb6c8946",
+    "status": "queued"
   }
+}
+```
+
+202, in about 20ms. Answering takes 30-130 seconds and is done by a worker
+process, so the request queues the job and returns. What the client does
+next is `GET /runs/{run_id}/stream`.
+
+The question is stored before the response is sent, so it is in the thread
+whatever happens to the connection. The reply is stored when the run
+finishes, so a client that never watches still finds it by reloading
+`GET /threads/{id}/messages` -- watching is how it arrives sooner, not how
+it arrives at all.
+
+**One run per thread.** A second message while one is in flight is a 409
+`run_in_progress`: two turns answering the same thread would interleave
+their messages, and each would rewrite the other's follow-up against a
+history that was still moving.
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `invalid_request` | Malformed body |
+| 401 | `not_authenticated` | No usable token |
+| 404 | `not_found` | No such thread, or not yours |
+| 409 | `run_in_progress` | This thread is already answering something |
+| 429 | `rate_limited` | Past the per-user AI budget |
+
+### `GET /runs/{id}/stream`
+
+Watch a run, as Server-Sent Events. Not the request that starts one: this
+attaches to a run already going, which is what a reopened tab, a second
+device and a recovered connection all need. Any number of watchers, on any
+API instance.
+
+```
+id: 3
+event: step
+data: {"node": "research", "label": "Searching statutes and judgments"}
+
+: ping
+
+id: 4
+event: answer_chunk
+data: {"text": "Punishment under Section 138 "}
+
+id: 5
+event: done
+data: {"text": "...", "answer": {...}, "route": "RESEARCH"}
+```
+
+| Event | Data |
+|---|---|
+| `step` | `{"node": "research", "label": "Searching statutes and judgments"}` |
+| `answer_chunk` | `{"text": "a few words "}` -- the lede, in pieces |
+| `done` | the finished turn: `text`, `answer`, `clarification_needed`, `route`, `verification_level` |
+| `error` | `{"code": "...", "message": "..."}` |
+
+Every event carries `id`, a **dense per-run sequence number**. Send it back
+as `Last-Event-ID` and the stream replays from there and then continues
+live, so a reconnect costs only what was actually missed. An unreadable
+`Last-Event-ID` replays the whole run: replaying too much is cheap, losing
+an event is not.
+
+`: ping` every 20 seconds at most. Two reasons, neither cosmetic: proxies
+idle a silent connection out at about 60 seconds, and Postgres `NOTIFY` is
+not durable -- so the stream reads `runs` on the same beat, and a dropped
+notification costs latency rather than stranding the reader. Events
+themselves arrive on the notification, in milliseconds.
+
+`node` is the graph's own node name and is the stable key -- bind UI rows to
+it, not to `label`, which is prose and may be reworded. The seven nodes are
+`document`, `context_builder`, `clarification`, `research`, `analyst`,
+`verification`, `draft`.
+
+**Steps are emitted when a node actually finishes.** There is no timer and
+no interpolation: a slow search shows as a step that sits there, which is
+the truth. `design/UX_FLOWS.md` requires this pane to "show real work, never
+fake thinking", and a progress bar that advances on a clock is exactly the
+thing it forbids.
+
+The stream ends when the run does. It also ends after 600 seconds with an
+`error` event of code `timeout`, which says the watching stopped and not
+that the run did.
+
+### `GET /runs/{id}`
+
+One run's status, without watching it: `status` (`queued`, `running`,
+`done`, `failed`, `cancelled`), `kind`, `current_step`, `error`, and its
+timestamps.
+
+`GET /threads/{id}` carries the same thing as `active_run` when something is
+in flight, which is how a reopened thread knows whether to attach:
+
+```json
+{ "run_id": "...", "kind": "research", "status": "running", "current_step": "analyst" }
+```
+
+`null` there and a trailing user message with no reply means the turn did
+not finish -- an honest state, not a guess from a clock.
+
+### The reply, when it arrives
+
+Whether read from the `done` event or from `GET /threads/{id}/messages`:
+
+```json
+{
+  "text": "plain-text rendering",
+  "answer": { "...": "the DraftAnswer shape in 4.1" },
+  "route": "RESEARCH",
+  "verification_level": "quick"
 }
 ```
 
@@ -259,12 +385,9 @@ composition fails — the reply says so and **`answer` is `null`**:
 
 ```json
 {
-  "success": true,
-  "data": {
-    "text": "I could not answer that from this conversation. …",
-    "answer": null,
-    "route": "ANSWER"
-  }
+  "text": "I could not answer that from this conversation. …",
+  "answer": null,
+  "route": "ANSWER"
 }
 ```
 
@@ -273,58 +396,11 @@ client should render as a dead end rather than as a result. It does not fall
 back to the previous reply, and it does not quietly research instead: a turn
 that never touched the corpus must not read like one that did.
 
+A run that timed out or failed stores **no assistant message**: a half-turn
+in the thread would be resolved against by the next rewrite as though it
+were an answer.
+
 **The four claim slots stay four slots** inside `answer` -- see §4.1 below.
-
-| Status | `code` | When |
-|---|---|---|
-| 400 | `invalid_request` | Malformed body |
-| 401 | `not_authenticated` | No usable token |
-| 404 | `not_found` | No such thread, or not yours |
-| 429 | `rate_limited` | Past the per-user AI budget |
-| 504 | `timeout` | The run outlived the limit |
-
-A 504 stores nothing: a half-turn in the thread would be resolved against by
-the next rewrite as though it were an answer.
-
-### `POST /threads/{id}/messages/stream`
-
-The same turn, as Server-Sent Events. Same body, same reply -- the
-difference is that you see the wait.
-
-A researched answer takes **one to two minutes**. Measured on a real run:
-
-```
-  0.4s  step  Reading your documents
-  0.4s  step  Understanding the question
-  0.4s  step  Checking what is missing
- 77.7s  step  Searching statutes and judgments      <- 63% of the wall time
-123.1s  step  Drafting the analysis
-123.1s  step  Checking every claim against its source
-123.2s  step  Assembling the answer
-123.2s  done
-```
-
-Without this a client shows a blank pane for two minutes and the user
-assumes the page has hung: the answer is right and the product looks broken.
-
-| Event | Data |
-|---|---|
-| `step` | `{"node": "research", "label": "Searching statutes and judgments"}` |
-| `done` | the same body `POST /messages` returns |
-| `error` | `{"code": "...", "message": "..."}` |
-
-`node` is the graph's own node name and is the stable key -- bind UI rows to
-it, not to `label`, which is prose and may be reworded. The seven nodes are
-`document`, `context_builder`, `clarification`, `research`, `analyst`,
-`verification`, `draft`.
-
-**Steps are emitted when a node actually finishes.** There is no timer and no
-interpolation: a slow search shows as a step that sits there, which is the
-truth. `design/UX_FLOWS.md` requires this pane to "show real work, never fake
-thinking", and a progress bar that advances on a clock is exactly the thing
-it forbids.
-
-The plain `POST /messages` still exists for clients that would rather block.
 
 ### 4.1 The answer shape
 
@@ -531,15 +607,22 @@ Two invariants hold across both, and are tested:
 
 ---
 
-## 8. Long-running requests
+## 8. Long-running work
 
-A research call runs the graph in a worker thread under a timeout, so it
-cannot block the event loop and stall `/health`.
+No HTTP request waits on a model call. Asking a question writes a row to
+`runs` and returns; a worker process claims it with `FOR UPDATE SKIP
+LOCKED` and answers it. The API never runs the graph, which is why a deploy,
+a crash or a closed laptop costs the progress view and nothing else.
 
-The timeout bounds **the client's wait, not the run**. Python cannot
-interrupt a blocking call, so a request that answers 504 leaves a thread
-still working and still spending model budget until it finishes. Cancelling
-properly needs a job queue.
+`LEGAL_AI_RESEARCH_TIMEOUT` (default 300s) bounds **what is watched, not
+what runs**. Python cannot interrupt a blocking call, so a run past its
+deadline keeps spending model budget until it returns; stopping it properly
+needs a cancellation flag the worker checks between nodes, which is Phase 4
+of `docs/RELIABILITY_ARCHITECTURE.md`.
+
+A worker stopped with SIGTERM finishes the job in hand and then exits, so a
+rolling deploy loses no answer. A worker *killed* leaves its row saying
+`running` until the reaper exists -- also Phase 4.
 
 ---
 
@@ -560,8 +643,10 @@ Present because they are absent, not because they are planned.
 - **`POST /auth/register` is an enumeration surface** — 409 reveals that an
   address exists. Registration cannot hide this the way login does; rate
   limiting is the only mitigation.
-- **No cancellation.** `/messages/stream` reports progress, but a client
-  that disconnects leaves the run going. See §8.
+- **No cancellation.** A client that disconnects leaves the run going and
+  the model budget spent. See §8.
+- **A worker killed mid-run strands its row.** SIGTERM drains; `kill -9`
+  and a lost machine leave `status = running` with nothing coming. See §8.
 - **No per-user audit** of who asked what.
 - **No password change, reset, or email verification.** An account is an
   address and a hash; a forgotten password needs a DBA.

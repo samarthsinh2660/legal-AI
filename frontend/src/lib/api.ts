@@ -1,7 +1,7 @@
 /**
  * The one HTTP client. Every call to the backend goes through here.
  *
- * The backend envelopes every response (docs/API.md §2):
+ * The backend envelopes every response:
  *
  *     { "success": true,  "data": ... }
  *     { "success": false, "error": { "code", "message" } }

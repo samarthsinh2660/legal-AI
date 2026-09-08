@@ -55,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //
   // What this gives up is revocation: an account deleted server-side still
   // renders as signed in until its token expires. With no denylist behind
-  // it (docs/API.md §9) the old `/auth/me` check could not detect a revoked
+  // it -- there is no denylist -- the old `/auth/me` check could not detect a revoked
   // token either, so nothing real is lost.
   const user = useSyncExternalStore(
     session.subscribe,

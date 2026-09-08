@@ -201,10 +201,9 @@ def attach_case(
     """Bind an unattached thread to a case, seeding it with what that case
     already established.
 
-    Per design/UX_FLOWS.md a thread starts caseless and may be attached at
-    any point. Attaching is a revision: the case's findings come in, and any
-    thread finding that depended on `case_id` is re-derived rather than
-    assumed to still hold.
+    A thread starts caseless and may be attached at any point. Attaching is
+    a revision: the case's findings come in, and any thread finding that
+    depended on `case_id` is re-derived rather than assumed to still hold.
     """
     revised = revise(context, case_id=case_id)
     existing = {(f.claim, f.evidence_ids) for f in revised.established_findings}

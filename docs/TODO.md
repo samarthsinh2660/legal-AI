@@ -96,12 +96,16 @@ nobody can open cannot be checked, which is most of its value.
 ## 2. Most of the UI has still never been looked at
 
 Partly closed. The dashboard, a research thread, the composer and the
-drafting card have now been driven in a browser and a client demo ran
-against the deployed app. Still unverified by eye: the provenance badges,
-the four evidence blocks, the graph's hover-dim and drag, the confirm
-dialogs, and every focus state.
+drafting card have been driven in a browser and a client demo ran against
+the deployed app. Still unverified by eye: the provenance badges, the four
+evidence blocks, the graph's hover-dim and drag, the confirm dialogs, and
+every focus state.
 
-Those are verified by test and by API and by nothing else.
+Those are verified by test and by API and by nothing else. The run-stream
+rewrite (2026-09-05) is in the same position on the browser side: the
+component is covered by tests against a real SSE stream, and the whole
+path was driven live through the API, but nobody has watched the reopened
+thread reattach on a screen.
 
 ---
 
@@ -148,23 +152,38 @@ tuned.
 
 ## 4. Smaller, known
 
-- **Live progress after a reconnect.** A reopened tab gets the answer but
-  not the steps. The answer is safe and the thread now says "Still
-  researching" rather than claiming the run failed; what is missing is the
-  progress itself, because the event queue is created per HTTP connection,
-  holds no history and is addressable by nothing.
-
-  Phase 1 of `docs/RELIABILITY_ARCHITECTURE.md` is the fix: `run_events`
-  with a sequence number, replayed on `Last-Event-ID`. Shared storage, not
-  an in-process registry -- a registry finds nothing when the reconnect
-  lands on the other worker.
-
-- **Cancellation, and surviving a deploy.** A disconnect no longer loses
-  the answer, but nothing stops the run either -- a reader who has gone
-  still spends the full model budget, and an in-memory task dies with the
-  process on every rebuild. Both are Phase 2 of
-  `docs/RELIABILITY_ARCHITECTURE.md`; Python cannot interrupt the blocking
-  call, but a worker can decline to start the next step.
+- **Cancelling is not automatic.** The Stop button and the endpoint behind
+  it exist, but a reader who simply closes the tab still pays: nothing
+  watches for an abandoned stream. Whether it should is a product decision
+  -- a run that keeps going is sometimes what the reader wants.
+- **The images still carry torch, though nothing running uses it.** The
+  models now live in two TEI containers and a worker is 148 MB resident,
+  but `sentence-transformers` stays a dependency because unsetting
+  `LEGAL_AI_EMBED_URL` must still work -- that is the local path the tests
+  and a laptop use. Dropping it from the service images would take ~1 GB
+  off each and make the model servers mandatory. Worth doing; it is a
+  decision about whether the in-process path is still supported, not a
+  refactor.
+- **One worker is the honest number, and the model key is why.** Three
+  workers took 62 rate-limited responses between them in 45 minutes of QA,
+  because they share one free-tier key. The queue scales; the quota does
+  not. Raise the key before the worker count -- and when you do, add
+  threads to one worker before adding containers: a warm worker is 1.17 GB
+  resident, almost all of it models that threads share and processes do
+  not.
+- **A warm turn is 18-40s, and the biggest single piece is the CPU
+  reranker, not a model call.** Measured: retrieval 43% of the turn, and
+  97% of retrieval is one cross-encoder, run twice (once per phrasing).
+  On this machine's GPU the same model over the same shortlist takes 0.61s
+  instead of 5.12s, with an identical ranking -- so it is the one speed
+  lever that costs no accuracy. Now that the reranker is its own container,
+  it needs `nvidia-container-toolkit` on the host (not installed) and the
+  CUDA TEI tag with a device reservation -- one GPU for every worker rather
+  than one each.
+  The rest is ~7s planning and ~7s analysing on a free-tier key.
+  `HF_HUB_OFFLINE=1` would cut the worker's 26s startup to 6s, but it fails
+  outright on an empty model cache, which is a bad default for a first
+  deploy.
 - **No landing page.** An unauthenticated visitor gets the login screen
   with no explanation of what the product is.
 - **Account recovery.** No password change, reset or email verification. A

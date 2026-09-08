@@ -54,10 +54,18 @@ SECTION_CHARS = 4000
 
 # Said when the planner found no legal issue to search for. Carries no
 # legal disclaimer: there is no legal information here to disclaim.
+#
+# Deliberately about the question rather than about the system. The planner
+# returns nothing for two different things -- a question that is not law at
+# all, and a legal one with no researchable issue in it -- and this reply
+# cannot tell them apart. "I only research Indian law" was true of the
+# first and false of the second: it told a reader asking about a section of
+# the Negotiable Instruments Act that we do not cover Indian law. Of the
+# two states to collapse into, that was the wrong one.
 OUT_OF_SCOPE = (
-    "I only research Indian law -- statutes and judgments -- so I cannot "
-    "help with that. Ask a legal question and I will search the corpus and "
-    "show you what the answer rests on."
+    "I could not find a legal issue in that to research. Ask a legal "
+    "question -- a provision, a dispute, a situation -- and I will search "
+    "the corpus and show you what the answer rests on."
 )
 
 PROMPT = """You are an Indian legal analyst. Below are provisions and

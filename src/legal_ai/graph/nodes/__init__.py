@@ -124,6 +124,12 @@ def research(state: ResearchState) -> dict:
     from legal_ai.agents.supervisor import research as run_research
     from legal_ai.context.serialization import render
 
+    # Evidence carried over from an attempt that died. Only on the first
+    # round: the loop back from verification is asking for *more*, and
+    # skipping that would answer the same question with the same gaps.
+    if state.get("findings") and state.get("research_rounds", 0) == 0:
+        return {"searched": True, "research_rounds": 1}
+
     context = state.get("context")
     result = run_research(
         state["question"],

@@ -41,11 +41,11 @@ async def new_draft(request: Request, thread_id: str):
     and produces the document that follows from it.
 
     Returns at once with an id. The document takes a model call and a
-    render, so the reader polls `status` and the file appears -- the same
-    shape a researched answer takes, and for the same reason.
+    render, so the reader watches the thread's run and the file appears --
+    the same shape a researched answer takes, and for the same reason.
     """
     with connection() as conn:
-        result = await start_draft(conn, request.state.user_id, thread_id)
+        result = start_draft(conn, request.state.user_id, thread_id)
     if isinstance(result, Failure):
         return respond(result)
     return success(StartedDraftModel(**result.value))

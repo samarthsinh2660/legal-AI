@@ -1,8 +1,10 @@
-"""Drafting a document from a thread.
+"""Asking for a document to be drafted.
 
-The run is detached from the request, like a researched turn, so the
-reader who closes the tab still gets the document. Ownership is enforced
-through the thread: a draft carries no user_id of its own.
+The drafting is a queued job, like a researched turn, so the reader who
+closes the tab still gets the document. Ownership is enforced through the
+thread: a draft carries no user_id of its own.
+
+What the API does is here; what the worker does is tests/worker.
 """
 
 from __future__ import annotations
@@ -11,22 +13,9 @@ import pytest
 
 from api.databases.postgres import connection
 from api.drafts import controller, repository
+from api.runs import repository as runs
 from api.threads.repository import add_message, create_thread, ensure_thread_schema
 from api.utils.errors import Failure, Ok
-
-class _NotRun:
-    """Stands in for the detached task. The drafting run itself is covered
-    in tests/drafting; here the question is only what the request returns."""
-
-    def add_done_callback(self, _callback):
-        pass
-
-
-def _detach(monkeypatch):
-    monkeypatch.setattr(
-        controller.asyncio, "create_task", lambda coro: coro.close() or _NotRun()
-    )
-
 
 USER = "test-user-draft"
 OTHER = "test-user-draft-other"
@@ -36,6 +25,7 @@ OTHER = "test-user-draft-other"
 def _clean():
     with connection() as conn:
         ensure_thread_schema(conn)
+        runs.ensure_run_schema(conn)
         repository.ensure_draft_schema(conn)
         conn.execute("DELETE FROM threads WHERE user_id LIKE 'test-user-draft%'")
         conn.commit()
@@ -57,43 +47,50 @@ def _thread(conn, user=USER):
     return thread
 
 
-@pytest.mark.asyncio
-async def test_a_draft_starts_and_returns_an_id(monkeypatch):
-    _detach(monkeypatch)
-
+def test_a_draft_starts_and_returns_an_id():
     with connection() as conn:
         thread = _thread(conn)
-        result = await controller.start_draft(
-            conn, USER, thread.thread_id)
+        result = controller.start_draft(conn, USER, thread.thread_id)
 
     assert isinstance(result, Ok)
     assert result.value["status"] == "running"
 
 
-@pytest.mark.asyncio
-async def test_a_thread_that_is_not_yours_is_a_404(monkeypatch):
-    _detach(monkeypatch)
+def test_a_draft_is_queued_for_a_worker_to_pick_up():
+    """The whole request. A tab closed a second later costs nothing,
+    because nothing about the job lives in this process.
 
+    Read from the row rather than claimed: a real worker against the same
+    database would take it first, and the question here is what was
+    written, not who gets it.
+    """
     with connection() as conn:
         thread = _thread(conn)
-        result = await controller.start_draft(
-            conn, OTHER, thread.thread_id)
+        result = controller.start_draft(conn, USER, thread.thread_id)
+        row = conn.execute(
+            "SELECT kind, payload FROM runs WHERE thread_id = %s", (thread.thread_id,)
+        ).fetchone()
+
+    assert row[0] == "draft"
+    assert row[1]["draft_id"] == result.value["draft_id"]
+
+
+def test_a_thread_that_is_not_yours_is_a_404():
+    with connection() as conn:
+        thread = _thread(conn)
+        result = controller.start_draft(conn, OTHER, thread.thread_id)
 
     assert isinstance(result, Failure)
     assert result.status == 404
 
 
-@pytest.mark.asyncio
-async def test_two_drafts_of_one_thread_cannot_race(monkeypatch):
+def test_two_drafts_of_one_thread_cannot_race():
     """Two would leave the reader two cards and no way to tell which is
     the document they asked for."""
-    _detach(monkeypatch)
-
     with connection() as conn:
         thread = _thread(conn)
-        await controller.start_draft(conn, USER, thread.thread_id)
-        again = await controller.start_draft(
-            conn, USER, thread.thread_id)
+        controller.start_draft(conn, USER, thread.thread_id)
+        again = controller.start_draft(conn, USER, thread.thread_id)
 
     assert isinstance(again, Failure)
     assert again.status == 409
@@ -145,11 +142,15 @@ def test_a_thread_with_no_established_law_cannot_be_drafted_from():
 
 
 def test_the_filename_comes_from_what_the_reader_asked():
-    assert controller._filename(
+    from worker.drafting import _filename
+
+    assert _filename(
         "NOTICE UNDER SECTION 138", "Verma v. Malhotra"
     ) == "notice_under_section_138.docx"
 
 
 def test_an_untitled_thread_still_names_its_file():
-    assert controller._filename("", "Verma v. Malhotra").startswith("verma")
-    assert controller._filename("", "").endswith(".docx")
+    from worker.drafting import _filename
+
+    assert _filename("", "Verma v. Malhotra").startswith("verma")
+    assert _filename("", "").endswith(".docx")

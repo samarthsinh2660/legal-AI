@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 /**
  * Molecule: the hero visual -- a research interface mid-run.
  *
- * design/UX_FLOWS.md asks for "a realistic research interface mid-run"
+ * The landing page shows "a realistic research interface mid-run"
  * rather than an abstract AI illustration, and these are the product's own
  * step labels. The spinner is the only motion on the page; it stops under
  * prefers-reduced-motion, where the step still reads correctly.

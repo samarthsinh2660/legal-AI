@@ -30,7 +30,7 @@ export type Page<T> = {
 };
 
 /** Where a claim came from -- the product's core idiom. Rendered as a
- *  badge everywhere a source appears; see design/DESIGN_SYSTEM.md. */
+ *  badge everywhere a source appears. */
 export enum Provenance {
   Static = "static",
   Dynamic = "dynamic",

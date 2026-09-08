@@ -170,6 +170,12 @@ def generate(
     config = {"max_output_tokens": max_output_tokens} if max_output_tokens else None
     client = _client()
     failures: dict[str, str] = {}
+    # The 429 backoff below is paid at most once per call. It exists to tell
+    # a per-minute limit from a daily cap, and the first model's wait
+    # answers that for the whole chain -- if eight seconds did not clear it,
+    # eight more will not clear it for the next model either. Paying it per
+    # model cost a measured 45 seconds of a 108-second turn (2026-09-06).
+    backed_off = False
 
     for model in _healthy(chain) or chain:
         for attempt in range(MAX_RETRIES_PER_MODEL):
@@ -199,9 +205,10 @@ def generate(
                 if kind == "transient" and attempt + 1 < MAX_RETRIES_PER_MODEL:
                     time.sleep(2 * (attempt + 1))
                     continue
-                if kind == "exhausted" and attempt == 0:
+                if kind == "exhausted" and attempt == 0 and not backed_off:
                     # One backoff, in case this is the per-minute limit
                     # rather than the daily cap.
+                    backed_off = True
                     time.sleep(RATE_LIMIT_BACKOFF_SECONDS)
                     continue
                 break  # missing, capped, or out of retries -- next model

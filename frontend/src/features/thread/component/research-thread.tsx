@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Send } from "lucide-react";
+import { Send } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
 
@@ -41,7 +41,7 @@ export function ResearchThread({
     messages,
     isLoading,
     loadError,
-    awaitingAnswer,
+    unfinished,
     draft,
     setDraft,
     verification,
@@ -49,6 +49,8 @@ export function ResearchThread({
     steps,
     streamingLede,
     isSending,
+    stop,
+    stopping,
     sendError,
     send,
   } = useResearchThread(threadId);
@@ -129,34 +131,25 @@ export function ResearchThread({
           ),
         )}
         {startError && <p className="text-sm text-danger">{startError}</p>}
-        {isSending && <ProgressSteps steps={steps} />}
-        {/* The question is stored before research runs, so a reopened
-            thread can end on a question with no reply yet. The run is
-            detached from the request and stores its answer either way, so
-            while one is still in flight this waits for it and polls; past
-            the ceiling it says the run did not finish instead. */}
-        {!isSending &&
-          messages.length > 0 &&
-          messages[messages.length - 1].role === "user" &&
-          (awaitingAnswer ? (
-            <p className="flex items-center gap-2 text-sm text-ink-muted">
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              Still researching. This keeps running whether or not the page is
-              open &mdash; the answer will appear here.
-            </p>
-          ) : (
-            <p className="text-sm text-ink-muted">
-              This didn&apos;t finish. Ask it again below.
-            </p>
-          ))}
+        {isSending && (
+          <ProgressSteps steps={steps} onStop={() => void stop()} stopping={stopping} />
+        )}
+        {/* The question is stored before the work starts, so a reopened
+            thread can end on a question with no reply yet. A run row says
+            which of the two this is -- still going, or over without an
+            answer -- rather than a clock guessing. */}
+        {unfinished && (
+          <p className="text-sm text-ink-muted">
+            This didn&apos;t finish. Ask it again below.
+          </p>
+        )}
         {/* The lede, revealed as it streams in. Same typography as
             AnswerView's own lede paragraph, so the swap to the finished
             message -- once the query invalidation lands it -- is not a
             visible jump. Everything else (claims, sources, badges) still
             arrives at once with the final message; only the one paragraph
-            a reader reads first benefits from streaming. See
-            docs/SPEED_2026_09_03.md #1. */}
-        {isSending && streamingLede && (
+            a reader reads first benefits from streaming. */}
+        {streamingLede && (
           <article className="rounded-md border border-line bg-surface-card p-6">
             <p className="text-lg leading-[1.7] text-ink">{streamingLede}</p>
           </article>

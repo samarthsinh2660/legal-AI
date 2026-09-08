@@ -3,24 +3,26 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from api.utils.fields import Text
+
 
 class NewThreadRequest(BaseModel):
-    title: Optional[str] = Field(default=None, max_length=200)
+    title: Optional[Annotated[Text, Field(max_length=200)]] = None
     case_id: Optional[str] = None
 
 
 class RenameThreadRequest(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
+    title: Annotated[Text, Field(max_length=200)]
 
 
 class MessageRequest(BaseModel):
     # Same ceiling as a research question: the message is embedded in every
     # downstream prompt, and the fan-out multiplies it.
-    message: str = Field(min_length=1, max_length=4000)
+    message: Annotated[Text, Field(max_length=4000)]
 
     # The case's own files to put in front of the Document Agent for this
     # turn. The case itself comes from the thread, not the request: a caller
@@ -44,21 +46,23 @@ class ThreadModel(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # The run in flight on this thread, if there is one. What a reopened
+    # tab reads to decide whether to attach to a stream -- without it the
+    # only signal was a question with no answer under it, which is also
+    # what a run that died looks like.
+    active_run: Optional[dict] = None
 
-class ReplyModel(BaseModel):
-    """One turn's answer.
 
-    `route` is echoed so a client can tell an answer drawn from the thread
-    from one that searched the corpus -- they carry different authority, and
-    a UI that shows them identically is making a claim we did not.
+class StartedRunModel(BaseModel):
+    """What sending a message returns.
+
+    Not the answer. The answer takes 30-130 seconds and is produced by a
+    worker, so the request hands back the id of the run that will produce it
+    and the client watches `GET /runs/{run_id}/stream`. The reply itself
+    arrives as that run's terminal event and is stored as a message either
+    way, so a client that never watches still finds it in the thread.
     """
 
-    text: Optional[str] = None
-    answer: Optional[dict[str, Any]] = None
-
-    # The graph halted to ask for a missing fact. A real outcome, not an
-    # error: the client needs the user's next sentence, not a fixed request.
-    clarification_needed: Optional[str] = None
-
-    route: Literal["ANSWER", "RESEARCH"]
-    verification_level: Optional[str] = None
+    run_id: str
+    thread_id: str
+    status: Literal["queued"]

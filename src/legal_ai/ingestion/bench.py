@@ -18,7 +18,8 @@ thousands of documents, and a wrong bench size is worse than a missing one
 to guess about, and returns nothing.
 
 High Court judgments use per-court formats that share no common shape and
-are not handled here; see docs/phases/PHASE_7_ADVANCED_GRAPHRAG.md.
+are not handled here. They return nothing rather than a guess, for the same
+reason as everything else in this file.
 """
 
 from __future__ import annotations

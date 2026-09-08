@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field
 
+from api.utils.fields import Text
+
 
 class NewCaseRequest(BaseModel):
-    """What `design/UX_FLOWS.md` "Creating a case" collects, and nothing more.
+    """What creating a case collects, and nothing more.
 
     `description` is not a note field: the modal labels it as seeding the
     context every agent starts from, and `session.start_session` puts it on
     the ThreadContext for that reason.
     """
 
-    title: str = Field(min_length=1, max_length=300)
+    title: Annotated[Text, Field(max_length=300)]
     matter_type: Optional[str] = Field(default=None, max_length=60)
     status: Optional[str] = Field(default=None, max_length=60)
     description: Optional[str] = Field(default=None, max_length=2000)
@@ -29,7 +31,7 @@ class NewCaseRequest(BaseModel):
 class UpdateCaseRequest(BaseModel):
     """Every field optional: a PATCH changes what it names and nothing else."""
 
-    title: Optional[str] = Field(default=None, min_length=1, max_length=300)
+    title: Optional[Annotated[Text, Field(max_length=300)]] = None
     court: Optional[str] = Field(default=None, max_length=200)
     state: Optional[str] = Field(default=None, max_length=100)
     case_number: Optional[str] = Field(default=None, max_length=100)

@@ -16,7 +16,7 @@ export const CaseSchema = z.object({
 
 export type Case = z.infer<typeof CaseSchema>;
 
-/** What the New Case modal collects (design/UX_FLOWS.md "Creating a case").
+/** What the New Case modal collects.
  *  `description` is not a notes field -- it seeds the context every agent
  *  in the thread starts from, which is why the form labels it that way. */
 export type NewCase = {
@@ -51,7 +51,7 @@ export const UploadedSchema = z.object({
   characters: z.number(),
 });
 
-/** The API's own limits (`docs/API.md` §4.2). Checked here too so an
+/** The API's own limits, restated. Checked here too so an
  *  oversized file fails instantly rather than after a 25MB upload. */
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const ACCEPTED_TYPES = ".pdf,.docx,.txt,.md";

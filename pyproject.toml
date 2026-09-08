@@ -4,23 +4,25 @@ version = "0.0.1"
 description = "Pramana AI — Indian Legal Intelligence data layer and recon tooling"
 readme = "README.md"
 requires-python = ">=3.11"
+# What the API needs, and no more. The graph, the crawlers and the parsers
+# are extras below, because the API image should not carry a package it
+# never imports -- measured, before the split: pyarrow alone was 156 MB of
+# an image that never reads a parquet file.
 dependencies = [
     "pydantic>=2.7",
     "requests>=2.32",
-    "pyarrow>=17.0",
-    "pypdf>=4.3",
-    "python-docx>=1.1",
     "python-dotenv>=1.0",
     "psycopg[binary]>=3.1",
     "psycopg_pool>=3.2",
     "pgvector>=0.3",
-    "sentence-transformers>=3.0",
     "neo4j>=5.20",
-    "beautifulsoup4>=4.12",
-    "bharat-courts[archive]>=0.3.3",
-    "langgraph>=1.2",
-    "langchain-core>=1.6",
     "google-genai>=1.0",
+    # /search embeds and reranks in-process, which is the only reason the
+    # API image still carries torch -- 1.0 GB of it.
+    "sentence-transformers>=3.0",
+    # Text out of an uploaded pleading, and a drafted .docx back.
+    "pypdf>=4.3",
+    "python-docx>=1.1",
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "python-multipart>=0.0.9",
@@ -29,15 +31,44 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The research graph, and the live discovery it falls back to when the
+# corpus holds nothing. Only the worker runs either.
+#
+# beautifulsoup4 and bharat-courts are here rather than under `ingest`
+# because `agents.supervisor._discover` reaches them on a normal research
+# turn -- one of six concurrent QA questions failed with
+# ModuleNotFoundError: bs4 (2026-09-06) when they were classed as ingest.
+worker = [
+    "langgraph>=1.2",
+    "langchain-core>=1.6",
+    "beautifulsoup4>=4.12",
+    "bharat-courts[archive]>=0.3.3",
+]
+
+# The corpus jobs. Run by hand against the database, never in a service.
+# Overlaps `worker` on purpose: an ingest run needs the scrapers without
+# the graph, and a worker needs the scrapers without the ingest scripts.
+ingest = [
+    "beautifulsoup4>=4.12",
+    "bharat-courts[archive]>=0.3.3",
+]
+
 dev = [
     "pytest>=8.0",
     "responses>=0.25",
     "httpx>=0.27",
     "pytest-asyncio>=0.24",
+    # The suite covers the graph and the ingestion parsers too.
+    "legal-ai[worker,ingest]",
 ]
 
+# The recon probes, run by hand. `pyarrow` is here because
+# scripts/recon/probe_*_bulk.py read parquet directly -- it left the
+# runtime dependencies when the service images were split, and nothing but
+# these scripts needs it.
 scripts = [
     "duckdb>=1.5",
+    "pyarrow>=17.0",
 ]
 
 [build-system]

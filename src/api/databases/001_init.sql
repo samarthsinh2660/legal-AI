@@ -219,6 +219,89 @@ CREATE INDEX IF NOT EXISTS messages_thread_idx
     ON messages (thread_id, message_id);
 
 
+-- ------------------------------------------------------------------ runs
+
+-- A run is a unit of work, and this table is also the queue it waits in.
+-- The API writes a row and returns; a worker claims it with FOR UPDATE SKIP
+-- LOCKED and answers it. Before this, a turn was an asyncio task in one
+-- process's memory: nothing outside that process knew it existed, so
+-- nothing could watch it, resume it or notice it died.
+--
+-- `payload` is the job's whole input, which is what lets the worker live in
+-- another process on another machine -- it reads the row and nothing from
+-- the request.
+CREATE TABLE IF NOT EXISTS runs (
+    run_id       TEXT PRIMARY KEY,
+    thread_id    TEXT NOT NULL
+        REFERENCES threads(thread_id) ON DELETE CASCADE,
+    user_id      TEXT NOT NULL,
+    kind         TEXT NOT NULL DEFAULT 'research',
+    status       TEXT NOT NULL
+        CHECK (status IN ('queued','running','done','failed','cancelled')),
+    current_step TEXT,
+    payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- How many workers have been handed this, and when the one holding it
+    -- last said it was alive. A row whose heartbeat stopped is a row nobody
+    -- owns, which is what the reaper sweeps for.
+    attempts     INT NOT NULL DEFAULT 0,
+    heartbeat_at TIMESTAMPTZ,
+    -- The evidence a previous attempt found, so a requeued run does not
+    -- buy the search again. Findings only: they are the expensive part and
+    -- the only part that round-trips provably.
+    checkpoint   JSONB,
+    error        TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at   TIMESTAMPTZ,
+    finished_at  TIMESTAMPTZ
+);
+
+-- One run's progress, in order. `seq` is dense and per-run because it is
+-- what SSE's own Last-Event-ID resumes against: a browser that drops sends
+-- the last id it saw and gets only what it missed.
+CREATE TABLE IF NOT EXISTS run_events (
+    run_id     TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+    seq        INT NOT NULL,
+    kind       TEXT NOT NULL,
+    payload    JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (run_id, seq)
+);
+
+-- "Is anything running on this thread", asked on every thread load.
+CREATE INDEX IF NOT EXISTS runs_thread_live_idx ON runs (thread_id)
+    WHERE status IN ('queued', 'running');
+
+-- The claim query, which every idle worker runs on every sweep.
+CREATE INDEX IF NOT EXISTS runs_queued_idx ON runs (kind, created_at)
+    WHERE status = 'queued';
+
+-- The reaper's sweep: only a running row can have stopped breathing.
+CREATE INDEX IF NOT EXISTS runs_heartbeat_idx ON runs (heartbeat_at)
+    WHERE status = 'running';
+
+
+-- A drafted document. The structure is kept beside the file so a document
+-- can be re-rendered when the template changes without paying for the model
+-- again.
+CREATE TABLE IF NOT EXISTS drafts (
+    draft_id      TEXT PRIMARY KEY,
+    thread_id     TEXT NOT NULL
+        REFERENCES threads(thread_id) ON DELETE CASCADE,
+    document_type TEXT NOT NULL,
+    status        TEXT NOT NULL CHECK (status IN ('running', 'done', 'failed')),
+    filename      TEXT NOT NULL DEFAULT '',
+    structure     JSONB,
+    docx          BYTEA,
+    error         TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at   TIMESTAMPTZ
+);
+
+-- "The drafts on this thread, in the order they were asked for" is the only
+-- listing there is.
+CREATE INDEX IF NOT EXISTS drafts_thread_idx ON drafts (thread_id, created_at);
+
+
 -- --------------------------------------------------------------- accounts
 
 -- Who did what, to which matter, and when. A firm will not put client data

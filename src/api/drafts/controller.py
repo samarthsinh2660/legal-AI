@@ -1,9 +1,9 @@
-"""Draft a document from a thread.
+"""Asking for a document to be drafted.
 
-The run is detached from the request for the same reason a researched turn
-is: it takes a model call and a render, and a reader who closes the tab
-must not lose a document they already paid for. The request returns a
-draft_id at once; the reader watches `status` and the file appears.
+The API's whole part in it: check the thread, create the draft row and
+queue the job. The drafting itself is `worker/drafting.py` -- it takes a
+model call and a render, and a reader who closes the tab must not lose a
+document they already paid for.
 
 Nothing is chosen. The model reads what was asked and what the conversation
 settled, and produces the document that follows from it -- there was a
@@ -16,29 +16,14 @@ and no way to tell which is the document they asked for.
 
 from __future__ import annotations
 
-import asyncio
-import logging
-from dataclasses import asdict
-from datetime import date
-
-from api.databases.postgres import connection
 from api.drafts import repository
-from api.threads.repository import get_thread, list_messages
+from api.runs import repository as runs
+from api.threads.repository import get_thread
 from api.utils.errors import Ok, Result, conflict, not_found
 
-log = logging.getLogger(__name__)
 
-# What a downloaded file is called. The document's own title is what the
-# reader will look for in a downloads folder.
-FILENAME_CHARS = 60
-
-# In-flight drafts. Held so the loop cannot collect one mid-run; asyncio
-# keeps only a weak reference to a task nobody awaits.
-_RUNS: set[asyncio.Task] = set()
-
-
-async def start_draft(conn, user_id: str, thread_id: str) -> Result:
-    """Begin a draft and return its id, without waiting for it."""
+def start_draft(conn, user_id: str, thread_id: str) -> Result:
+    """Queue a draft and return its id, without waiting for it."""
     thread = get_thread(conn, thread_id, user_id)
     if thread is None:
         return not_found("thread")
@@ -50,77 +35,10 @@ async def start_draft(conn, user_id: str, thread_id: str) -> Result:
         )
 
     draft_id = repository.start(conn, thread_id)
+    runs.enqueue(conn, thread_id, user_id, "draft", {"draft_id": draft_id})
     conn.commit()
 
-    run = asyncio.create_task(
-        _draft_and_store(
-            draft_id=draft_id,
-            thread_id=thread_id,
-            user_id=user_id,
-            case_id=thread.case_id,
-            title=thread.title,
-        )
-    )
-    _RUNS.add(run)
-    run.add_done_callback(_RUNS.discard)
-
     return Ok({"draft_id": draft_id, "status": "running"})
-
-
-async def _draft_and_store(
-    draft_id: str,
-    thread_id: str,
-    user_id: str,
-    case_id: str | None,
-    title: str,
-) -> None:
-    """Draft the document and store it, read or not.
-
-    Its own connection: the request's went back to the pool when the reply
-    was sent, and this outlives that.
-    """
-    from legal_ai.agents.drafter import draft as run_draft
-    from legal_ai.agents.drafter import render_with_citations
-    from api.drafts.source import (
-        render_law,
-        thread_authorities,
-        thread_conversation,
-        thread_matter,
-    )
-
-    try:
-        with connection() as conn:
-            messages = list_messages(conn, thread_id, user_id)
-            authorities = thread_authorities(messages)
-            matter = thread_matter(conn, case_id, date.today())
-            conversation = thread_conversation(messages)
-            law = render_law(conn, authorities)
-        # The model call runs with no connection held. CLAUDE.md section 8.
-
-        result = await asyncio.to_thread(
-            run_draft, matter, conversation, law, authorities
-        )
-
-        with connection() as conn:
-            if result.structure is None or result.failures:
-                repository.fail(conn, draft_id, "; ".join(result.failures))
-                return
-            docx = render_with_citations(conn, result.structure)
-            repository.finish(
-                conn,
-                draft_id,
-                _filename(result.structure.title, title),
-                asdict(result.structure),
-                docx,
-            )
-    except Exception:
-        # Nobody is left to raise to: this runs outside the request.
-        log.exception("draft %s failed for thread %s", draft_id, thread_id)
-        try:
-            with connection() as conn:
-                repository.fail(conn, draft_id, "The document could not be prepared.")
-        except Exception:
-            log.exception("could not record the failure of draft %s", draft_id)
 
 
 def get_draft(conn, user_id: str, draft_id: str) -> Result:
@@ -142,18 +60,3 @@ def download(conn, user_id: str, draft_id: str) -> Result:
         return not_found("draft")
     filename, data = found
     return Ok({"filename": filename, "content": data})
-
-
-def _filename(document_title: str, thread_title: str) -> str:
-    """A name the reader will recognise in a downloads folder.
-
-    The document's own title first -- "legal opinion", "notice under section
-    138" -- since that is what they asked for; the thread's title only where
-    the draft came back without one.
-    """
-    words = "".join(
-        character if character.isalnum() or character in " -_" else " "
-        for character in (document_title or thread_title)
-    ).split()
-    stem = "_".join(words)[:FILENAME_CHARS].strip("_").lower()
-    return f"{stem or 'draft'}.docx"

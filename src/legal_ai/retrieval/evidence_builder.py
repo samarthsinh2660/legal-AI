@@ -8,9 +8,9 @@ is the answer.
 
 `build_evidence` carries the passages that matched. A search result should
 return the paragraphs that matched, not the head of a 40,000-character
-judgment that may be about something else. This is tier 1 of the
-progressive disclosure in PHASE_3 §7: search returns small, get_* returns
-whole, the source panel's Open returns the PDF.
+judgment that may be about something else. It is the first tier of three:
+search returns small, `get_*` returns whole, and the source panel's Open
+returns the PDF.
 
 Returning passages is also what keeps a research agent's compression honest.
 Four search results are four passages, not four whole judgments.
