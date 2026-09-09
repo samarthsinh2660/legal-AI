@@ -74,18 +74,22 @@ def to_evidence(doc: CanonicalDocument, content: str | None = None,
     )
 
 
-def _location(label: str | None) -> Location | None:
-    """Location from a chunk's structural marker.
+def _location(*labels: str | None) -> Location | None:
+    """Location from the structural markers of the chunks an extract kept.
 
-    `paragraph` is set only when the marker is a plain number -- judgments
-    number paragraphs, statutes use "(1)" and "(a)", and coercing the latter
-    into an integer would invent a paragraph that does not exist.
+    `paragraph` is set only when the first marker is a plain number --
+    judgments number paragraphs, statutes use "(1)" and "(a)", and coercing
+    the latter into an integer would invent a paragraph that does not exist.
+
+    Unmarked chunks are dropped rather than held as gaps: a marker we do not
+    have must not become a position we claim.
     """
-    if not label:
+    kept = tuple(label for label in labels if label and label.strip())
+    if not kept:
         return None
-    stripped = label.strip().strip("().")
+    stripped = kept[0].strip().strip("().")
     paragraph = int(stripped) if stripped.isdigit() else None
-    return Location(paragraph=paragraph, label=label)
+    return Location(paragraph=paragraph, label=kept[0], labels=kept)
 
 
 def _matched_passages(
@@ -116,8 +120,10 @@ def _matched_passages(
     return passages
 
 
-def _extract(passages: list[tuple[int, str, str | None]]) -> tuple[str, str | None]:
-    """One extract from the nearest passages, as (text, label of its start).
+def _extract(
+    passages: list[tuple[int, str, str | None]]
+) -> tuple[str, tuple[str | None, ...]]:
+    """One extract from the nearest passages, as (text, their markers).
 
     Passages are chosen nearest-first until the budget is spent, then laid out
     in document order: a judgment read in similarity order reverses cause and
@@ -138,7 +144,10 @@ def _extract(passages: list[tuple[int, str, str | None]]) -> tuple[str, str | No
     for previous, current in zip(kept, kept[1:]):
         parts.append("" if current[0] == previous[0] + 1 else ELLIPSIS)
         parts.append(current[1])
-    return "\n".join(part for part in parts if part)[:EXTRACT_CHARS], kept[0][2]
+    return (
+        "\n".join(part for part in parts if part)[:EXTRACT_CHARS],
+        tuple(passage[2] for passage in kept),
+    )
 
 
 def build_evidence(
@@ -152,9 +161,9 @@ def build_evidence(
     Without one, the whole document is carried -- callers that resolve a
     known id want the document itself.
 
-    `location` marks where the extract *begins* -- the label of its first
-    passage in document order. It does not describe the whole extract, which
-    may skip forward past `ELLIPSIS`; there is no single marker that would.
+    `location` carries the markers of every passage the extract kept, in
+    document order. An extract may skip forward past `ELLIPSIS`, so one
+    marker would describe only where it begins.
 
     Ids with no stored document are skipped rather than raising: the graph
     can hold a node whose Postgres row was never stored.
@@ -182,6 +191,8 @@ def build_evidence(
             # own text is the passage. Truncated to the same budget.
             evidence.append(to_evidence(doc, content=doc.full_text[:PASSAGE_CHARS]))
         else:
-            text, label = _extract(matched)
-            evidence.append(to_evidence(doc, content=text, location=_location(label)))
+            text, labels = _extract(matched)
+            evidence.append(
+                to_evidence(doc, content=text, location=_location(*labels))
+            )
     return evidence

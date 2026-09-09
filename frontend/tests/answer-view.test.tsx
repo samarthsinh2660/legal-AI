@@ -37,6 +37,50 @@ function answer(overrides: Partial<Answer> = {}): Answer {
   };
 }
 
+describe("the pinpoint", () => {
+  const source = {
+    document_id: "judgment:ik-1",
+    title: "Newtech Promoters v. State of UP",
+    citation: "(2021) 4 SCC 1",
+    court: "Supreme Court",
+    url: null,
+    openable: false,
+    pinpoint: "para 42",
+  };
+
+  it("names the paragraph on the claim's own citation marker", () => {
+    render(
+      <AnswerView
+        answer={answer({
+          key_elements: [{ text: "The allottee may withdraw.", evidence_ids: [source.document_id] }],
+          sources: [source],
+        })}
+      />,
+    );
+    expect(screen.getByText("(2021) 4 SCC 1 para 42")).toBeInTheDocument();
+  });
+
+  it("names it again in the sources panel, beside the court", () => {
+    render(<AnswerView answer={answer({ sources: [source] })} />);
+    expect(screen.getByText(/Supreme Court · para 42/)).toBeInTheDocument();
+  });
+
+  it("shows no pinpoint for a source that carried no marker", () => {
+    // Most short statute sections are retrieved whole. The chip must read
+    // as a finished citation, never as one with a marker withheld.
+    render(
+      <AnswerView
+        answer={answer({
+          key_elements: [{ text: "A refund is due.", evidence_ids: ["act:2158:sec-18"] }],
+          sources: [{ ...source, document_id: "act:2158:sec-18", citation: null,
+                      court: null, pinpoint: null }],
+        })}
+      />,
+    );
+    expect(screen.getByText("s. 18")).toBeInTheDocument();
+  });
+});
+
 describe("the four verdicts", () => {
   it("renders a checked claim under a heading that says so", () => {
     render(

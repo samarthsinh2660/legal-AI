@@ -22,7 +22,7 @@ from legal_ai.schemas.answer import (
     DraftAnswer,
     SourceLink,
 )
-from legal_ai.schemas.evidence import Evidence
+from legal_ai.schemas.evidence import Evidence, Location
 from legal_ai.schemas.verification import Claim, Verdict
 
 _STATUTE_TYPES = frozenset({"act", "section"})
@@ -172,6 +172,31 @@ _ARCHIVE = (".tar", ".tar.gz", ".zip", "/tar/", ".json")
 _DEAD_HOSTS = ("indiacode.nic.in",)
 
 
+def _pinpoint(location: Location | None) -> str | None:
+    """The cited passage's position, written as a reader would cite it.
+
+    Numbered markers are judgment paragraphs and read as such; everything
+    else is a statutory marker and is repeated as the document writes it,
+    so "(1)" reaches the reader as "(1)" and not as a paragraph it is not.
+    A mixed extract keeps every marker raw rather than picking a form that
+    would be wrong for half of them.
+
+    Returns None when there is no marker. `build_evidence` carries a short
+    section whole and gives it no location, which is correct: the whole
+    section is in front of the reader and no part of it is the citation.
+    """
+    marks = location.labels if location else ()
+    labels = [label.strip() for label in marks if label.strip()]
+    if not labels:
+        return None
+    # The bracket is read, not stripped: "42" is a judgment paragraph and
+    # "(1)" is a sub-section, and the only thing separating them is the
+    # bracket the document itself wrote.
+    if all(label.isdigit() for label in labels):
+        return ("para " if len(labels) == 1 else "paras ") + ", ".join(labels)
+    return ", ".join(labels)
+
+
 def _sources(cited: list[str], evidence: list[Evidence]) -> tuple[SourceLink, ...]:
     """A link per cited id, from the evidence that carried it."""
     by_id = {item.document_id: item for item in evidence if item.document_id}
@@ -187,6 +212,7 @@ def _sources(cited: list[str], evidence: list[Evidence]) -> tuple[SourceLink, ..
             citation=item.citation,
             court=item.court,
             url=url or None,
+            pinpoint=_pinpoint(item.location),
             openable=bool(url)
             and not any(mark in url for mark in _ARCHIVE)
             and not any(host in url for host in _DEAD_HOSTS),
@@ -239,7 +265,16 @@ def render(answer: DraftAnswer) -> str:
 
     if answer.citations:
         lines.append("")
-        lines.append("Sources: " + ", ".join(answer.citations))
+        # The pinpoint is what makes a cited id usable without opening the
+        # document, so the plain-text path carries it too.
+        pinpoints = {link.document_id: link.pinpoint for link in answer.sources}
+        # Semicolons, because a pinpoint spanning two paragraphs contains a
+        # comma of its own and "a, b para 42, 43" reads as four sources.
+        lines.append("Sources: " + "; ".join(
+            f"{document_id} {pinpoints[document_id]}"
+            if pinpoints.get(document_id) else document_id
+            for document_id in answer.citations
+        ))
 
     lines.append("")
     lines.append(answer.disclaimer)

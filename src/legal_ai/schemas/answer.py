@@ -42,6 +42,12 @@ class SourceLink:
     url: str | None = None
     openable: bool = False
 
+    # Where in the document the cited passage sits -- "para 42", "(1)".
+    # None when the extract carried no marker, and when a short section was
+    # carried whole and there is no part to point at. A pinpoint we do not
+    # have renders as nothing rather than as a guess.
+    pinpoint: str | None = None
+
 
 @dataclass(frozen=True)
 class DraftAnswer:

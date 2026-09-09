@@ -25,7 +25,11 @@ export function SourceList({ sources }: { sources: SourceLink[] }) {
       <span className="caps text-ink-muted">Sources</span>
       <ul className="mt-3 space-y-2.5">
         {sources.map((source) => {
-          const meta = [source.citation, source.court].filter(Boolean).join(" · ");
+          // The pinpoint sits last: it narrows the citation and the court
+          // that precede it, and reads as a stray number in front of them.
+          const meta = [source.citation, source.court, source.pinpoint]
+            .filter(Boolean)
+            .join(" · ");
           const label = source.title || source.document_id;
           // The reader's own upload is in no graph and at no public
           // address, so it is the one source with nowhere to send them.

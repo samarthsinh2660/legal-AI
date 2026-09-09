@@ -30,11 +30,18 @@ class Location(BaseModel):
     "(a)", a proviso -- which is what a reader needs to find the passage
     again. `paragraph` is set only when that marker is a plain number, as
     judgments use.
+
+    `labels` carries every marker the extract covers, in document order,
+    because an extract is up to three passages and they need not be
+    adjacent. `label` is the first of them. Reporting only the first would
+    point a reader at paragraph 42 for a statement the extract took from
+    paragraph 58.
     """
 
     page: Optional[int] = None
     paragraph: Optional[int] = None
     label: Optional[str] = None
+    labels: tuple[str, ...] = ()
 
 
 class Provenance(BaseModel):
