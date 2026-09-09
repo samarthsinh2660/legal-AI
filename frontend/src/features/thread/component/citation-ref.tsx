@@ -16,8 +16,9 @@ import type { SourceLink } from "../types";
  *  public address. */
 export function CitationRef({ id, source }: { id: string; source?: SourceLink }) {
   const kind = sourceKind(id);
-  // The citation is what tells one judgment from another.
-  const label = shortLabel(id, source?.citation);
+  // The citation is what tells one judgment from another; the pinpoint is
+  // what tells one passage of it from another.
+  const label = shortLabel(id, source?.citation, source?.pinpoint);
   const chip =
     "mono inline-flex h-5 items-center rounded-sm bg-surface-muted px-1.5 text-xs font-semibold text-ink-variant";
   const interactive =

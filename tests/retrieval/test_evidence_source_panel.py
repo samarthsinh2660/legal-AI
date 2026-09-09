@@ -34,6 +34,23 @@ def test_location_from_a_statutory_marker_sets_no_paragraph():
 def test_location_of_nothing_is_none():
     assert _location(None) is None
     assert _location("") is None
+    assert _location() is None
+
+
+def test_location_carries_every_marker_the_extract_covers():
+    # An extract is up to three passages and they need not be adjacent, so
+    # the first marker describes only where it begins.
+    location = _location("42", "58")
+    assert location.labels == ("42", "58")
+    assert location.label == "42"
+    assert location.paragraph == 42
+
+
+def test_an_unmarked_chunk_is_dropped_rather_than_held_as_a_gap():
+    # A chunk with no marker is a position we do not know. Keeping a blank
+    # in the sequence would let it render as one we do.
+    assert _location("42", None, "58").labels == ("42", "58")
+    assert _location(None, "7").labels == ("7",)
 
 
 def test_evidence_carries_court_and_citation():

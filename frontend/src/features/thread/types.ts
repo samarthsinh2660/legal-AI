@@ -113,6 +113,10 @@ export const SourceLinkSchema = z.object({
   court: z.string().nullable().optional(),
   url: z.string().nullable().optional(),
   openable: z.boolean(),
+  // Where in the document the cited passage sits -- "para 42", "(1)".
+  // Absent when the source carried no marker, which is most short statute
+  // sections: those are carried whole, so no part of them is the citation.
+  pinpoint: z.string().nullable().optional(),
 });
 
 export type SourceLink = z.infer<typeof SourceLinkSchema>;

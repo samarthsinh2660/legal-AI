@@ -219,3 +219,27 @@ def test_location_marks_where_the_extract_begins(conn):
 
     assert evidence[0].location is not None
     assert evidence[0].location.paragraph == 7
+
+
+def test_location_carries_every_passage_the_extract_kept(conn):
+    near, _ = _near_and_far("held")
+    upsert_document(conn, _doc("test:e-locs", "judgment", "N v. O", "irrelevant"))
+    _chunk(conn, "test:e-locs", 0, "Held on the first point. " * 15, label="7", vector=near)
+    _chunk(conn, "test:e-locs", 1, "Held on the second point. " * 15, label="8", vector=near)
+
+    evidence = build_evidence(conn, ["test:e-locs"], query="held")
+
+    # Both passages are in the extract, so both markers have to reach the
+    # reader; naming only the first points at the wrong paragraph.
+    assert evidence[0].location.labels == ("7", "8")
+
+
+def test_a_whole_section_is_given_no_location(conn):
+    # The matched chunk is discarded when a short section goes in whole, and
+    # its location with it: no part of the section is the citation.
+    upsert_document(conn, _doc("test:e-whole", "section", "s. 3", "Short section text."))
+    _chunk(conn, "test:e-whole", 0, "Short section text.", label="(1)")
+
+    evidence = build_evidence(conn, ["test:e-whole"], query="short")
+
+    assert evidence[0].location is None

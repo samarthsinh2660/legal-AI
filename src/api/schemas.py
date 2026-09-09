@@ -59,6 +59,9 @@ class SourceLinkModel(BaseModel):
     court: Optional[str] = None
     url: Optional[str] = None
     openable: bool = False
+    # "para 42", "(1)" -- where in the document the cited passage sits.
+    # Absent when the source carried no marker; never guessed.
+    pinpoint: Optional[str] = None
 
 
 class AnswerModel(BaseModel):
@@ -102,6 +105,7 @@ class AnswerModel(BaseModel):
                 SourceLinkModel(
                     document_id=s.document_id, title=s.title, citation=s.citation,
                     court=s.court, url=s.url, openable=s.openable,
+                    pinpoint=s.pinpoint,
                 )
                 for s in answer.sources
             ],

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from legal_ai.agents.draft import build_answer, render
 from legal_ai.schemas.answer import AnalysisResult, DraftAnswer
+from legal_ai.retrieval.evidence_builder import _location
 from legal_ai.schemas.evidence import Evidence, Provenance, SourceRef
 from legal_ai.schemas.verification import Claim
 
@@ -152,3 +153,80 @@ def test_an_answer_about_a_held_act_carries_no_coverage_note():
         "What does Section 138 of the NI Act require?", AnalysisResult(lede="x"), []
     )
     assert answer.coverage_note == ""
+
+
+# --- the pinpoint: where in the document the cited passage sits -----------
+
+
+def _located(doc_id, doc_type, *labels):
+    item = _evidence(doc_id, doc_type)
+    return item.model_copy(update={"location": _location(*labels)})
+
+
+def test_a_numbered_marker_is_cited_as_a_paragraph():
+    evidence = [_located("judgment:ik-1", "judgment", "42")]
+    answer = build_answer(
+        "q", AnalysisResult(claims=(Claim("held", ("judgment:ik-1",)),)), evidence
+    )
+    assert answer.sources[0].pinpoint == "para 42"
+
+
+def test_every_paragraph_the_extract_covers_is_cited():
+    # The extract is up to three passages and they need not be adjacent.
+    # Naming only the first sends a reader to paragraph 42 for a statement
+    # the extract took from paragraph 58.
+    evidence = [_located("judgment:ik-1", "judgment", "42", "58")]
+    answer = build_answer(
+        "q", AnalysisResult(claims=(Claim("held", ("judgment:ik-1",)),)), evidence
+    )
+    assert answer.sources[0].pinpoint == "paras 42, 58"
+
+
+def test_a_statutory_marker_is_repeated_as_the_statute_writes_it():
+    # "(1)" is a sub-section, not paragraph 1. Rendering it as a paragraph
+    # would name a position the Act does not have.
+    evidence = [_located("act:2158:sec-18", "section", "(1)")]
+    answer = build_answer(
+        "q", AnalysisResult(claims=(Claim("refund", ("act:2158:sec-18",)),)), evidence
+    )
+    assert answer.sources[0].pinpoint == "(1)"
+
+
+def test_a_mixed_extract_keeps_both_markers_raw():
+    evidence = [_located("act:2158:sec-18", "section", "(1)", "2")]
+    answer = build_answer(
+        "q", AnalysisResult(claims=(Claim("refund", ("act:2158:sec-18",)),)), evidence
+    )
+    assert answer.sources[0].pinpoint == "(1), 2"
+
+
+def test_a_source_with_no_marker_has_no_pinpoint():
+    # A short section is carried whole and given no location. The whole
+    # section is in front of the reader, so no part of it is the citation --
+    # and a pinpoint we do not have must never be invented.
+    answer = build_answer("q", AnalysisResult(claims=(GROUNDED,)), EVIDENCE)
+    assert answer.sources[0].pinpoint is None
+
+
+def test_the_plain_text_rendering_carries_the_pinpoint():
+    evidence = [_located("judgment:ik-1", "judgment", "42")]
+    answer = build_answer(
+        "q", AnalysisResult(claims=(Claim("held", ("judgment:ik-1",)),)), evidence
+    )
+    assert "Sources: judgment:ik-1 para 42" in render(answer)
+
+
+def test_the_plain_text_rendering_omits_a_pinpoint_it_does_not_have():
+    answer = build_answer("q", AnalysisResult(claims=(GROUNDED,)), EVIDENCE)
+    assert "Sources: act:2158:sec-18" in render(answer)
+
+
+def test_sources_are_separated_so_a_multi_paragraph_pinpoint_stays_one_source():
+    # "a, b para 42, 43" reads as four sources. The separator has to be
+    # something a pinpoint cannot contain.
+    evidence = [_located("judgment:ik-1", "judgment", "42", "43"),
+                _located("judgment:ik-2", "judgment", "9")]
+    answer = build_answer("q", AnalysisResult(claims=(
+        Claim("first", ("judgment:ik-1",)), Claim("second", ("judgment:ik-2",)),
+    )), evidence)
+    assert "Sources: judgment:ik-1 paras 42, 43; judgment:ik-2 para 9" in render(answer)

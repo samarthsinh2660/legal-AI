@@ -58,4 +58,21 @@ describe("shortLabel", () => {
   it("falls back to the whole id rather than inventing a label", () => {
     expect(shortLabel("mystery:1")).toBe("mystery:1");
   });
+
+  it("writes a sub-section against its section, as a citation is written", () => {
+    expect(shortLabel("act:2158:sec-18", null, "(1)")).toBe("s. 18(1)");
+  });
+
+  it("writes a paragraph as its own word after the citation", () => {
+    expect(shortLabel("judgment:ik-1", "(2021) 4 SCC 1", "para 42")).toBe(
+      "(2021) 4 SCC 1 para 42",
+    );
+  });
+
+  it("reads the same without a pinpoint, which most sections have none of", () => {
+    // A short section is retrieved whole and carries no marker. Its chip
+    // must look finished, not truncated.
+    expect(shortLabel("act:2158:sec-18", null, null)).toBe("s. 18");
+    expect(shortLabel("judgment:ik-1", "(2021) 4 SCC 1")).toBe("(2021) 4 SCC 1");
+  });
 });
