@@ -78,3 +78,15 @@ vidence_builder.py:88 builds Location(paragraph=…, label=…) — "(1)", a pro
 
   Cost: one node + one DraftAnswer field + one badge. Mostly wiring.
 
+
+
+
+
+
+
+
+
+
+
+
+2 script of the data fix is there we have to run in the serve since worker nothing is done 

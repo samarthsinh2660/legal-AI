@@ -31,37 +31,54 @@ it. Anything unsupported triggers more research instead of a confident guess.
 Three knowledge layers with different authority, feeding a multi-agent
 research pipeline.
 
+The research graph, as `graph/build.py` actually wires it:
+
 ``` text
                          USER QUERY
                               |
                               v
-                       SUPERVISOR AGENT
+                          DOCUMENT           reads any case file attached
                               |
-                    THREAD CONTEXT (built once)
+                              v
+                      CONTEXT BUILDER        ThreadContext, built ONCE
                               |
+                              v
+                       CLARIFICATION -------> END   ask, do not guess
+                              |
+                              v
+                          RESEARCH           supervisor plans the angles,
+                              |              then fans out:
           +-------------------+-------------------+
           |                   |                   |
-          v                   v                   v
        STATIC              DYNAMIC              ACTIVE
-     RESEARCHER          RESEARCHER          RESEARCHER
     trusted corpus      live court /        usage-derived
     + knowledge graph   statute search      candidates
           |                   |                   |
           +-------------------+-------------------+
                               |
                               v
-                        ANALYST AGENT
-                              |
+                           ANALYST            claims, each carrying its
+                              |               own evidence ids
                               v
-                         DRAFT AGENT
+                       VERIFICATION           quotes, then groundedness
                               |
-                              v
-                     VERIFICATION AGENT
-                    (claims + citations)
-                              |
-                              v
-                     GROUNDED ANSWER
+                    +---------+---------+
+                    |                   |
+              unsupported,         everything
+              budget left          checked
+                    |                   |
+                    v                   v
+                 RESEARCH             DRAFT    + good law, + authority
+                (go again)              |
+                                        v
+                                 GROUNDED ANSWER
 ```
+
+Two things the shape is doing. **Verification runs before drafting, not
+after** — a claim it cannot ground goes back for more research rather than
+into the answer, and the loop is bounded by a retry budget. And
+**clarification can end the run**: a question with no legal issue in it gets
+a question back, not an invented answer.
 
 | Layer | Purpose | Authority |
 |---|---|---|
@@ -72,6 +89,27 @@ research pipeline.
 The third layer is the one most systems get wrong. A citation is not correct
 because it is popular; promotion from candidate to trusted knowledge requires
 validation and evidence, never usage counts.
+
+### The agents, and which ones the answer path runs
+
+Not every agent is in the research graph. Three sit outside it, reached by
+a different route, and saying so is the difference between a diagram and a
+map.
+
+| Agent | Job | Runs |
+|---|---|---|
+| `supervisor` + `research_plan` | Split a question into angles, fan out, decide whether to go again | research node |
+| `analyst` | Turn retrieved law into claims that each carry their own evidence ids | analyst node |
+| `verifier` | Does the cited source actually support the claim | verification node |
+| `draft` | Assemble the answer — deterministic, no model call | draft node |
+| `document` | Read an attached case file into facts | document node |
+| `case` | Answer against the user's own matter | the case graph, not this one |
+| `drafter` + `validator` | Produce a legal document from a thread | `POST /threads/{id}/drafts` |
+| `treatment` | How a later judgment dealt with the one it cites | ingest, not answer time — see Good law |
+| `conflict` | Whether two courts disagree | a tool, built but unwired |
+
+`treatment` is the one worth knowing about: it costs a model call, and it
+spends it during ingest so the answer path spends none.
 
 ### Shared thread context
 
@@ -215,11 +253,11 @@ because multi-hop traversal is what it is for.
 ### What is actually in the corpus
 
 ``` text
-statute sections   35,601        judgments        12,337
-acts                  860        chunks (embedded) 332,025
+statute sections   36,885        judgments        13,149
+acts                  863        chunks (embedded) 365,878
 
-graph edges   CONTAINS 35,603   DECIDED_BY 12,320
-              CITES_SECTION 6,349   CITES 2,705
+graph edges   CONTAINS 36,887   DECIDED_BY 13,098
+              CITES_SECTION 7,092   CITES 3,332
 ```
 
 `CITES` is judgment-to-judgment precedent. It is small for a structural
@@ -236,6 +274,9 @@ See `PHASE_7_ADVANCED_GRAPHRAG.md` §2.
 | [`LEGAL_DATA_SOURCES.md`](./docs/LEGAL_DATA_SOURCES.md) | Every candidate Indian legal data source, its licensing, and the tool contracts that abstract them |
 | [`PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md) | The code layout: LangGraph / LangChain / LangSmith, module boundaries, build order |
 | [`API.md`](./docs/API.md) | Every endpoint, the response envelope, authentication, rate limits, and what the API does not do |
+| [`HOW_IT_WORKS.md`](./docs/HOW_IT_WORKS.md) | The whole system in plain English — the containers, a question's timeline, what happens when something breaks |
+| [`RELIABILITY_ARCHITECTURE.md`](./docs/RELIABILITY_ARCHITECTURE.md) | Runs as durable rows: the queue, the worker, heartbeats, the reaper, resume |
+| [`TODO.md`](./docs/TODO.md) | What is known to be missing |
 
 **Phase plans** — each phase has one job, one deliverable, its own doc (see `AI_PROJECT_PROPOSAL.md` §11 for the full roadmap table):
 
@@ -319,16 +360,46 @@ Numbers, not impressions. Each is reproducible from `evals/`.
 | Treatment classification | 0.92 agreement with the law reporter, 150 cases | `evals.run_treatment` |
 | Retrieval | MRR 0.333, recall@10 68% over 50 questions | `evals.run` |
 | Bench extraction | 97% of Supreme Court judgments parsed | — |
+| Treatment coverage | 3,331 of 3,332 `CITES` edges classified (99.97%) | `scripts.classify_treatments` |
+
+### Good law
+
+A cited judgment carries its standing, which is what a citator is for. The
+three states are the ones `retrieval/good_law.py` defines, and the third
+carries the weight:
+
+| State | When | Shown as |
+|---|---|---|
+| `DOUBTED` | a later judgment held it wrongly decided | a warning above the answer |
+| `NO_NEGATIVE_TREATMENT` | every citing judgment was classified, none negative | *"no negative treatment among the N judgments citing it that we hold"* |
+| `NOT_CHECKED` | nothing here cites it, or a citation was never classified | nothing at all |
+
+Across the corpus that is 1,682 judgments clean, 2 doubted, and the rest
+NOT_CHECKED because nothing in this corpus cites them. Only `DOUBTED` warns:
+NOT_CHECKED is the ordinary state, and a caution on most answers is one a
+reader learns to skip.
+
+Treatment is written twice over. `graphdb/ingest.py` takes it free and
+deterministically from the reporter's own Case Law Reference table the
+moment a judgment is stored; `graphdb/treatment.py` then classifies what no
+such table covered, batching across citing judgments and running at the end
+of an ingest rather than per judgment. Answer time costs no model call at
+all — one Cypher traversal, ~29 ms for three judgments.
 
 ### What is honestly not done
 
 - **Milestone 15**, the end-to-end research benchmark, is not started.
+- **A single wrong pinpoint can still get through.** A quoted provision
+  reads to the chunker like a paragraph marker, so a judgment quoting
+  "6. Devolution of interest" can carry the label `6` far from its own
+  paragraph 6. Two things now catch it: a year on its own line is no longer
+  read as a paragraph number, and an extract whose paragraph numbers step
+  backwards is offered with no pinpoint at all rather than a misleading one.
+  What neither catches is a single-passage extract carrying one wrong
+  label — there is nothing to contradict it. Chunk labels already stored
+  keep whatever the old rule gave them until the corpus is re-chunked.
 - **Authority ranking is unscored.** It returns the right landmarks by
   inspection, but no judgment-retrieval eval set exists.
-- **No overruling has ever been found**, so `is_still_good_law` has never
-  returned its warning on real data. It reports *"no negative treatment
-  among the N judgments citing it that we hold"* — a statement about this
-  corpus, never a clearance.
 - **Currency (M14) was deliberately skipped.** Nothing re-scrapes, so an
   amended section is served as current with no notice.
 - **Conflict detection is built but blind**, pending High Court depth.

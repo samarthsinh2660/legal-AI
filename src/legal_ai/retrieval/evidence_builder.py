@@ -87,6 +87,17 @@ def _location(*labels: str | None) -> Location | None:
     kept = tuple(label for label in labels if label and label.strip())
     if not kept:
         return None
+    # Labels arrive in document order, so numbering that steps backwards
+    # means at least one of these markers is not a paragraph number -- a
+    # quoted provision ("6. Devolution of interest") reads like one. We
+    # cannot tell which, so we offer none: a pinpoint that sends a reader
+    # to the wrong paragraph is worse than the honest absence the caller
+    # already handles.
+    numbers = [label.strip() for label in kept]
+    if all(n.isdigit() for n in numbers):
+        values = [int(n) for n in numbers]
+        if any(b <= a for a, b in zip(values, values[1:])):
+            return None
     stripped = kept[0].strip().strip("().")
     paragraph = int(stripped) if stripped.isdigit() else None
     return Location(paragraph=paragraph, label=kept[0], labels=kept)

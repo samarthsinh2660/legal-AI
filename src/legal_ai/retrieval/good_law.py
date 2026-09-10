@@ -22,6 +22,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+import neo4j
+
 from legal_ai.agents.treatment import Treatment
 
 
@@ -80,3 +82,40 @@ def assess_good_law(citing: list[tuple[str, Treatment]]) -> GoodLawResult:
         GoodLaw.NO_NEGATIVE_TREATMENT,
         checked=tuple(document_id for document_id, _t in citing),
     )
+
+
+def good_law_lookup(
+    driver: "neo4j.Driver", judgment_ids: list[str]
+) -> dict[str, GoodLawResult]:
+    """Standing for several judgments in one traversal.
+
+    The per-judgment `tools.graph.is_still_good_law` opens and closes a
+    driver per call, which is right for an agent tool asking about one
+    authority and wrong for an answer citing several. Ids with no citing
+    judgment in the corpus come back NOT_CHECKED, which is the honest
+    reading: nothing here cites it, so nothing here overruled it either.
+    """
+    if not judgment_ids:
+        return {}
+
+    with driver.session() as session:
+        rows = session.run(
+            """
+            MATCH (citing:Judgment)-[r:CITES]->(cited:Judgment)
+            WHERE cited.document_id IN $ids
+            RETURN cited.document_id AS cited, citing.document_id AS citing,
+                   r.treatment AS treatment
+            """,
+            ids=list(judgment_ids),
+        ).values()
+
+    citing: dict[str, list[tuple[str, Treatment]]] = {i: [] for i in judgment_ids}
+    for cited, citing_id, treatment in rows:
+        try:
+            parsed = Treatment(treatment) if treatment else Treatment.NOT_CHECKED
+        except ValueError:
+            # An unreadable value is not a reading. Treating it as anything
+            # else would let a typo in the graph clear a judgment.
+            parsed = Treatment.NOT_CHECKED
+        citing[cited].append((citing_id, parsed))
+    return {i: assess_good_law(found) for i, found in citing.items()}

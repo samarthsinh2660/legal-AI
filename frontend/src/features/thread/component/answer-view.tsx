@@ -4,6 +4,7 @@ import { ProvenanceBadge } from "@/components/molecules/provenance-badge";
 import { provenanceOf } from "../evidence";
 import type { Answer } from "../types";
 import { CitationRef } from "./citation-ref";
+import { GoodLawBanner } from "./good-law-banner";
 import { SourceList } from "./source-list";
 import { EvidenceBlock } from "./evidence-block";
 
@@ -46,6 +47,10 @@ export function AnswerView({ answer }: { answer: Answer }) {
           ))}
         </div>
       )}
+
+      {/* Above the answer: an overruled authority changes whether the
+          reader should use what follows at all. */}
+      <GoodLawBanner notes={answer.good_law} sources={answer.sources} />
 
       {/* Above the answer: it changes how everything below should be read. */}
       {answer.coverage_note && (
@@ -98,7 +103,9 @@ export function AnswerView({ answer }: { answer: Answer }) {
         </p>
       )}
 
-      {answer.sources.length > 0 && <SourceList sources={answer.sources} />}
+      {answer.sources.length > 0 && (
+        <SourceList sources={answer.sources} goodLaw={answer.good_law} />
+      )}
 
       {answer.sources.length === 0 &&
         (answer.applicable_law.length > 0 || answer.key_judgments.length > 0) && (

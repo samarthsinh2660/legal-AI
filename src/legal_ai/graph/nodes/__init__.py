@@ -222,6 +222,7 @@ def draft(state: ResearchState) -> dict:
     from legal_ai.graphdb.client import get_driver
     from legal_ai.knowledge.static.db import get_connection
     from legal_ai.retrieval.authority import authority_lookup
+    from legal_ai.retrieval.good_law import good_law_lookup
     from legal_ai.schemas.answer import AnalysisResult
 
     analysis = state.get("analysis") or AnalysisResult()
@@ -232,21 +233,31 @@ def draft(state: ResearchState) -> dict:
     # A graph that is down must not cost the user their answer either, so a
     # failed lookup falls back the same way.
     authority = {}
+    good_law = {}
     judgment_ids = [
         item.document_id for item in findings
         if item.document_id and (item.document_type or "") == "judgment"
     ]
-    if judgment_ids and Configuration.from_env().rank_by_authority:
+    if judgment_ids:
+        rank = Configuration.from_env().rank_by_authority
         try:
             driver = get_driver()
             conn = get_connection()
             try:
-                authority = authority_lookup(driver, conn, judgment_ids)
+                if rank:
+                    authority = authority_lookup(driver, conn, judgment_ids)
+                # Whether a cited judgment was overruled is not a ranking
+                # preference, so it is read whether or not ranking is on.
+                good_law = good_law_lookup(driver, judgment_ids)
             finally:
                 conn.close()
                 driver.close()
         except Exception:
+            # A graph that is down must not cost the reader their answer.
+            # Every judgment then falls to NOT_CHECKED, which withholds the
+            # clean bill rather than granting one.
             authority = {}
+            good_law = {}
 
     answer = build_answer(
         state["question"],
@@ -254,6 +265,7 @@ def draft(state: ResearchState) -> dict:
         findings,
         unsupported=tuple(state.get("unsupported_claims") or []),
         authority=authority,
+        good_law=good_law,
         report=state.get("verification_report"),
     )
     return {"answer": render(answer), "draft_answer": answer}

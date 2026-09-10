@@ -17,11 +17,32 @@ from legal_ai.retrieval.chunking import Chunk
 # A paragraph number at the start of a line: "1.", "42.", "12)".
 _PARAGRAPH = re.compile(r"^[ \t]*(\d{1,4})[.)]\s+", re.MULTILINE)
 
+# A year wrapped onto its own line reads exactly like a paragraph number --
+# "2022." at a line start is the tail of a citation, not paragraph 2022.
+# Measured 2026-09-09 over 800 judgments: 432 markers of four digits, 411 of
+# them (95%) in this range. Judgments numbered past 999 exist, so the test is
+# the range and not the digit count.
+_YEAR = range(1900, 2101)
+
 _SENTENCE = re.compile(r"(?<=[.?!])\s+")
 
 
+def _is_paragraph(match: re.Match) -> bool:
+    """Whether a numbered line-start is really a paragraph number.
+
+    Only the year test is applied. A quoted provision ("6. Devolution of
+    interest") is the other false positive and is NOT caught here: rejecting
+    every number that fails to continue the sequence would also reject
+    genuine paragraphs, because a false marker earlier in the text leaves the
+    count too high. Measured 2026-09-09: of the numbering that steps
+    backwards, most steps land on a real paragraph. A rule that cannot be
+    told apart from the thing it is meant to remove does not go in.
+    """
+    return int(match.group(1)) not in _YEAR
+
+
 def _split_on_paragraphs(text: str) -> list[tuple[str | None, str]]:
-    matches = list(_PARAGRAPH.finditer(text))
+    matches = [m for m in _PARAGRAPH.finditer(text) if _is_paragraph(m)]
     if not matches:
         return [(None, text.strip())] if text.strip() else []
 

@@ -121,6 +121,24 @@ export const SourceLinkSchema = z.object({
 
 export type SourceLink = z.infer<typeof SourceLinkSchema>;
 
+/** Whether a cited judgment still stands.
+ *
+ *  Only judgments the corpus can speak to are sent. NOT_CHECKED is the
+ *  ordinary state of a judgment nothing cites, and it arrives as an absent
+ *  row rather than a status the screen has to remember not to render --
+ *  a caution shown on most answers is one a reader learns to skip, which
+ *  would cost the one that says DOUBTED its only job. */
+export const GoodLawSchema = z.object({
+  document_id: z.string(),
+  status: z.enum(["DOUBTED", "NO_NEGATIVE_TREATMENT"]),
+  overruled_by: z.array(z.string()).default([]),
+  // The denominator. "No negative treatment among the 4 judgments citing it
+  // that we hold" is a claim a reader can size; the bare phrase is not.
+  checked: z.number().default(0),
+});
+
+export type GoodLaw = z.infer<typeof GoodLawSchema>;
+
 export const AnswerSchema = z.object({
   question: z.string(),
   lede: z.string(),
@@ -139,6 +157,7 @@ export const AnswerSchema = z.object({
   coverage_note: z.string().default(""),
   citations: z.array(z.string()),
   sources: z.array(SourceLinkSchema).default([]),
+  good_law: z.array(GoodLawSchema).default([]),
   disclaimer: z.string(),
 });
 

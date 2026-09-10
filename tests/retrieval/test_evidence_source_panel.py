@@ -129,3 +129,26 @@ def test_requested_order_is_preserved():
     finally:
         conn.close()
     assert [e.document_id for e in evidence] == ids
+
+
+def test_paragraph_numbers_that_step_backwards_yield_no_pinpoint():
+    # Labels come in document order. 14 then 6 means one of them is not a
+    # paragraph number -- a quoted provision reads exactly like one -- and
+    # we cannot tell which, so we point at neither.
+    assert _location("14", "6", "23") is None
+
+
+def test_ascending_paragraph_numbers_are_kept():
+    location = _location("6", "14", "23")
+    assert location.labels == ("6", "14", "23")
+
+
+def test_a_repeated_paragraph_number_yields_no_pinpoint():
+    # The same number twice, non-adjacent, is the same defect.
+    assert _location("14", "14") is None
+
+
+def test_statutory_markers_are_not_subject_to_the_order_test():
+    # "(1)" and "(a)" are not numbers on one scale, so nothing about their
+    # order tells us a marker is wrong.
+    assert _location("(1)", "(a)").labels == ("(1)", "(a)")

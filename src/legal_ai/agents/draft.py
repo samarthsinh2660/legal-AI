@@ -20,6 +20,7 @@ from legal_ai.schemas.answer import (
     DISCLAIMER,
     AnalysisResult,
     DraftAnswer,
+    GoodLawNote,
     SourceLink,
 )
 from legal_ai.schemas.evidence import Evidence, Location
@@ -57,6 +58,7 @@ def build_answer(
     unsupported: tuple[str, ...] = (),
     report=None,
     authority: dict[str, "Authority"] | None = None,
+    good_law: dict[str, "GoodLawResult"] | None = None,
 ) -> DraftAnswer:
     """The DraftAnswer for this question.
 
@@ -150,6 +152,7 @@ def build_answer(
         support_not_checked=skipped_support,
         citations=tuple(sorted(cited)),
         sources=_sources(sorted(cited), evidence),
+        good_law=_good_law(judgments, good_law or {}),
         coverage_note=coverage_note(question) or "",
         # Nothing legal was said, so there is nothing to disclaim. The
         # boilerplate under "I cannot help with that" reads as a
@@ -170,6 +173,30 @@ _ARCHIVE = (".tar", ".tar.gz", ".zip", "/tar/", ".json")
 # on the new site and keep the dead URL. The test is per row, not per
 # corpus, so those stay withheld while the repaired ones are offered.
 _DEAD_HOSTS = ("indiacode.nic.in",)
+
+
+def _good_law(judgment_ids: list[str], assessed: dict) -> tuple[GoodLawNote, ...]:
+    """Standing notes for the judgments this answer actually cites.
+
+    NOT_CHECKED is left out. It is the ordinary state of a judgment nothing
+    in the corpus cites, and a note saying so on most answers would be a
+    caveat readers learn to skip -- which is exactly what would make them
+    skip the one that says DOUBTED.
+    """
+    from legal_ai.retrieval.good_law import GoodLaw
+
+    notes = []
+    for document_id in judgment_ids:
+        result = assessed.get(document_id)
+        if result is None or result.status is GoodLaw.NOT_CHECKED:
+            continue
+        notes.append(GoodLawNote(
+            document_id=document_id,
+            status=result.status.value,
+            overruled_by=tuple(result.overruled_by),
+            checked=len(result.checked),
+        ))
+    return tuple(notes)
 
 
 def _pinpoint(location: Location | None) -> str | None:
@@ -252,6 +279,16 @@ def render(answer: DraftAnswer) -> str:
                      "sources searched, so verify independently:")
         for text in answer.unchecked:
             lines.append(f"- {text}")
+
+    doubted = [note for note in answer.good_law if note.is_a_warning]
+    if doubted:
+        # Above the sources, because it changes whether the reader should
+        # use them at all.
+        lines.append("")
+        lines.append("DOUBTED -- a later judgment held these wrongly decided:")
+        for note in doubted:
+            lines.append(f"- {note.document_id} "
+                         f"(see {', '.join(note.overruled_by)})")
 
     if answer.coverage_note:
         lines.append("")

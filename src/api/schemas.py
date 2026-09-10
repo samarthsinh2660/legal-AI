@@ -64,6 +64,16 @@ class SourceLinkModel(BaseModel):
     pinpoint: Optional[str] = None
 
 
+class GoodLawModel(BaseModel):
+    """Standing of a cited judgment. Only judgments the corpus can speak to
+    appear; NOT_CHECKED is absent rather than sent as a row to ignore."""
+
+    document_id: str
+    status: str
+    overruled_by: list[str] = []
+    checked: int = 0
+
+
 class AnswerModel(BaseModel):
     question: str
     lede: str
@@ -78,6 +88,7 @@ class AnswerModel(BaseModel):
     coverage_note: str = ""
     citations: list[str]
     sources: list[SourceLinkModel] = []
+    good_law: list[GoodLawModel] = []
     disclaimer: str
 
     @classmethod
@@ -108,6 +119,13 @@ class AnswerModel(BaseModel):
                     pinpoint=s.pinpoint,
                 )
                 for s in answer.sources
+            ],
+            good_law=[
+                GoodLawModel(
+                    document_id=g.document_id, status=g.status,
+                    overruled_by=list(g.overruled_by), checked=g.checked,
+                )
+                for g in answer.good_law
             ],
             disclaimer=answer.disclaimer,
         )

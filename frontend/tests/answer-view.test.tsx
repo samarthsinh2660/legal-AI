@@ -32,10 +32,80 @@ function answer(overrides: Partial<Answer> = {}): Answer {
     coverage_note: "",
     citations: [],
     sources: [],
+    good_law: [],
     disclaimer: "",
     ...overrides,
   };
 }
+
+describe("good law", () => {
+  const phulavati = {
+    document_id: "judgment:p",
+    title: "Prakash v. Phulavati",
+    citation: "(2016) 2 SCC 36",
+    court: "Supreme Court",
+    url: null,
+    openable: false,
+    pinpoint: null,
+  };
+  const vineeta = { ...phulavati, document_id: "judgment:v", title: "Vineeta Sharma v. Rakesh Sharma" };
+
+  it("warns above the answer when a cited judgment was overruled", () => {
+    render(
+      <AnswerView
+        answer={answer({
+          lede: "A daughter is a coparcener only if her father was alive.",
+          sources: [phulavati, vineeta],
+          good_law: [{ document_id: "judgment:p", status: "DOUBTED",
+                       overruled_by: ["judgment:v"], checked: 0 }],
+        })}
+      />,
+    );
+    const banner = screen.getByText("Doubted authority").closest("section")!;
+    // Named inside the banner, not merely present somewhere on the page:
+    // both judgments also appear in the source list below.
+    expect(banner).toHaveTextContent(
+      "Prakash v. Phulavati was held wrongly decided by Vineeta Sharma v. Rakesh Sharma.",
+    );
+  });
+
+  it("sizes the clean state instead of calling it good law", () => {
+    // "No negative treatment" alone reads as a clearance we never gave.
+    render(
+      <AnswerView
+        answer={answer({
+          sources: [phulavati],
+          good_law: [{ document_id: "judgment:p",
+                       status: "NO_NEGATIVE_TREATMENT", overruled_by: [], checked: 4 }],
+        })}
+      />,
+    );
+    expect(screen.getByText(/among the 4 judgments citing it that we hold/))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/good law/i)).toBeNull();
+  });
+
+  it("shows no banner when nothing was overruled", () => {
+    render(
+      <AnswerView
+        answer={answer({
+          sources: [phulavati],
+          good_law: [{ document_id: "judgment:p",
+                       status: "NO_NEGATIVE_TREATMENT", overruled_by: [], checked: 4 }],
+        })}
+      />,
+    );
+    expect(screen.queryByText("Doubted authority")).toBeNull();
+  });
+
+  it("says nothing at all about a judgment the corpus cannot speak to", () => {
+    // NOT_CHECKED never arrives. An answer citing an unexamined judgment
+    // must look exactly like one where the question never came up.
+    render(<AnswerView answer={answer({ sources: [phulavati], good_law: [] })} />);
+    expect(screen.queryByText("Doubted authority")).toBeNull();
+    expect(screen.queryByText(/negative treatment/)).toBeNull();
+  });
+});
 
 describe("the pinpoint", () => {
   const source = {

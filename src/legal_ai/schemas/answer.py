@@ -50,6 +50,29 @@ class SourceLink:
 
 
 @dataclass(frozen=True)
+class GoodLawNote:
+    """Whether a cited judgment still stands, and on what basis.
+
+    Only judgments we could say something about appear. NOT_CHECKED is the
+    ordinary state of an uncited judgment and renders as nothing, so
+    carrying it would be a row the screen must remember to ignore.
+
+    `checked` is the denominator: "no negative treatment among the 4
+    judgments citing it that we hold" is a claim a reader can size, where
+    "no negative treatment" reads as a clearance we never gave.
+    """
+
+    document_id: str
+    status: str
+    overruled_by: tuple[str, ...] = ()
+    checked: int = 0
+
+    @property
+    def is_a_warning(self) -> bool:
+        return self.status == "DOUBTED"
+
+
+@dataclass(frozen=True)
 class DraftAnswer:
     """What the research screen renders."""
 
@@ -94,6 +117,11 @@ class DraftAnswer:
     # One per cited id, carrying the link a reader opens to check the
     # claim. Without these the answer is a set of opaque identifiers.
     sources: tuple[SourceLink, ...] = ()
+
+    # Standing of the judgments cited, where the corpus can speak to it.
+    # A judgment held wrongly decided must not render like one nothing has
+    # touched -- that is the whole reason a citator exists.
+    good_law: tuple[GoodLawNote, ...] = ()
 
     # Set when the question names an Act the corpus does not hold. A
     # statement about our shelf, not about the law -- see
