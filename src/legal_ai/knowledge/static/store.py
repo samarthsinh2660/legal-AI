@@ -12,8 +12,79 @@ import psycopg
 from legal_ai.ingestion.schema import CanonicalDocument
 from legal_ai.schemas.evidence import Provenance
 
-_WORD_RE = re.compile(r"[A-Za-z]{4,}")
-_STOPWORDS = {"the", "act", "and", "for", "act,"}
+# Abbreviations and short names judgments write, each pinned to the one Act
+# it means. A table and not a match, because none of these can be found in
+# a title: "IPC" is not in "The Indian Penal Code, 1860". Every target is
+# checked to exist by tests/retrieval/test_act_resolution.py.
+#
+# Left out on purpose: "Arbitration Act" (1940 or 1996), "Companies Act"
+# (1956 or 2013), "Succession Act" (Indian or Hindu), "Representation of
+# the People Act" (1950 rolls or 1951 elections). A name that means two Acts
+# is refused rather than resolved -- see find_act_by_name.
+_ALIASES: dict[str, str] = {
+    **dict.fromkeys(("ipc", "i.p.c.", "indian penal code", "penal code"), "act:ipc-1860"),
+    **dict.fromkeys(("crpc", "cr.p.c.", "cr. p.c.", "code of criminal procedure",
+                     "criminal procedure code"), "act:crpc-1973"),
+    **dict.fromkeys(("cpc", "c.p.c.", "code of civil procedure",
+                     "civil procedure code"), "act:2191"),
+    **dict.fromkeys(("evidence act", "indian evidence act", "iea"), "act:iea-1872"),
+    **dict.fromkeys(("ni act", "n.i. act", "negotiable instruments act",
+                     "negotiable instrument act"), "act:2189"),
+    **dict.fromkeys(("a&c act", "arbitration and conciliation act",
+                     "arbitration & conciliation act"), "act:1978"),
+    **dict.fromkeys(("pml act", "pmla", "pmla act"), "act:2036"),
+    **dict.fromkeys(("ibc", "i&b code", "insolvency and bankruptcy code"), "act:2154"),
+    **dict.fromkeys(("bns", "bharatiya nyaya sanhita"), "act:20062"),
+    **dict.fromkeys(("bnss", "bharatiya nagarik suraksha sanhita"), "act:20099"),
+    **dict.fromkeys(("bsa", "bharatiya sakshya adhiniyam", "bharatiya sakshya act"),
+                    "act:20063"),
+    **dict.fromkeys(("motor vehicle act", "mv act", "m.v. act"), "act:1798"),
+    # Short names for titles whose parenthetical a judgment never writes out.
+    "aadhaar act": "act:2160",
+    "juvenile justice act": "act:2148",
+    "ndps act": "act:1791",
+    "sarfaesi act": "act:2006",
+    "pocso act": "act:2079",
+    "sebi act": "act:1890",
+    "msmed act": "act:2013",
+    "mmdr act": "act:1421",
+    "rte act": "act:2086",
+    "ngt act": "act:2025",
+    "nia act": "act:2054",
+}
+
+# Names that mean one held Act only when the judgment says which year.
+# "Arbitration Act, 1996" is the Arbitration and Conciliation Act; "the
+# Arbitration Act, 1940" is a repealed law we do not hold. With no year --
+# after `extract_section_references` has carried over any the judgment wrote
+# -- it is refused rather than assumed to be the newer one.
+_ALIASES_WITH_YEAR: dict[str, str] = {
+    "arbitration act": "act:1978",
+}
+
+# What a judgment calls an Act when it is describing it rather than naming
+# it. Each is the tail of some title -- "The Andhra State Act, 1953" ends in
+# "State Act" -- so a name rule alone matched 22 references to it, and "a
+# State Act" in a judgment means whichever State's law is in issue.
+_DESCRIPTIONS = frozenset({
+    "act", "code", "said act", "said code", "state act", "central act",
+    "principal act", "parent act", "amendment act", "amending act", "present act",
+    "old act", "new act", "earlier act", "repealed act", "local act", "special act",
+    "general act", "enabling act", "impugned act", "unlawful act",
+})
+
+_YEAR_IN_TITLE = re.compile(r",?\s*\b(1[89]\d\d|20\d\d)\b\.?\s*$")
+
+
+def _normalise_act_name(name: str) -> str:
+    """Lower-cased, one space between words, no "the" and no trailing
+    punctuation. Hyphens become spaces: judgments write "Income Tax" and
+    India Code prints "Income-tax"."""
+    text = re.sub(r"\s+", " ", name.replace("-", " ")).strip().lower()
+    # "the" is dropped wherever it falls, not only at the start: judgments
+    # write "Representation of People Act" for "...of the People Act".
+    text = re.sub(r"\bthe\b ?", "", text).strip()
+    return text.rstrip(".,; ")
 
 
 def upsert_document(
@@ -147,33 +218,83 @@ def get_document(conn: psycopg.Connection, document_id: str) -> CanonicalDocumen
     return _row_to_document(row) if row else None
 
 
-def find_act_by_name(conn: psycopg.Connection, act_name: str) -> str | None:
-    """Resolve a statute name (as written in a judgment) to a stored Act's document_id.
+def _names(title: str, name: str) -> bool:
+    """Whether `title` is the Act `name` refers to.
 
-    Requires every significant (4+ letter) word from `act_name` to appear
-    in a candidate Act's title, case-insensitively — deliberately strict:
-    a wrong Act match would create a false CITES_SECTION edge, which is
-    worse than leaving the reference unresolved. Returns the shortest
-    matching title on the theory that it's the most specific match.
+    The name has to be where the title's own name ends, not merely inside
+    it. "The Goa, Daman and Diu (Extension of the Code of Civil Procedure
+    and the Arbitration Act) Regulation" contains "Arbitration Act"; it is
+    not the Arbitration Act, and matching the phrase anywhere took 351
+    references there.
     """
-    words = [w.lower() for w in _WORD_RE.findall(act_name) if w.lower() not in _STOPWORDS]
-    if not words:
+    base = _normalise_act_name(_YEAR_IN_TITLE.sub("", title))
+    return base == name or base.endswith(" " + name)
+
+
+def find_act_by_name(
+    conn: psycopg.Connection, act_name: str, act_year: str | None = None
+) -> str | None:
+    """Resolve an Act as a judgment names it to the one stored Act it means.
+
+    A wrong match writes a CITES_SECTION edge to an Act the judgment never
+    mentioned, and it renders exactly like a right one -- so every rule here
+    refuses rather than guesses:
+
+    - An abbreviation resolves only through `_ALIASES`.
+    - Otherwise the name must appear in a title as a whole phrase, word for
+      word. The rule this replaced accepted each word anywhere, as a
+      substring, and took the shortest title: "Income Tax Act" became the
+      Black Money Act, "State Act" the Deo Estate Act.
+    - A year, when the judgment wrote one, must be the year in the title.
+    - A name more than one title answers to resolves to nothing, unless
+      exactly one of them is that name and no more. "Succession Act" is the
+      Indian and the Hindu Act; it is refused.
+    """
+    name = _normalise_act_name(act_name)
+    if not name or name in _DESCRIPTIONS:
         return None
 
-    conditions = " AND ".join(f"title ILIKE %s" for _ in words)
-    params = [f"%{w}%" for w in words]
-    with conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT document_id FROM documents
-            WHERE document_type = 'act' AND {conditions}
-            ORDER BY length(title) ASC
-            LIMIT 1
-            """,
-            params,
-        )
-        row = cur.fetchone()
-    return row[0] if row else None
+    alias = _ALIASES.get(name)
+    if alias is None and act_year is not None:
+        alias = _ALIASES_WITH_YEAR.get(name)
+    if alias is not None:
+        if act_year is None:
+            return alias
+        row = conn.execute(
+            "SELECT title FROM documents WHERE document_id = %s", (alias,)
+        ).fetchone()
+        return alias if row and act_year in row[0] else None
+
+    candidates = [
+        (document_id, title)
+        for document_id, title in conn.execute(
+            "SELECT document_id, title FROM documents WHERE document_type = 'act'"
+        ).fetchall()
+        if _names(title, name) and (act_year is None or act_year in title)
+    ]
+    if len(candidates) == 1:
+        return candidates[0][0]
+
+    # Several titles contain the phrase -- a principal Act and the Acts
+    # named after it. Only a title that IS the name, year aside, settles it.
+    exact = [
+        (document_id, title) for document_id, title in candidates
+        if _normalise_act_name(_YEAR_IN_TITLE.sub("", title)) == name
+    ]
+    if len(exact) == 1:
+        return exact[0][0]
+    # The same title twice is one Act stored twice, not two Acts: the
+    # Specific Relief Act 1963 is held as a 48-section Act and a 1-section
+    # stub. The copy that holds the sections is the one a citation can land
+    # on. Different titles -- two years of the same name -- stay refused.
+    if len(exact) > 1 and len({title for _id, title in exact}) == 1:
+        return conn.execute(
+            "SELECT a.document_id FROM documents a WHERE a.document_id = ANY(%s) "
+            "ORDER BY (SELECT count(*) FROM documents s WHERE s.act_id = a.document_id) DESC "
+            "LIMIT 1",
+            ([document_id for document_id, _title in exact],),
+        ).fetchone()[0]
+    return None
 
 
 def find_similar(

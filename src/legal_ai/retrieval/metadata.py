@@ -99,7 +99,7 @@ def search_metadata(
     seen: set[str] = set()
 
     for reference in extract_section_references(query):
-        act_id = find_act_by_name(conn, reference.act_name)
+        act_id = find_act_by_name(conn, reference.act_name, reference.act_year)
         if act_id is None:
             continue
         document_id = f"{act_id}:sec-{reference.section_number}"

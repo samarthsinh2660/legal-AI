@@ -10,6 +10,8 @@ A count is the cheapest signal that separates them, and it is already in the
 text -- the extractor was discarding it during de-duplication.
 """
 
+import pytest
+
 from legal_ai.ingestion.statute_citations import extract_section_references
 
 
@@ -57,3 +59,68 @@ def test_abbreviated_form_is_counted_too():
 
 def test_no_references():
     assert extract_section_references("A judgment about nothing in particular.") == []
+
+
+# --- a year written once carries to the references that follow -----------
+
+
+def test_a_reference_without_a_year_takes_the_one_the_judgment_wrote():
+    # Judgments name the Act in full once and shorten it after. The later
+    # references are the same Act, and "Arbitration Act" alone is two
+    # different laws -- 1940 and 1996.
+    text = (
+        "An application under Section 34 of the Arbitration Act, 1996 was filed. "
+        "The court held that Section 11 of the Arbitration Act permits it."
+    )
+    refs = {r.section_number: r for r in extract_section_references(text)}
+    assert refs["34"].act_year == "1996"
+    assert refs["11"].act_year == "1996"
+
+
+def test_the_year_survives_when_the_bare_mention_comes_first():
+    # De-duplication keeps the first match; the year must not be lost just
+    # because the reference without it happened to appear earlier.
+    text = (
+        "Section 34 of the Arbitration Act was invoked. Later the court read "
+        "Section 34 of the Arbitration Act, 1996 again."
+    )
+    (ref,) = extract_section_references(text)
+    assert ref.act_year == "1996"
+
+
+def test_two_years_for_one_name_leave_the_bare_mention_unresolved():
+    # A judgment written across the Companies Act transition names both. A
+    # bare "Companies Act" could be either, so it takes neither.
+    text = (
+        "Section 391 of the Companies Act, 1956 and Section 230 of the "
+        "Companies Act, 2013 were compared. Section 7 of the Companies Act applies."
+    )
+    refs = {r.section_number: r for r in extract_section_references(text)}
+    assert refs["391"].act_year == "1956"
+    assert refs["230"].act_year == "2013"
+    assert refs["7"].act_year is None
+
+
+# --- the 2023 criminal codes, which are not named "Act" or "Code" ---------
+
+
+@pytest.mark.parametrize("text, name", [
+    ("Section 318 of the Bharatiya Nyaya Sanhita, 2023", "Bharatiya Nyaya Sanhita"),
+    ("Section 480 of the Bharatiya Nagarik Suraksha Sanhita", "Bharatiya Nagarik Suraksha Sanhita"),
+    ("Section 63 of the Bharatiya Sakshya Adhiniyam, 2023", "Bharatiya Sakshya Adhiniyam"),
+])
+def test_a_2023_code_named_in_full_is_found(text, name):
+    # They end in "Sanhita" and "Adhiniyam". A pattern that required "Act"
+    # or "Code" found none of the 90 judgments that name them in full.
+    (ref,) = extract_section_references(text)
+    assert ref.act_name == name
+
+
+@pytest.mark.parametrize("text, abbreviation", [
+    ("Section 318 BNS", "BNS"),
+    ("u/s 482 BNSS", "BNSS"),
+    ("certificate U/s 63 BSA", "BSA"),
+])
+def test_a_2023_code_abbreviated_is_found(text, abbreviation):
+    (ref,) = extract_section_references(text)
+    assert ref.act_name == abbreviation
