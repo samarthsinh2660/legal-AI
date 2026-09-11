@@ -31,6 +31,13 @@ class Claim:
     evidence_ids: tuple[str, ...] = ()
     paragraph: int | None = None
 
+    # The passage the claim rests on, copied from the cited document.
+    # Kept beside the text rather than inside it: the two say the same
+    # thing, and printing both in one sentence doubles a claim's length
+    # for no gain. `verification.quotes` checks this against the source,
+    # which is the one check in the funnel that cannot hallucinate.
+    quote: str = ""
+
 
 class Verdict(str, Enum):
     """What a checker concluded about one claim.

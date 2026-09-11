@@ -122,7 +122,7 @@ describe("the pinpoint", () => {
     render(
       <AnswerView
         answer={answer({
-          key_elements: [{ text: "The allottee may withdraw.", evidence_ids: [source.document_id] }],
+          key_elements: [{ text: "The allottee may withdraw.", evidence_ids: [source.document_id], quote: "" }],
           sources: [source],
         })}
       />,
@@ -141,7 +141,7 @@ describe("the pinpoint", () => {
     render(
       <AnswerView
         answer={answer({
-          key_elements: [{ text: "A refund is due.", evidence_ids: ["act:2158:sec-18"] }],
+          key_elements: [{ text: "A refund is due.", evidence_ids: ["act:2158:sec-18"], quote: "" }],
           sources: [{ ...source, document_id: "act:2158:sec-18", citation: null,
                       court: null, pinpoint: null }],
         })}
@@ -156,7 +156,7 @@ describe("the four verdicts", () => {
     render(
       <AnswerView
         answer={answer({
-          key_elements: [{ text: "Section 18 gives a refund.", evidence_ids: [] }],
+          key_elements: [{ text: "Section 18 gives a refund.", evidence_ids: [], quote: "" }],
         })}
       />,
     );
@@ -207,7 +207,7 @@ describe("the four verdicts", () => {
   it("shows no qualifying block at all when every claim passed", () => {
     render(
       <AnswerView
-        answer={answer({ key_elements: [{ text: "Clean.", evidence_ids: [] }] })}
+        answer={answer({ key_elements: [{ text: "Clean.", evidence_ids: [], quote: "" }] })}
       />,
     );
     expect(screen.queryByText(/supported in part/i)).not.toBeInTheDocument();
@@ -281,7 +281,7 @@ describe("citations", () => {
     render(
       <AnswerView
         answer={answer({
-          key_elements: [{ text: "Claim.", evidence_ids: ["act:2189:sec-138"] }],
+          key_elements: [{ text: "Claim.", evidence_ids: ["act:2189:sec-138"], quote: "" }],
           sources: [{
             document_id: "act:2189:sec-138",
             title: "Dishonour of cheque",
@@ -306,7 +306,7 @@ describe("citations", () => {
     render(
       <AnswerView
         answer={answer({
-          key_elements: [{ text: "Claim.", evidence_ids: ["act:2158:sec-18"] }],
+          key_elements: [{ text: "Claim.", evidence_ids: ["act:2158:sec-18"], quote: "" }],
         })}
       />,
     );
@@ -384,5 +384,36 @@ describe("a real recorded answer", () => {
     expect(screen.getByText(/not legal advice/i)).toBeInTheDocument();
     // This run was quick mode, and must say so.
     expect(screen.getByText(/quick mode/i)).toBeInTheDocument();
+  });
+});
+
+describe("the quoted passage", () => {
+  it("shows the source's own words apart from the claim", () => {
+    render(
+      <AnswerView
+        answer={answer({
+          key_elements: [{
+            text: "Anticipatory bail is an exceptional power.",
+            evidence_ids: [],
+            quote: "the power to grant anticipatory bail is an exceptional power",
+          }],
+        })}
+      />,
+    );
+    // Set apart, not run into the sentence: both say the same thing, and
+    // printing the quote as prose doubles the line.
+    const quote = screen.getByText(/exceptional power$/);
+    expect(quote.tagName).toBe("BLOCKQUOTE");
+  });
+
+  it("renders nothing extra when a claim carries no quote", () => {
+    const { container } = render(
+      <AnswerView
+        answer={answer({
+          key_elements: [{ text: "A refund is due.", evidence_ids: [], quote: "" }],
+        })}
+      />,
+    );
+    expect(container.querySelector("blockquote")).toBeNull();
   });
 });

@@ -84,6 +84,9 @@ export const ClaimSchema = z.object({
   text: z.string(),
   evidence_ids: z.array(z.string()),
   paragraph: z.string().nullable().optional(),
+  // The passage the claim rests on, checked word for word against the
+  // cited document. Empty when none was offered.
+  quote: z.string().default(""),
 });
 
 export type Claim = z.infer<typeof ClaimSchema>;

@@ -256,6 +256,11 @@ def render(answer: DraftAnswer) -> str:
         lines.append("")
         for claim in answer.key_elements:
             lines.append(f"- {claim.text} [{', '.join(claim.evidence_ids)}]")
+            if claim.quote:
+                # Indented under its claim rather than run into the
+                # sentence: the two say the same thing, and printing both
+                # as one line doubles the claim for no gain.
+                lines.append(f'    "{claim.quote}"')
 
     if answer.partially_supported:
         lines.append("")

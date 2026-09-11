@@ -47,6 +47,9 @@ class ClaimModel(BaseModel):
     text: str
     evidence_ids: list[str]
     paragraph: Optional[int] = None
+    # The passage the claim rests on, verified word for word against the
+    # cited document. Empty when the analyst offered none.
+    quote: str = ""
 
 
 class SourceLinkModel(BaseModel):
@@ -101,6 +104,7 @@ class AnswerModel(BaseModel):
                     text=claim.text,
                     evidence_ids=list(claim.evidence_ids),
                     paragraph=claim.paragraph,
+                    quote=claim.quote,
                 )
                 for claim in answer.key_elements
             ],

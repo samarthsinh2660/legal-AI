@@ -80,6 +80,15 @@ export function AnswerView({ answer }: { answer: Answer }) {
                     ))}
                   </span>
                 )}
+                {/* The source's own words, found verbatim in the cited
+                    document. Set apart rather than run into the sentence:
+                    the claim and the passage say the same thing, and
+                    printing both as prose doubles the line for no gain. */}
+                {claim.quote && (
+                  <blockquote className="mt-1.5 border-l-2 border-line pl-3 text-[13px] italic leading-[1.65] text-ink-muted">
+                    {claim.quote}
+                  </blockquote>
+                )}
               </li>
             ))}
           </ul>

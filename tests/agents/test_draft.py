@@ -303,3 +303,19 @@ def test_the_plain_text_rendering_warns_before_the_sources():
     text = render(answer)
     assert "DOUBTED" in text
     assert text.index("DOUBTED") < text.index("Sources:")
+
+
+def test_a_claims_quote_is_shown_under_it_not_inside_it():
+    # Both say the same thing; running them into one sentence doubles the
+    # claim's length for no gain.
+    quoted = Claim("A promoter must refund.", ("act:2158:sec-18",),
+                   quote="the promoter shall return the amount received")
+    answer = build_answer("q", AnalysisResult(claims=(quoted,)), EVIDENCE)
+    text = render(answer)
+    assert '"the promoter shall return the amount received"' in text
+    assert "A promoter must refund. [act" in text
+
+
+def test_a_claim_without_a_quote_renders_unchanged():
+    answer = build_answer("q", AnalysisResult(claims=(GROUNDED,)), EVIDENCE)
+    assert '""' not in render(answer)

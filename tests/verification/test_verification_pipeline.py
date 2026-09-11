@@ -280,3 +280,47 @@ def test_unsupported_texts_is_unchanged_by_the_narrowing():
         _verdict("invented quote", Verdict.UNSUPPORTED, "quote"),
     ])
     assert report.unsupported_texts == ["overstated", "invented quote"]
+
+
+# --- the quote stage is a one-way gate ------------------------------------
+
+
+def _real_sentence(conn) -> str:
+    """A span of the real section, long enough for the quote checker."""
+    row = conn.execute(
+        "SELECT full_text FROM documents WHERE document_id = %s", (REAL,)
+    ).fetchone()
+    conn.commit()
+    return " ".join((row[0] or "").split())[:120]
+
+
+def test_a_quote_absent_from_the_source_fails_the_claim(conn, model):
+    # The Delhi High Court failure: a real case, a citation that resolves,
+    # and words nobody wrote. A string match settles it with no model.
+    claim = Claim(
+        text="The promoter must refund.",
+        evidence_ids=(REAL,),
+        quote="the promoter shall be flogged in the public square at dawn",
+    )
+
+    report = verify([claim], conn, available_ids={REAL}, use_model=True)
+
+    assert report.verdicts[0].verdict is Verdict.UNSUPPORTED
+    assert report.verdicts[0].stage == "quote"
+    assert model == [] or not model, "the model was asked about a fabricated quote"
+
+
+def test_a_quote_that_is_found_still_goes_to_the_model(conn, model):
+    # Provenance is not support. A claim quoting real words from the right
+    # document can still say something the passage does not say, so a found
+    # quote may never settle a claim on its own.
+    claim = Claim(
+        text="Something the section may or may not say.",
+        evidence_ids=(REAL,),
+        quote=_real_sentence(conn),
+    )
+
+    report = verify([claim], conn, available_ids={REAL}, use_model=True)
+
+    assert report.verdicts[0].stage == "semantic"
+    assert model, "a found quote skipped the semantic stage"
