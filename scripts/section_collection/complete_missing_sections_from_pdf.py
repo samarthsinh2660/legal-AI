@@ -25,6 +25,7 @@ import time
 
 import pypdf
 from google import genai
+from google.genai import types
 
 from legal_ai.ingestion.schema import content_hash
 from legal_ai.knowledge.static.db import get_connection
@@ -84,8 +85,8 @@ PDF TEXT:
 {pdf_text}
 """
     last_error: Exception | None = None
-    for model in MODELS:
-        for attempt in range(2):
+    for pass_num in range(2):
+        for model in MODELS:
             try:
                 resp = client.models.generate_content(model=model, contents=prompt)
                 text = resp.text.strip()
@@ -94,15 +95,15 @@ PDF TEXT:
                 return json.loads(text)
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
-                # 429 is the free-tier per-minute token quota — a fixed
-                # short sleep isn't enough headroom, and switching models
-                # doesn't help since they share the same account quota.
-                # Wait out a full window before retrying.
-                if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
-                    time.sleep(65)
-                elif attempt == 0:
+                # A 429 on one model doesn't mean the others are exhausted
+                # too — confirmed live: each model has its own per-minute
+                # quota, so the fix is to move on immediately, not sleep
+                # and retry the same exhausted one. Only sleep once we've
+                # tried every model in this pass and all failed.
+                if not ("RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc)):
                     time.sleep(5)
-        # this model failed twice — move on to the next one immediately
+        if pass_num == 0:
+            time.sleep(65)
     raise last_error if last_error is not None else RuntimeError("no models configured")
 
 
@@ -118,7 +119,12 @@ def _is_valid_extraction(text: object) -> bool:
 
 def run() -> None:
     api_key = os.environ["GEMINI_API_KEY"]
-    client = genai.Client(api_key=api_key)
+    # Without an explicit timeout, a stalled connection to the API can hang
+    # the whole run indefinitely — confirmed live: one call sat open for
+    # 58 minutes with the process just sleeping on a socket, no progress,
+    # no error. 2 minutes is generous headroom for even the largest PDF
+    # prompts we send (the biggest so far was ~120K tokens).
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=120_000))
     conn = get_connection()
 
     act_rows = conn.execute(
@@ -150,6 +156,13 @@ def run() -> None:
             continue
 
         pdf_text = extract_pdf_text(pdf_url)
+        # The 250K-token/min quota is shared across the whole gemini-3-flash
+        # family (confirmed live) AND is cumulative within any rolling
+        # minute — confirmed live again: a 20s gap still let 2-3 large
+        # calls land in the same window and blow past it together, even
+        # though each individual call was well under 250K tokens alone.
+        # One call per full minute keeps each one in its own window.
+        time.sleep(70)
         try:
             results = ask_gemini_for_sections(client, act_title, pdf_text, numbers)
         except Exception as exc:  # noqa: BLE001
