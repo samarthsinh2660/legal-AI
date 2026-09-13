@@ -260,9 +260,6 @@ not is a bug:
     RELIABILITY_ARCHITECTURE.md   why the queue, the worker and the streams
                                   are shaped the way they are
     API.md                        every endpoint, and what it returns
-    SPEED_WARM_TURN_2026_09_06.md where a question's seconds go
-    QA_runs_2026_09_06.md         what the last QA pass found, including
-                                  the bugs it found in itself
 
 And three suites you can run yourself against a live stack:
 

@@ -32,10 +32,80 @@ function answer(overrides: Partial<Answer> = {}): Answer {
     coverage_note: "",
     citations: [],
     sources: [],
+    good_law: [],
     disclaimer: "",
     ...overrides,
   };
 }
+
+describe("good law", () => {
+  const phulavati = {
+    document_id: "judgment:p",
+    title: "Prakash v. Phulavati",
+    citation: "(2016) 2 SCC 36",
+    court: "Supreme Court",
+    url: null,
+    openable: false,
+    pinpoint: null,
+  };
+  const vineeta = { ...phulavati, document_id: "judgment:v", title: "Vineeta Sharma v. Rakesh Sharma" };
+
+  it("warns above the answer when a cited judgment was overruled", () => {
+    render(
+      <AnswerView
+        answer={answer({
+          lede: "A daughter is a coparcener only if her father was alive.",
+          sources: [phulavati, vineeta],
+          good_law: [{ document_id: "judgment:p", status: "DOUBTED",
+                       overruled_by: ["judgment:v"], checked: 0 }],
+        })}
+      />,
+    );
+    const banner = screen.getByText("Doubted authority").closest("section")!;
+    // Named inside the banner, not merely present somewhere on the page:
+    // both judgments also appear in the source list below.
+    expect(banner).toHaveTextContent(
+      "Prakash v. Phulavati was held wrongly decided by Vineeta Sharma v. Rakesh Sharma.",
+    );
+  });
+
+  it("sizes the clean state instead of calling it good law", () => {
+    // "No negative treatment" alone reads as a clearance we never gave.
+    render(
+      <AnswerView
+        answer={answer({
+          sources: [phulavati],
+          good_law: [{ document_id: "judgment:p",
+                       status: "NO_NEGATIVE_TREATMENT", overruled_by: [], checked: 4 }],
+        })}
+      />,
+    );
+    expect(screen.getByText(/among the 4 judgments citing it that we hold/))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/good law/i)).toBeNull();
+  });
+
+  it("shows no banner when nothing was overruled", () => {
+    render(
+      <AnswerView
+        answer={answer({
+          sources: [phulavati],
+          good_law: [{ document_id: "judgment:p",
+                       status: "NO_NEGATIVE_TREATMENT", overruled_by: [], checked: 4 }],
+        })}
+      />,
+    );
+    expect(screen.queryByText("Doubted authority")).toBeNull();
+  });
+
+  it("says nothing at all about a judgment the corpus cannot speak to", () => {
+    // NOT_CHECKED never arrives. An answer citing an unexamined judgment
+    // must look exactly like one where the question never came up.
+    render(<AnswerView answer={answer({ sources: [phulavati], good_law: [] })} />);
+    expect(screen.queryByText("Doubted authority")).toBeNull();
+    expect(screen.queryByText(/negative treatment/)).toBeNull();
+  });
+});
 
 describe("the pinpoint", () => {
   const source = {
@@ -52,7 +122,7 @@ describe("the pinpoint", () => {
     render(
       <AnswerView
         answer={answer({
-          key_elements: [{ text: "The allottee may withdraw.", evidence_ids: [source.document_id] }],
+          key_elements: [{ text: "The allottee may withdraw.", evidence_ids: [source.document_id], quote: "" }],
           sources: [source],
         })}
       />,
@@ -71,7 +141,7 @@ describe("the pinpoint", () => {
     render(
       <AnswerView
         answer={answer({
-          key_elements: [{ text: "A refund is due.", evidence_ids: ["act:2158:sec-18"] }],
+          key_elements: [{ text: "A refund is due.", evidence_ids: ["act:2158:sec-18"], quote: "" }],
           sources: [{ ...source, document_id: "act:2158:sec-18", citation: null,
                       court: null, pinpoint: null }],
         })}
@@ -86,7 +156,7 @@ describe("the four verdicts", () => {
     render(
       <AnswerView
         answer={answer({
-          key_elements: [{ text: "Section 18 gives a refund.", evidence_ids: [] }],
+          key_elements: [{ text: "Section 18 gives a refund.", evidence_ids: [], quote: "" }],
         })}
       />,
     );
@@ -137,7 +207,7 @@ describe("the four verdicts", () => {
   it("shows no qualifying block at all when every claim passed", () => {
     render(
       <AnswerView
-        answer={answer({ key_elements: [{ text: "Clean.", evidence_ids: [] }] })}
+        answer={answer({ key_elements: [{ text: "Clean.", evidence_ids: [], quote: "" }] })}
       />,
     );
     expect(screen.queryByText(/supported in part/i)).not.toBeInTheDocument();
@@ -211,7 +281,7 @@ describe("citations", () => {
     render(
       <AnswerView
         answer={answer({
-          key_elements: [{ text: "Claim.", evidence_ids: ["act:2189:sec-138"] }],
+          key_elements: [{ text: "Claim.", evidence_ids: ["act:2189:sec-138"], quote: "" }],
           sources: [{
             document_id: "act:2189:sec-138",
             title: "Dishonour of cheque",
@@ -236,7 +306,7 @@ describe("citations", () => {
     render(
       <AnswerView
         answer={answer({
-          key_elements: [{ text: "Claim.", evidence_ids: ["act:2158:sec-18"] }],
+          key_elements: [{ text: "Claim.", evidence_ids: ["act:2158:sec-18"], quote: "" }],
         })}
       />,
     );
@@ -314,5 +384,36 @@ describe("a real recorded answer", () => {
     expect(screen.getByText(/not legal advice/i)).toBeInTheDocument();
     // This run was quick mode, and must say so.
     expect(screen.getByText(/quick mode/i)).toBeInTheDocument();
+  });
+});
+
+describe("the quoted passage", () => {
+  it("shows the source's own words apart from the claim", () => {
+    render(
+      <AnswerView
+        answer={answer({
+          key_elements: [{
+            text: "Anticipatory bail is an exceptional power.",
+            evidence_ids: [],
+            quote: "the power to grant anticipatory bail is an exceptional power",
+          }],
+        })}
+      />,
+    );
+    // Set apart, not run into the sentence: both say the same thing, and
+    // printing the quote as prose doubles the line.
+    const quote = screen.getByText(/exceptional power$/);
+    expect(quote.tagName).toBe("BLOCKQUOTE");
+  });
+
+  it("renders nothing extra when a claim carries no quote", () => {
+    const { container } = render(
+      <AnswerView
+        answer={answer({
+          key_elements: [{ text: "A refund is due.", evidence_ids: [], quote: "" }],
+        })}
+      />,
+    );
+    expect(container.querySelector("blockquote")).toBeNull();
   });
 });

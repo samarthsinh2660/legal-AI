@@ -86,6 +86,11 @@ copied exactly from the brackets above.
 Rules:
 - Use ONLY the material above. Do not add law from memory.
 - Every claim needs at least one identifier from the list above.
+- Every claim carries "quote": the passage it rests on, at least ten
+  words, copied character for character from the material above -- same
+  spelling, same punctuation. Do not tidy it, shorten it, or join two
+  separate passages into one quotation.
+- If no passage in the material says it, do not make the claim.
 - If the material does not answer the question, say so in "lede" and
   return few or no claims. That is a correct answer, not a failure.
 - Do not invent an identifier. If nothing above supports a statement, do
@@ -93,7 +98,8 @@ Rules:
 
 Return ONLY JSON:
 {{"lede": "one or two sentences answering the question directly",
-  "claims": [{{"text": "...", "evidence_ids": ["..."]}}]}}"""
+  "claims": [{{"text": "...", "evidence_ids": ["..."],
+              "quote": "the exact words from the material above"}}]}}"""
 
 
 def _render_evidence(evidence: list[Evidence]) -> str:
@@ -206,7 +212,8 @@ def analyse(
         cited = [str(i).strip() for i in (item.get("evidence_ids") or []) if str(i).strip()]
         ids = tuple(i for i in cited if i in available)
         dropped.extend(i for i in cited if i not in available)
-        claims.append(Claim(text=text, evidence_ids=ids))
+        quote = str(item.get("quote") or "").strip().strip('"“”')
+        claims.append(Claim(text=text, evidence_ids=ids, quote=quote))
 
     lede = str(parsed.get("lede") or "").strip()
     return AnalysisResult(

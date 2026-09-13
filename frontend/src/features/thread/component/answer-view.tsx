@@ -4,6 +4,7 @@ import { ProvenanceBadge } from "@/components/molecules/provenance-badge";
 import { provenanceOf } from "../evidence";
 import type { Answer } from "../types";
 import { CitationRef } from "./citation-ref";
+import { GoodLawBanner } from "./good-law-banner";
 import { SourceList } from "./source-list";
 import { EvidenceBlock } from "./evidence-block";
 
@@ -47,6 +48,10 @@ export function AnswerView({ answer }: { answer: Answer }) {
         </div>
       )}
 
+      {/* Above the answer: an overruled authority changes whether the
+          reader should use what follows at all. */}
+      <GoodLawBanner notes={answer.good_law} sources={answer.sources} />
+
       {/* Above the answer: it changes how everything below should be read. */}
       {answer.coverage_note && (
         <p className="rounded-md border border-warn/30 bg-warn-bg px-4 py-3 text-sm leading-[1.7] text-warn">
@@ -75,6 +80,15 @@ export function AnswerView({ answer }: { answer: Answer }) {
                     ))}
                   </span>
                 )}
+                {/* The source's own words, found verbatim in the cited
+                    document. Set apart rather than run into the sentence:
+                    the claim and the passage say the same thing, and
+                    printing both as prose doubles the line for no gain. */}
+                {claim.quote && (
+                  <blockquote className="mt-1.5 border-l-2 border-line pl-3 text-[13px] italic leading-[1.65] text-ink-muted">
+                    {claim.quote}
+                  </blockquote>
+                )}
               </li>
             ))}
           </ul>
@@ -98,7 +112,9 @@ export function AnswerView({ answer }: { answer: Answer }) {
         </p>
       )}
 
-      {answer.sources.length > 0 && <SourceList sources={answer.sources} />}
+      {answer.sources.length > 0 && (
+        <SourceList sources={answer.sources} goodLaw={answer.good_law} />
+      )}
 
       {answer.sources.length === 0 &&
         (answer.applicable_law.length > 0 || answer.key_judgments.length > 0) && (

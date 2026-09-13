@@ -100,7 +100,11 @@ def verify(
 
         # --- stage 3: quoted words must appear in the cited text ----------
         cited = {doc_id: sources.get(doc_id, "") for doc_id in claim.evidence_ids}
-        quote_checks = check_quotations(claim.text, cited)
+        # The claim's own quote field, plus anything it quoted inline. The
+        # field is where the analyst puts it; the inline form is still
+        # checked so a claim that quotes in its prose is not exempt.
+        quotable = f'{claim.text} "{claim.quote}"' if claim.quote else claim.text
+        quote_checks = check_quotations(quotable, cited)
         invented = [check for check in quote_checks if not check.found]
         if invented:
             verdicts.append(ClaimVerdict(
@@ -110,14 +114,13 @@ def verify(
                 "quote",
             ))
             continue
-        if quote_checks:
-            # Every quoted span was found verbatim. Nothing a model could
-            # add, so it is not asked.
-            verdicts.append(ClaimVerdict(
-                claim, Verdict.SUPPORTED, "quoted text found in the cited document", "quote"
-            ))
-            continue
-
+        # A quote that WAS found proves provenance, not support. Measured
+        # 2026-09-11, once the analyst began quoting on every claim: 7 of 13
+        # claims whose quotes were all found were then judged UNSUPPORTED by
+        # stage 6 -- a claim about s.138 NI Act quoting real words from a
+        # judgment about FERA passes a string match and answers nothing.
+        # Treating "found" as terminal was safe only while quoting was rare.
+        # So the stage is a one-way gate: it can fail a claim, never pass it.
         survivors.append(claim)
 
     # --- stage 6: paraphrase, which nothing mechanical can settle ---------

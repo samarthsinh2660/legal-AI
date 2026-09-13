@@ -28,8 +28,16 @@ import time
 
 import pypdf
 
+from legal_ai.graphdb.client import get_driver
+from legal_ai.graphdb.treatment import Result, classify_untreated
 from legal_ai.ingestion.judgments.dynamic_search import _to_canonical, _verify
 from legal_ai.ingestion.judgments.store import store_judgment
+from legal_ai.knowledge.static.db import get_connection
+
+# Model calls the closing treatment pass may spend. A judgment cites a
+# handful of cases the corpus also holds, and the pass fills each batch
+# from whatever judgments it takes, so this covers a few hundred new edges.
+TREATMENT_CALL_BUDGET = 60
 
 # Five judges per court, chosen for sitting span across 2016-2026 so the
 # range is populated rather than clustered in one or two years.
@@ -234,6 +242,41 @@ def main() -> None:
     total = {k: sum(s[k] for s in overall.values()) for k in
              ("seen", "stored", "unchanged", "skipped", "unverified")}
     print(f"\n== totals across {len(overall)} courts: {total}")
+
+    if total["stored"]:
+        classify_new_edges()
+
+
+def classify_new_edges() -> None:
+    """Treat the citations the newly stored judgments brought in.
+
+    write_judgment already recorded every treatment the reporter's own Case
+    Law Reference table states. This covers the rest, and it runs here
+    rather than inside the store step for two reasons: batching across
+    citing judgments costs a fraction of the calls (see graphdb.treatment),
+    and store_judgment is also on the live research path, where a model
+    call would be spent while a reader waits.
+
+    A failure is reported and does not fail the ingest. An untreated edge
+    reads as NOT_CHECKED, which withholds a clean bill rather than granting
+    a false one, so the corpus is correct either way -- only less useful
+    until the next pass.
+    """
+    print("\n== treating new citations", flush=True)
+    driver = get_driver()
+    conn = get_connection()
+    try:
+        result = classify_untreated(
+            driver, conn, limit=TREATMENT_CALL_BUDGET,
+            on_batch=lambda r: print(f"  {r.calls} calls, {r.written} edges treated",
+                                     flush=True),
+        )
+        print(f"  {result.written} edges treated in {result.calls} calls")
+    except Exception as exc:
+        print(f"  treatment pass failed ({exc}); edges stay NOT_CHECKED")
+    finally:
+        driver.close()
+        conn.close()
 
 
 if __name__ == "__main__":

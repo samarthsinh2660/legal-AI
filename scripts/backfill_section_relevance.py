@@ -37,7 +37,7 @@ def main() -> None:
         with driver.session() as session:
             for n, (document_id, text) in enumerate(rows, start=1):
                 for ref in extract_section_references(text):
-                    act_id = find_act_by_name(conn, ref.act_name)
+                    act_id = find_act_by_name(conn, ref.act_name, ref.act_year)
                     if not act_id:
                         continue
                     section_id = f"{act_id}:sec-{ref.section_number}"

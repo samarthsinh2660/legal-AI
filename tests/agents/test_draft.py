@@ -230,3 +230,92 @@ def test_sources_are_separated_so_a_multi_paragraph_pinpoint_stays_one_source():
         Claim("first", ("judgment:ik-1",)), Claim("second", ("judgment:ik-2",)),
     )), evidence)
     assert "Sources: judgment:ik-1 paras 42, 43; judgment:ik-2 para 9" in render(answer)
+
+
+# --- good law: whether a cited judgment still stands -----------------------
+
+
+def _standing(status, overruled_by=(), checked=()):
+    from legal_ai.retrieval.good_law import GoodLawResult
+    return GoodLawResult(status, overruled_by=tuple(overruled_by),
+                         checked=tuple(checked))
+
+
+def test_an_overruled_judgment_is_reported_as_doubted():
+    from legal_ai.retrieval.good_law import GoodLaw
+    answer = build_answer(
+        "q", AnalysisResult(claims=(ALSO,)), EVIDENCE,
+        good_law={"judgment:ik-149094324": _standing(GoodLaw.DOUBTED, ("judgment:later",))},
+    )
+    assert [(n.document_id, n.status, n.overruled_by) for n in answer.good_law] == [
+        ("judgment:ik-149094324", "DOUBTED", ("judgment:later",))
+    ]
+    assert answer.good_law[0].is_a_warning
+
+
+def test_a_clean_judgment_carries_its_denominator():
+    # "No negative treatment" without the count reads as a clearance. The
+    # number is what makes it a statement about our shelf.
+    from legal_ai.retrieval.good_law import GoodLaw
+    answer = build_answer(
+        "q", AnalysisResult(claims=(ALSO,)), EVIDENCE,
+        good_law={"judgment:ik-149094324": _standing(
+            GoodLaw.NO_NEGATIVE_TREATMENT, checked=("a", "b", "c", "d"))},
+    )
+    assert answer.good_law[0].status == "NO_NEGATIVE_TREATMENT"
+    assert answer.good_law[0].checked == 4
+    assert not answer.good_law[0].is_a_warning
+
+
+def test_a_judgment_nothing_cites_produces_no_note():
+    # NOT_CHECKED is the ordinary state of most of the corpus. A note on
+    # every answer is one a reader learns to skip, which would cost the
+    # DOUBTED note the only job it has.
+    from legal_ai.retrieval.good_law import GoodLaw
+    answer = build_answer(
+        "q", AnalysisResult(claims=(ALSO,)), EVIDENCE,
+        good_law={"judgment:ik-149094324": _standing(GoodLaw.NOT_CHECKED)},
+    )
+    assert answer.good_law == ()
+
+
+def test_a_graph_that_is_down_costs_no_note_and_no_answer():
+    answer = build_answer("q", AnalysisResult(claims=(ALSO,)), EVIDENCE, good_law={})
+    assert answer.good_law == ()
+    assert answer.key_elements == (ALSO,)
+
+
+def test_a_statute_gets_no_standing_note():
+    from legal_ai.retrieval.good_law import GoodLaw
+    answer = build_answer(
+        "q", AnalysisResult(claims=(GROUNDED,)), EVIDENCE,
+        good_law={"act:2158:sec-18": _standing(GoodLaw.DOUBTED, ("x",))},
+    )
+    assert answer.good_law == ()
+
+
+def test_the_plain_text_rendering_warns_before_the_sources():
+    from legal_ai.retrieval.good_law import GoodLaw
+    answer = build_answer(
+        "q", AnalysisResult(claims=(ALSO,)), EVIDENCE,
+        good_law={"judgment:ik-149094324": _standing(GoodLaw.DOUBTED, ("judgment:later",))},
+    )
+    text = render(answer)
+    assert "DOUBTED" in text
+    assert text.index("DOUBTED") < text.index("Sources:")
+
+
+def test_a_claims_quote_is_shown_under_it_not_inside_it():
+    # Both say the same thing; running them into one sentence doubles the
+    # claim's length for no gain.
+    quoted = Claim("A promoter must refund.", ("act:2158:sec-18",),
+                   quote="the promoter shall return the amount received")
+    answer = build_answer("q", AnalysisResult(claims=(quoted,)), EVIDENCE)
+    text = render(answer)
+    assert '"the promoter shall return the amount received"' in text
+    assert "A promoter must refund. [act" in text
+
+
+def test_a_claim_without_a_quote_renders_unchanged():
+    answer = build_answer("q", AnalysisResult(claims=(GROUNDED,)), EVIDENCE)
+    assert '""' not in render(answer)

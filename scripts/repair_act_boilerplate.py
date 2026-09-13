@@ -22,8 +22,7 @@ Two reasons this is worth repairing rather than deleting:
     with the Act's real name, so they look authoritative.
   - Retrieval measured them at 2 of 500 top-10 slots across the 50-question
     benchmark, so this is corpus hygiene, not a ranking fix. It was
-    mis-diagnosed as the cause of a retrieval bug once already; the numbers
-    are in docs/QA_cases_2026_09_04.md.
+    mis-diagnosed as the cause of a retrieval bug once already.
 
 Deterministic, not a model: the page is machine-generated, so the content
 sits between two fixed markers. Verified against all 845 rows -- every one

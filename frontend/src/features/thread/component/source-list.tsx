@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ExternalLink, Share2 } from "lucide-react";
 
 import { sourceKind } from "../evidence";
-import type { SourceLink } from "../types";
+import type { GoodLaw, SourceLink } from "../types";
 
 /** Molecule: what each claim rests on, with a way to open it.
  *
@@ -17,8 +17,16 @@ import type { SourceLink } from "../types";
  *  This used to print "No direct link" as plain text while the inline
  *  citation chip for the same document linked to the graph, so the same
  *  source was a link in one place and not in another. */
-export function SourceList({ sources }: { sources: SourceLink[] }) {
+export function SourceList({
+  sources,
+  goodLaw = [],
+}: {
+  sources: SourceLink[];
+  goodLaw?: GoodLaw[];
+}) {
   if (sources.length === 0) return null;
+
+  const standing = new Map(goodLaw.map((note) => [note.document_id, note]));
 
   return (
     <section className="border-t border-line pt-4">
@@ -65,6 +73,22 @@ export function SourceList({ sources }: { sources: SourceLink[] }) {
                 <div className="text-xs text-ink-muted">
                   We hold no public page for this one — opens in the citation
                   graph. Look it up by the citation above to read it.
+                </div>
+              )}
+
+              {/* Sized, never a clearance: the count is the denominator, and
+                  saying it out loud is what keeps this a statement about our
+                  shelf rather than about the law. */}
+              {standing.get(source.document_id)?.status === "NO_NEGATIVE_TREATMENT" && (
+                <div className="text-xs text-ink-muted">
+                  No negative treatment among the{" "}
+                  {standing.get(source.document_id)!.checked} judgments citing
+                  it that we hold.
+                </div>
+              )}
+              {standing.get(source.document_id)?.status === "DOUBTED" && (
+                <div className="text-xs font-semibold text-danger">
+                  Held wrongly decided by a later judgment — see above.
                 </div>
               )}
             </li>

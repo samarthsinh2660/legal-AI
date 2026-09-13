@@ -28,16 +28,21 @@ from dataclasses import dataclass
 # documents this could not name, and between them they are most of Indian
 # criminal and procedural practice. A name may end in "Code" or open with
 # it ("Code of Criminal Procedure"), so both shapes are matched.
+#
+# And the 2023 codes that replaced them, which end in neither: the
+# Bharatiya Nyaya Sanhita and Nagarik Suraksha Sanhita, and the Sakshya
+# Adhiniyam. Requiring "Act" or "Code" found none of the 90 judgments that
+# name them in full.
 _SECTION_OF_ACT = re.compile(
     r"(?:Section|Sections|S\.)\s+(\d+[A-Za-z]?)(?:\(\d+\))?\s+of\s+(?:the\s+)?"
     r"(Code\s+of\s+[A-Z][A-Za-z,\.\(\)&'\-\s]{3,60}?(?=,|\s+\d{4}|$|\s+[a-z])"
-    r"|[A-Z][A-Za-z,\.\(\)&'\-\s]{3,90}?(?:Act|Code))(?:,?\s*(\d{4}))?",
+    r"|[A-Z][A-Za-z,\.\(\)&'\-\s]{3,90}?(?:Act|Code|Sanhita|Adhiniyam))(?:,?\s*(\d{4}))?",
 )
 
-# "Section 420 IPC", "u/s 302 IPC", "S.138 NI Act"
-_KNOWN_ABBREVIATIONS = ["IPC", "CrPC", "CPC", "NI Act", "Evidence Act"]
+# "Section 420 IPC", "u/s 302 IPC", "U/s 63 BSA", "S.138 NI Act"
+_KNOWN_ABBREVIATIONS = ["IPC", "CrPC", "CPC", "NI Act", "Evidence Act", "BNSS", "BNS", "BSA"]
 _SECTION_ABBREVIATION = re.compile(
-    r"(?:Section|Sections|S\.|u/s\.?)\s*(\d+[A-Za-z]?)(?:\(\d+\))?\s+(" + "|".join(_KNOWN_ABBREVIATIONS) + r")\b",
+    r"(?:Section|Sections|S\.|[Uu]/[Ss]\.?)\s*(\d+[A-Za-z]?)(?:\(\d+\))?\s+(" + "|".join(_KNOWN_ABBREVIATIONS) + r")\b",
 )
 
 
@@ -63,14 +68,19 @@ def extract_section_references(text: str) -> list[SectionReference]:
     """
     found: list[SectionReference] = []
     by_key: dict[tuple[str, str], SectionReference] = {}
+    years: dict[str, set[str]] = {}
 
     def add(key: tuple[str, str], reference: SectionReference) -> None:
+        if reference.act_year:
+            years.setdefault(key[1], set()).add(reference.act_year)
         existing = by_key.get(key)
         if existing is None:
             by_key[key] = reference
             found.append(reference)
         else:
             existing.mentions += 1
+            # The bare mention may come first; its year arrives with a later one.
+            existing.act_year = existing.act_year or reference.act_year
 
     for match in _SECTION_OF_ACT.finditer(text):
         section_number, act_name, act_year = match.groups()
@@ -96,5 +106,18 @@ def extract_section_references(text: str) -> list[SectionReference]:
                 raw=match.group(0),
             ),
         )
+
+    # A judgment names an Act in full once -- "the Arbitration Act, 1996" --
+    # and shortens it after. The bare references are the same Act, so they
+    # take the year it wrote. "Arbitration Act" alone is two laws, 1940 and
+    # 1996, and 1,126 of its references in the corpus carry no year of their
+    # own. A name written with two years is left alone: a judgment comparing
+    # the Companies Acts of 1956 and 2013 does not say which a bare
+    # "Companies Act" means.
+    for reference in found:
+        if reference.act_year is None:
+            written = years.get(reference.act_name.lower(), set())
+            if len(written) == 1:
+                reference.act_year = next(iter(written))
 
     return found

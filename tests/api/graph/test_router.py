@@ -173,11 +173,15 @@ def test_the_statutes_view_leads_with_sections(client):
 
 
 def test_an_act_view_returns_that_act_s_own_sections(client):
+    """Every section shown is the IPC's own. The judgments citing them come
+    in behind, as for any statute view -- this held for all nodes only while
+    IPC references were unlinked and nothing cited its sections."""
     nodes = client.get(
         "/graph/overview?view=act:ipc-1860&limit=10"
     ).json()["data"]["nodes"]
-    assert nodes
-    assert all(node["id"].startswith("act:ipc-1860:") for node in nodes)
+    sections = [node for node in nodes if node["kind"] == "Section"]
+    assert sections
+    assert all(node["id"].startswith("act:ipc-1860:") for node in sections)
 
 
 def test_an_unknown_view_is_empty_rather_than_an_error(client):

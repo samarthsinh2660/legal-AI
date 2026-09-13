@@ -128,7 +128,7 @@ def write_judgment(
 
         if pg_conn is not None:
             for ref in extract_section_references(judgment.full_text):
-                act_id = find_act_by_name(pg_conn, ref.act_name)
+                act_id = find_act_by_name(pg_conn, ref.act_name, ref.act_year)
                 section_id = f"{act_id}:sec-{ref.section_number}" if act_id else None
                 resolved = section_id is not None and get_document(pg_conn, section_id) is not None
 
