@@ -1,0 +1,78 @@
+# The worker and both model servers, for a machine that holds no database.
+#
+#   docker compose -f docker-compose.worker.yml up -d --build
+#
+# Postgres and Neo4j stay on the main server; set DB_HOST in .env to reach
+# them. The worker opens connections and accepts none. The model servers do
+# accept them -- the API on the main server embeds for /search -- so 8085
+# and 8086 must be open to that server and nothing else.
+#
+# CPU images. On a GPU box with nvidia-container-toolkit installed, use the
+# CUDA tag (turing-1.8 for a T4 or RTX 20xx) and uncomment `deploy`.
+services:
+  embedder:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    restart: unless-stopped
+    command:
+      - "--model-id=sentence-transformers/all-mpnet-base-v2"
+      - "--max-batch-tokens=8192"
+      - "--max-concurrent-requests=16"
+      - "--max-client-batch-size=32"
+    ports:
+      - "${EMBED_PORT:-8085}:80"
+    volumes:
+      - legal_ai_models:/data
+    # deploy: {resources: {reservations: {devices: [{capabilities: [gpu]}]}}}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 300s
+
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    restart: unless-stopped
+    command:
+      - "--model-id=cross-encoder/ms-marco-MiniLM-L-12-v2"
+      - "--max-batch-tokens=8192"
+      - "--max-concurrent-requests=16"
+      - "--max-client-batch-size=32"
+    ports:
+      - "${RERANK_PORT:-8086}:80"
+    volumes:
+      - legal_ai_models:/data
+    # deploy: {resources: {reservations: {devices: [{capabilities: [gpu]}]}}}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 300s
+
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${POSTGRES_PORT:-5433}/${POSTGRES_DB:-legal_ai}
+      NEO4J_URI: bolt://${DB_HOST}:${NEO4J_BOLT_PORT:-7688}
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      LEGAL_AI_VERIFICATION_LEVEL: ${LEGAL_AI_VERIFICATION_LEVEL:-quick}
+      LEGAL_AI_RESEARCH_TIMEOUT: ${LEGAL_AI_RESEARCH_TIMEOUT:-300}
+      LEGAL_AI_EMBED_URL: http://embedder:80
+      LEGAL_AI_RERANK_URL: http://reranker:80
+    volumes:
+      - legal_ai_models:/models
+    stop_grace_period: 330s
+    depends_on:
+      embedder:
+        condition: service_healthy
+      reranker:
+        condition: service_healthy
+
+volumes:
+  legal_ai_models:
