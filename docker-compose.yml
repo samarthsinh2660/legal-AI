@@ -9,6 +9,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-legal_ai_dev}
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
+    # Docker's default 64 MB of /dev/shm is not enough for a parallel HNSW
+    # build or a parallel vacuum of document_chunks: both fail with "could
+    # not resize shared memory segment".
+    shm_size: 1gb
     volumes:
       - legal_ai_postgres_data:/var/lib/postgresql/data
       # Runs once, on an empty data directory, before the server accepts
