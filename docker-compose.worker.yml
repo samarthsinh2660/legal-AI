@@ -67,7 +67,9 @@ services:
     volumes:
       - ${SSH_KEY}:/key:ro
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 5433 && nc -z localhost 7688"]
+      # busybox nc has no -z, and its failure is silent: the forwards were
+      # up and the container still read as unhealthy.
+      test: ["CMD-SHELL", "netstat -ltn | grep -q ':5433 ' && netstat -ltn | grep -q ':7688 '"]
       interval: 15s
       timeout: 5s
       retries: 5
